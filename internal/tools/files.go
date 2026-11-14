@@ -25,18 +25,14 @@ func (f *fileTimes) remember(path string) {
 	f.seen[path] = st.ModTime()
 }
 
-func (f *fileTimes) check(path string, mustHaveRead bool) error {
+func (f *fileTimes) check(path string) error {
 	st, err := os.Stat(path)
 	if err != nil {
 		return nil
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	t, ok := f.seen[path]
-	switch {
-	case !ok && mustHaveRead:
-		return fmt.Errorf("%s exists and you have not read it with the read tool; read it first, or use edit", path)
-	case ok && !st.ModTime().Equal(t):
+	if t, ok := f.seen[path]; ok && !st.ModTime().Equal(t) {
 		return fmt.Errorf("%s changed on disk since you last read or wrote it (by the user, a formatter or a command); read it again before changing it", path)
 	}
 	return nil

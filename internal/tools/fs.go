@@ -50,6 +50,7 @@ func Read() *Tool {
 			Description: "Read a file with line numbers (`N<tab>line`), a directory listing, or an image. Reads up to 2000 lines; use offset/limit for more.",
 			Schema:      json.RawMessage(`{"type":"object","properties":{"file_path":{"type":"string","description":"Path to the file or directory"},"offset":{"type":"integer","description":"1-based line number to start from"},"limit":{"type":"integer","description":"Maximum number of lines to read"}},"required":["file_path"]}`),
 		},
+		Path: pathKey,
 		Label: func(env *Env, in json.RawMessage) string {
 			a, _ := decode[readArgs](in)
 			l := "read " + env.rel(env.resolve(a.FilePath))
@@ -222,7 +223,7 @@ func Write() *Tool {
 	return &Tool{
 		Def: llm.ToolDef{
 			Name:        "write",
-			Description: "Create or overwrite a file. Prefer edit for changes to existing files; to overwrite one, read it first.",
+			Description: "Create or overwrite a file. Prefer edit for changes to existing files.",
 			Schema:      json.RawMessage(`{"type":"object","properties":{"file_path":{"type":"string"},"content":{"type":"string"}},"required":["file_path","content"]}`),
 		},
 		Path:  pathKey,
@@ -241,7 +242,7 @@ func Write() *Tool {
 			path := env.resolve(a.FilePath)
 			_, statErr := os.Stat(path)
 			if statErr == nil {
-				if err := env.files.check(path, true); err != nil {
+				if err := env.files.check(path); err != nil {
 					return errResult("%v", err)
 				}
 			}
@@ -295,7 +296,7 @@ func Edit() *Tool {
 			} else if !st.Mode().IsRegular() || st.Size() > maxReadBytes {
 				return errResult("%s is not a regular file under %d MB", path, maxReadBytes>>20)
 			}
-			if err := env.files.check(path, false); err != nil {
+			if err := env.files.check(path); err != nil {
 				return errResult("%v", err)
 			}
 			data, err := os.ReadFile(path)

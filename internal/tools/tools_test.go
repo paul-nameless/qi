@@ -257,10 +257,13 @@ func TestStaleFileGuard(t *testing.T) {
 	run := func(name, input string) llm.Block {
 		return r.Execute(context.Background(), env, []llm.Block{{ID: "x", Name: name, Input: json.RawMessage(input)}}, nopUI{})[0]
 	}
-	if res := run("write", `{"file_path":"f.txt","content":"x"}`); !res.IsError || !strings.Contains(res.Text, "not read it") {
-		t.Errorf("overwrite without read: %+v", res)
+	both := r.Execute(context.Background(), env, []llm.Block{
+		{ID: "r", Name: "read", Input: json.RawMessage(`{"file_path":"f.txt"}`)},
+		{ID: "w", Name: "write", Input: json.RawMessage(`{"file_path":"f.txt","content":"one\ntwo\nthree\n"}`)},
+	}, nopUI{})
+	if both[1].IsError {
+		t.Errorf("read then write in one response: %+v", both[1])
 	}
-	run("read", `{"file_path":"f.txt"}`)
 	res := run("edit", `{"file_path":"f.txt","old_string":"two","new_string":"TWO"}`)
 	if res.IsError || !strings.Contains(res.Text, "2\tTWO") || !strings.Contains(res.Text, "1\tone") {
 		t.Errorf("edit snippet: %q", res.Text)
