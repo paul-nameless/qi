@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -87,7 +86,7 @@ func (r *repl) run() error {
 		return r.prompt()
 	}
 	r.editor.IsImage = func(text string) []string { return imagePaths(r.agent.Cwd, text) }
-	if _, err := exec.LookPath("fzf"); err == nil {
+	if pickerAvailable(r.agent.Cfg.Picker) {
 		r.editor.OnSlash = r.slashPicker
 	}
 	r.handleSignals()

@@ -34,6 +34,8 @@ type MCPServer struct {
 	Description string            `yaml:"description"`
 }
 
+const DefaultPicker = `fzf --height=40% --reverse --no-multi --bind=ctrl-z:ignore --delimiter='\t' --nth=1 --tabstop=24 --prompt={prompt}`
+
 type Config struct {
 	Model           string               `yaml:"model"`
 	API             string               `yaml:"api"`
@@ -58,6 +60,7 @@ type Config struct {
 	SkillDirs       []string             `yaml:"skill_dirs"`
 	HookFiles       []string             `yaml:"hook_files"`
 	MCP             map[string]MCPServer `yaml:"mcp"`
+	Picker          string               `yaml:"picker"`
 	Providers       map[string]Provider  `yaml:"providers"`
 	Profiles        map[string]any       `yaml:"profiles"`
 	DefaultProfile  string               `yaml:"default_profile"`
@@ -261,6 +264,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.CompactIdleAt == 0 {
 		c.CompactIdleAt = 100000
+	}
+	if c.Picker == "" {
+		c.Picker = DefaultPicker
 	}
 	if c.CacheTTL == "" {
 		c.CacheTTL = "1h"

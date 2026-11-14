@@ -13,26 +13,42 @@ type pickItem struct {
 	desc string
 }
 
-func fzf(prompt string, items []pickItem) (string, string, bool) {
+func pickerAvailable(command string) bool {
+	f := strings.Fields(command)
+	if len(f) == 0 {
+		return false
+	}
+	_, err := exec.LookPath(f[0])
+	return err == nil
+}
+
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+func pick(command, prompt string, items []pickItem) (string, bool) {
 	if len(items) == 0 {
-		return "", "", false
+		return "", false
 	}
 	var in bytes.Buffer
 	for _, it := range items {
 		in.WriteString(it.name + "\t" + strings.Join(strings.Fields(it.desc), " ") + "\n")
 	}
-	cmd := exec.Command("fzf", "--height=40%", "--reverse", "--prompt="+prompt, "--delimiter=\t", "--nth=1", "--tabstop=24", "--no-multi", "--print-query", "--bind=ctrl-z:ignore")
-	cmd.Env = append(os.Environ(), "FZF_DEFAULT_OPTS=", "FZF_DEFAULT_OPTS_FILE=")
+	cmd := exec.Command("sh", "-c", strings.ReplaceAll(command, "{prompt}", shellQuote(prompt)))
+	cmd.Env = append(os.Environ(), "FZF_DEFAULT_OPTS=", "FZF_DEFAULT_OPTS_FILE=", "AICODE_PICK_PROMPT="+prompt)
 	cmd.Stdin = &in
 	cmd.Stderr = os.Stderr
-	out, _ := cmd.Output()
-	lines := strings.Split(strings.TrimRight(string(out), "\n"), "\n")
-	query := lines[0]
-	if len(lines) < 2 {
-		return "", query, false
+	out, err := cmd.Output()
+	if err != nil {
+		return "", false
 	}
+	lines := strings.Split(strings.TrimRight(string(out), "\n"), "\n")
 	name, _, _ := strings.Cut(lines[len(lines)-1], "\t")
-	return name, query, name != ""
+	return name, name != ""
+}
+
+func (r *repl) pick(prompt string, items []pickItem) (string, bool) {
+	return pick(r.agent.Cfg.Picker, prompt, items)
 }
 
 var builtinCommands = []pickItem{
@@ -46,9 +62,9 @@ var builtinCommands = []pickItem{
 }
 
 func (r *repl) slashPicker() (string, bool) {
-	name, query, ok := fzf("/", builtinCommands)
+	name, ok := r.pick("/", builtinCommands)
 	if !ok {
-		return "/" + query, false
+		return "/", false
 	}
 	switch name {
 	case "model":
@@ -66,7 +82,7 @@ func (r *repl) slashPicker() (string, bool) {
 			r.display.Info("no skills found in ~/.claude/skills or .claude/skills")
 			return "", false
 		}
-		if s, _, ok := fzf("skill ", items); ok {
+		if s, ok := r.pick("skill ", items); ok {
 			return "/" + s + " ", false
 		}
 		return "/", false
@@ -75,7 +91,7 @@ func (r *repl) slashPicker() (string, bool) {
 }
 
 func (r *repl) pickArg(cmd string, items []pickItem) (string, bool) {
-	if v, _, ok := fzf(cmd+" ", items); ok {
+	if v, ok := r.pick(cmd+" ", items); ok {
 		return "/" + cmd + " " + v, true
 	}
 	return "/" + cmd + " ", false
