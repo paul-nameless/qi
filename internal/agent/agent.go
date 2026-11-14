@@ -27,17 +27,18 @@ type Display interface {
 type StopHook func(ctx context.Context, lastText string, active bool) (cont bool, reason string)
 
 type Agent struct {
-	Cfg      config.Config
-	Cwd      string
-	Provider llm.Provider
-	Registry *tools.Registry
-	Env      *tools.Env
-	Session  *session.Session
-	System   string
-	Messages []llm.Message
-	UI       Display
-	OnStop   StopHook
-	Headless bool
+	Cfg          config.Config
+	Cwd          string
+	Provider     llm.Provider
+	Registry     *tools.Registry
+	Env          *tools.Env
+	Session      *session.Session
+	System       string
+	StaticSystem int
+	Messages     []llm.Message
+	UI           Display
+	OnStop       StopHook
+	Headless     bool
 
 	readOnly  atomic.Bool
 	announced bool
@@ -165,6 +166,7 @@ func (a *Agent) request(msgs []llm.Message) llm.Request {
 	return llm.Request{
 		Model:           a.Model(),
 		System:          a.System,
+		StaticSystem:    a.StaticSystem,
 		Messages:        msgs,
 		Tools:           a.Registry.Defs(),
 		MaxTokens:       a.Cfg.MaxTokens,

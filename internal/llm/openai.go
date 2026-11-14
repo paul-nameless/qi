@@ -40,11 +40,15 @@ type oaToolCall struct {
 func (o *OpenAI) buildMessages(req Request) []map[string]any {
 	var out []map[string]any
 	if req.System != "" {
-		part := map[string]any{"type": "text", "text": req.System}
-		if o.CacheControl {
-			part["cache_control"] = cacheMark(req.CacheTTL)
+		var parts []any
+		for _, text := range req.SystemParts() {
+			part := map[string]any{"type": "text", "text": text}
+			if o.CacheControl {
+				part["cache_control"] = cacheMark(req.CacheTTL)
+			}
+			parts = append(parts, part)
 		}
-		out = append(out, map[string]any{"role": "system", "content": []any{part}})
+		out = append(out, map[string]any{"role": "system", "content": parts})
 	}
 	for _, m := range MergeConsecutive(req.Messages) {
 		if m.Role == "assistant" {

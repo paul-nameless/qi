@@ -234,3 +234,25 @@ func TestRetryable(t *testing.T) {
 		}
 	}
 }
+
+func TestSystemSplitIntoCachedParts(t *testing.T) {
+	req := Request{Model: "m", System: "static part\n\n<env>dir</env>", StaticSystem: len("static part"), Messages: []Message{UserText("hi")}, MaxTokens: 10}
+	parts := req.SystemParts()
+	if len(parts) != 2 || parts[0] != "static part" || parts[0]+parts[1] != req.System {
+		t.Fatalf("parts %q", parts)
+	}
+	m := bodyJSON(t, NewOpenAI("https://openrouter.ai/api/v1", "k", nil), req)
+	sys := m["messages"].([]any)[0].(map[string]any)["content"].([]any)
+	if len(sys) != 2 || sys[0].(map[string]any)["cache_control"] == nil || sys[1].(map[string]any)["cache_control"] == nil {
+		t.Errorf("openai system parts %v", sys)
+	}
+	body := NewAnthropic("", "k").buildBody(req)
+	if s := body["system"].([]any); len(s) != 2 || s[1].(map[string]any)["text"] != "\n\n<env>dir</env>" {
+		t.Errorf("anthropic system %v", s)
+	}
+	for _, n := range []int{0, -1, len(req.System)} {
+		if p := (Request{System: "abc", StaticSystem: n}).SystemParts(); len(p) != 1 {
+			t.Errorf("StaticSystem %d split into %q", n, p)
+		}
+	}
+}

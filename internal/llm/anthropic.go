@@ -135,7 +135,11 @@ func (a *Anthropic) buildBody(req Request) map[string]any {
 		"messages":   msgs,
 	}
 	if req.System != "" {
-		body["system"] = []any{map[string]any{"type": "text", "text": req.System, "cache_control": cacheMark(req.CacheTTL)}}
+		var system []any
+		for _, text := range req.SystemParts() {
+			system = append(system, map[string]any{"type": "text", "text": text, "cache_control": cacheMark(req.CacheTTL)})
+		}
+		body["system"] = system
 	}
 	if len(req.Tools) > 0 {
 		var tools []any

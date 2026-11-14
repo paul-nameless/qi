@@ -188,8 +188,13 @@ func LoadCommands(roots []string) []Command {
 	return out
 }
 
-func loadInstructions(files []string) []string {
-	var out []string
+type instruction struct {
+	path string
+	text string
+}
+
+func loadInstructions(files []string) []instruction {
+	var out []instruction
 	seenHash := map[[32]byte]bool{}
 	for _, path := range files {
 		data, err := os.ReadFile(path)
@@ -201,7 +206,7 @@ func loadInstructions(files []string) []string {
 			continue
 		}
 		seenHash[h] = true
-		out = append(out, fmt.Sprintf("# Instructions from %s\n\n%s", path, strings.TrimSpace(string(data))))
+		out = append(out, instruction{path, fmt.Sprintf("# Instructions from %s\n\n%s", path, strings.TrimSpace(string(data)))})
 	}
 	return out
 }
@@ -215,28 +220,65 @@ func isGitRepo(cwd string) bool {
 	return err == nil
 }
 
-func BuildSystemPrompt(cwd string, instructionFiles []string, skills []Skill) string {
+const skillsIntro = "\n# Skills\n\nSkills are instruction files for specific tasks. When a task matches a skill, read its SKILL.md with the read tool before starting and follow it.\n\n"
+
+func BuildSystemPrompt(cwd string, instructionFiles []string, skills []Skill) (string, int) {
+	roots := ProjectRoots(cwd)
 	var b strings.Builder
 	b.WriteString(basePrompt)
+	var projectInst []instruction
+	for _, inst := range loadInstructions(instructionFiles) {
+		if inProject(inst.path, roots) {
+			projectInst = append(projectInst, inst)
+			continue
+		}
+		b.WriteString("\n\n" + inst.text)
+	}
+	var global, project []Skill
+	for _, s := range skills {
+		switch {
+		case s.Hidden:
+		case inProject(s.Path, roots):
+			project = append(project, s)
+		default:
+			global = append(global, s)
+		}
+	}
+	if len(global) > 0 {
+		b.WriteString("\n" + skillsIntro)
+		writeSkills(&b, global)
+	}
+	static := b.Len()
 	git := "no"
 	if isGitRepo(cwd) {
 		git = "yes"
 	}
 	fmt.Fprintf(&b, "\n\n<env>\nWorking directory: %s\nPlatform: %s\nDate: %s\nGit repository: %s\n</env>\n", cwd, runtime.GOOS, time.Now().Format("2006-01-02"), git)
-	for _, inst := range loadInstructions(instructionFiles) {
-		b.WriteString("\n" + inst + "\n")
+	for _, inst := range projectInst {
+		b.WriteString("\n" + inst.text + "\n")
 	}
-	var visible []Skill
+	switch {
+	case len(project) > 0 && len(global) > 0:
+		b.WriteString("\n# More skills in this project\n\n")
+		writeSkills(&b, project)
+	case len(project) > 0:
+		b.WriteString(skillsIntro)
+		writeSkills(&b, project)
+	}
+	return b.String(), static
+}
+
+func writeSkills(b *strings.Builder, skills []Skill) {
 	for _, s := range skills {
-		if !s.Hidden {
-			visible = append(visible, s)
+		fmt.Fprintf(b, "- %s: %s (%s)\n", s.Name, tools.OneLine(s.Description, 300), s.Path)
+	}
+}
+
+func inProject(path string, roots []string) bool {
+	for _, r := range roots {
+		if rel, err := filepath.Rel(r, path); err == nil && !strings.HasPrefix(rel, "..") {
+			return true
 		}
 	}
-	if len(visible) > 0 {
-		b.WriteString("\n# Skills\n\nSkills are instruction files for specific tasks. When a task matches a skill, read its SKILL.md with the read tool before starting and follow it.\n\n")
-		for _, s := range visible {
-			fmt.Fprintf(&b, "- %s: %s (%s)\n", s.Name, tools.OneLine(s.Description, 300), s.Path)
-		}
-	}
-	return b.String()
+	return false
 }

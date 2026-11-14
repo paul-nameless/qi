@@ -66,6 +66,7 @@ type ToolDef struct {
 type Request struct {
 	Model           string
 	System          string
+	StaticSystem    int
 	Messages        []Message
 	Tools           []ToolDef
 	MaxTokens       int
@@ -116,4 +117,11 @@ func MergeConsecutive(msgs []Message) []Message {
 		out = append(out, m)
 	}
 	return out
+}
+
+func (r Request) SystemParts() []string {
+	if r.StaticSystem <= 0 || r.StaticSystem >= len(r.System) {
+		return []string{r.System}
+	}
+	return []string{r.System[:r.StaticSystem], r.System[r.StaticSystem:]}
 }
