@@ -61,7 +61,7 @@ func ParseTokens(s string) (int, error) {
 		mult, s = 1e6, strings.TrimSuffix(s, "m")
 	}
 	f, err := strconv.ParseFloat(s, 64)
-	if err != nil || !finite(f) || f <= 0 || f*mult > math.MaxInt32 {
+	if err != nil || !finite(f) || f < 0 || f*mult > math.MaxInt32 {
 		return 0, fmt.Errorf("invalid token count %q (use 150000, 150k or 1.5m)", s)
 	}
 	return int(f * mult), nil
@@ -71,7 +71,7 @@ func ParseThreshold(s string) (Threshold, error) {
 	s = strings.TrimSpace(s)
 	if p, ok := strings.CutSuffix(s, "%"); ok {
 		f, err := strconv.ParseFloat(strings.TrimSpace(p), 64)
-		if err != nil || !finite(f) || f <= 0 || f > 100 {
+		if err != nil || !finite(f) || f < 0 || f > 100 {
 			return Threshold{}, fmt.Errorf("invalid percentage %q (use 1%%–100%%)", s)
 		}
 		return Threshold{Percent: f}, nil

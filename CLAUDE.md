@@ -5,7 +5,7 @@ Minimal Go coding agent for the terminal (v2 rewrite). Plan: `docs/plans/aicode-
 ## Layout
 - `main.go` flags and wiring, `repl.go` interactive loop, `commands.go` slash commands and image attachment, `picker.go` the `/` picker (runs the `picker` config command, fzf by default)
 - `internal/llm` canonical message types, SSE, provider adapters (`openai.go` chat completions incl. OpenRouter, `anthropic.go`)
-- `internal/agent` turn loop, compaction (`compact.go`: unchanged-history summary request, verbatim tail without reasoning, overflow retry, thrash pause), steering queue, system prompt, skills, subagent runner, hooks, project trust
+- `internal/agent` turn loop, compaction (`compact.go`: unchanged-history summary request, verbatim tail without reasoning between turns, summary-only mid-turn, overflow retry, thrash pause), steering queue, system prompt, skills, subagent runner, hooks, project trust
 - `internal/config` YAML config with providers and profiles; `limits.go` parses `compact_at`/`compact_idle_at` (tokens or %) and resolves them against `context_window` or a small model table
 - `internal/tools` registry with parallel execution, read/write/edit/bash/subagent, read-only allowlist, `files.go` tracks file mtimes so write refuses to overwrite a file changed since the model last read or wrote it (edit needs no guard: it only replaces exact text)
 - `internal/ui` termios, key decoder, line editor, printer with status line, `markdown.go` streaming markdown styling of answers (TTY only; `table.go` aligns tables, `width.go` display width)

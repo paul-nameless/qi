@@ -196,7 +196,7 @@ func Open(path string) (*Session, Loaded, error) {
 			}
 		case "compaction":
 			ld.Messages = append([]llm.Message{llm.UserText(e.Summary)}, e.Kept...)
-			ld.CtxTokens = chars(ld.Messages) / 4
+			ld.CtxTokens = 0
 		}
 	}
 	f.Close()
@@ -302,16 +302,6 @@ func (s *Session) Drop() error {
 
 func (s *Session) Compaction(summary string, kept []llm.Message, model string) error {
 	return s.write(Entry{Type: "compaction", Summary: summary, Kept: kept, Model: model})
-}
-
-func chars(msgs []llm.Message) int {
-	n := 0
-	for _, m := range msgs {
-		for _, b := range m.Blocks {
-			n += len(b.Text) + len(b.Input)
-		}
-	}
-	return n
 }
 
 func (s *Session) Close() {

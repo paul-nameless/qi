@@ -48,6 +48,7 @@ type Agent struct {
 	busy      sync.Mutex
 
 	paused       bool
+	thrashAt     int
 	windowWarned bool
 }
 
@@ -71,7 +72,7 @@ func (a *Agent) Reset(s *session.Session) {
 	a.Session = s
 	a.Messages = nil
 	a.announced = false
-	a.paused = false
+	a.paused, a.thrashAt = false, 0
 	a.SetContextTokens(0)
 }
 
@@ -83,6 +84,7 @@ func (a *Agent) Reconfigure(cfg config.Config, p llm.Provider) {
 	a.Cfg = cfg
 	a.Provider = p
 	a.windowWarned = false
+	a.paused, a.thrashAt = false, 0
 }
 
 func (a *Agent) SetEffort(effort string) {
@@ -236,8 +238,10 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 	a.busy.Lock()
 	defer a.busy.Unlock()
 	var stats TurnStats
+	compactFailed := false
 	if a.needsCompaction() {
 		if err := a.compact(ctx, compactOpts{auto: true}); err != nil {
+			compactFailed = true
 			a.UI.Error("compaction failed: " + err.Error())
 		}
 	}
@@ -246,8 +250,6 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 	}
 	a.appendMsg(llm.Message{Role: "user", Blocks: blocks}, nil)
 	stopActive := false
-	compacted := false
-	compactFailed := false
 	overflowRetried := false
 	for round := 0; ; round++ {
 		if a.Cfg.MaxRounds > 0 && round >= a.Cfg.MaxRounds {
@@ -257,8 +259,6 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 			if err := a.compact(ctx, compactOpts{auto: true, midTurn: true}); err != nil {
 				compactFailed = true
 				a.UI.Error("compaction failed: " + err.Error())
-			} else {
-				compacted = true
 			}
 		}
 		msg, usage, err := a.stream(ctx)
@@ -268,13 +268,12 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 			a.UI.Info("context too long for the model; compacting and retrying")
 			cerr := a.compact(ctx, compactOpts{midTurn: true, overflow: true})
 			if cerr == nil {
-				compacted = true
 				continue
 			}
 			a.UI.Error("compaction failed: " + cerr.Error())
 		}
 		if err != nil {
-			if round == 0 && !compacted && (ctx.Err() != nil || rejected(err)) {
+			if round == 0 && (ctx.Err() != nil || rejected(err)) {
 				a.dropLast()
 			}
 			if ctx.Err() != nil {
@@ -287,8 +286,10 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 		a.appendMsg(msg, &usage)
 		if usage.Input > 0 {
 			a.SetContextTokens(usage.Input + usage.Output)
+			a.pauseIfOver(usage.Input)
+			a.thrashAt = 0
 		} else {
-			a.SetContextTokens(a.estimateTokens())
+			a.SetContextTokens(a.EstimateTokens())
 		}
 
 		calls := msg.ToolUses()
@@ -360,7 +361,7 @@ func (a *Agent) dropLast() {
 	}
 }
 
-func (a *Agent) estimateTokens() int {
+func (a *Agent) EstimateTokens() int {
 	n := len(a.System)
 	for _, d := range a.Registry.Defs() {
 		n += len(d.Description) + len(d.Schema)

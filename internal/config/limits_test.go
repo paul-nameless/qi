@@ -14,13 +14,15 @@ func TestParseThreshold(t *testing.T) {
 		"1.5m":   {Tokens: 1500000},
 		"80%":    {Percent: 80},
 		" 2.5% ": {Percent: 2.5},
+		"0":      {},
+		"0%":     {},
 	}
 	for in, want := range good {
 		if got, err := ParseThreshold(in); err != nil || got != want {
 			t.Errorf("%q: got %+v %v, want %+v", in, got, err, want)
 		}
 	}
-	for _, in := range []string{"", "abc", "0", "-5k", "0%", "120%", "k", "10x", "nan", "NaN%", "inf", "inf%", "1e400", "1e12"} {
+	for _, in := range []string{"", "abc", "-5k", "-1%", "120%", "k", "10x", "nan", "NaN%", "inf", "inf%", "1e400", "1e12"} {
 		if _, err := ParseThreshold(in); err == nil {
 			t.Errorf("%q accepted", in)
 		}

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -33,14 +34,16 @@ An ordered list of what to do next.
 Rules: this request comes from aicode, not from the user, so leave it out of the summary. Preserve exact file paths, symbols, commands, error strings and URLs. Keep what the user said close to their words; condense your own explanations to their conclusions. Leave out the system prompt, instruction files and tool descriptions; they are sent again. Be complete on the sections even at the cost of length; keep everything else short.`
 	keepTokens     = 20000
 	clipToolResult = 2000
+	clipText       = 8000
 	thrashShare    = 4
 )
 
 type compactOpts struct {
-	auto     bool
-	midTurn  bool
-	overflow bool
-	focus    string
+	auto      bool
+	midTurn   bool
+	overflow  bool
+	focus     string
+	threshold int
 }
 
 func compactPrompt(msgs []llm.Message, focus string) string {
@@ -56,24 +59,40 @@ func compactPrompt(msgs []llm.Message, focus string) string {
 
 func summaryRequest(msgs []llm.Message, prompt string, clip bool) []llm.Message {
 	if clip {
-		msgs = clipToolResults(msgs)
+		msgs = clipHistory(msgs)
 	}
 	out := make([]llm.Message, 0, len(msgs)+1)
 	return append(append(out, msgs...), llm.UserText(prompt))
 }
 
-func clipToolResults(msgs []llm.Message) []llm.Message {
+func clip(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n/2] + "\n… [shortened for compaction] …\n" + s[len(s)-n/2:]
+}
+
+func clipBlock(b llm.Block) llm.Block {
+	switch b.Type {
+	case llm.BlockToolResult:
+		b.Images = nil
+		b.Text = clip(b.Text, clipToolResult)
+	case llm.BlockText:
+		b.Text = clip(b.Text, clipText)
+	case llm.BlockToolUse:
+		if len(b.Input) > clipToolResult {
+			b.Input = json.RawMessage("{}")
+		}
+	}
+	return b
+}
+
+func clipHistory(msgs []llm.Message) []llm.Message {
 	out := make([]llm.Message, len(msgs))
 	for i, m := range msgs {
 		blocks := make([]llm.Block, len(m.Blocks))
 		for j, b := range m.Blocks {
-			if b.Type == llm.BlockToolResult {
-				b.Images = nil
-				if len(b.Text) > clipToolResult {
-					b.Text = b.Text[:clipToolResult/2] + "\n… [shortened for compaction] …\n" + b.Text[len(b.Text)-clipToolResult/2:]
-				}
-			}
-			blocks[j] = b
+			blocks[j] = clipBlock(b)
 		}
 		out[i] = withoutReasoning(llm.Message{Role: m.Role, Blocks: blocks})
 	}
@@ -131,17 +150,21 @@ func keepTail(msgs []llm.Message, budget int) []llm.Message {
 }
 
 func contextTooLong(err error) bool {
+	if err == nil {
+		return false
+	}
+	body := err.Error()
 	var apiErr *llm.APIError
-	if !errors.As(err, &apiErr) {
-		return false
+	if errors.As(err, &apiErr) {
+		if apiErr.Status == 413 {
+			return true
+		}
+		if apiErr.Status != 400 {
+			return false
+		}
+		body = apiErr.Body
 	}
-	if apiErr.Status == 413 {
-		return true
-	}
-	if apiErr.Status != 400 {
-		return false
-	}
-	body := strings.ToLower(apiErr.Body)
+	body = strings.ToLower(body)
 	for _, s := range overflowMessages {
 		if strings.Contains(body, s) {
 			return true
@@ -183,17 +206,22 @@ func (a *Agent) compact(ctx context.Context, opts compactOpts) error {
 		return errors.New("nothing to compact")
 	}
 	before := a.ContextTokens()
-	threshold := a.Cfg.CompactTokens()
+	threshold := opts.threshold
+	if threshold == 0 {
+		threshold = a.Cfg.CompactTokens()
+	}
 	a.UI.ToolStart("compact", fmt.Sprintf("compacting %s tokens", fmtTokens(before)))
 	summary, usage, err := a.summarize(ctx, opts)
 	if err != nil {
 		a.UI.ToolDone("compact", false, "compaction failed")
 		return err
 	}
-	tail := keepTail(a.Messages, min(keepTokens, threshold/4))
+	var tail []llm.Message
 	text := compactLead + summary
-	if opts.midTurn && len(tail) == 0 {
+	if opts.midTurn {
 		text += compactContinue
+	} else {
+		tail = keepTail(a.Messages, min(keepTokens, threshold/4))
 	}
 	_, hadNote := lastModeNote(a.Messages)
 	a.Messages = append([]llm.Message{llm.UserText(text)}, tail...)
@@ -203,14 +231,22 @@ func (a *Agent) compact(ctx context.Context, opts compactOpts) error {
 			a.UI.Error("session: " + err.Error())
 		}
 	}
-	after := a.estimateTokens()
+	after := a.EstimateTokens()
 	a.SetContextTokens(after)
 	a.UI.ToolDone("compact", true, fmt.Sprintf("compacted %s → %s tokens%s", fmtTokens(before), fmtTokens(after), cachedPct(usage)))
-	a.paused = opts.auto && after > threshold*(thrashShare-1)/thrashShare
-	if a.paused {
-		a.UI.Info(fmt.Sprintf("context is still %s tokens after compaction, close to compact_at (%s); automatic compaction is paused until /compact or /clear, raise compact_at", fmtTokens(after), fmtTokens(threshold)))
+	a.paused, a.thrashAt = false, 0
+	if opts.auto || opts.overflow {
+		a.thrashAt = threshold * (thrashShare - 1) / thrashShare
+		a.pauseIfOver(after)
 	}
 	return nil
+}
+
+func (a *Agent) pauseIfOver(tokens int) {
+	if a.thrashAt > 0 && tokens > a.thrashAt {
+		a.paused, a.thrashAt = true, 0
+		a.UI.Info(fmt.Sprintf("context is still %s tokens right after compaction, too close to the threshold; automatic compaction is paused until /compact or /clear, raise compact_at", fmtTokens(tokens)))
+	}
 }
 
 func (a *Agent) needsCompaction() bool {
@@ -234,8 +270,9 @@ func (a *Agent) TryCompactIdle(ctx context.Context) error {
 		return nil
 	}
 	defer a.busy.Unlock()
-	if a.paused || a.ContextTokens() < a.Cfg.CompactIdleTokens() {
+	idle := a.Cfg.CompactIdleTokens()
+	if a.paused || a.ContextTokens() < idle {
 		return nil
 	}
-	return a.compact(ctx, compactOpts{auto: true})
+	return a.compact(ctx, compactOpts{auto: true, threshold: idle})
 }

@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -164,24 +165,6 @@ func TestCompactReannouncesModeLostToSummary(t *testing.T) {
 	}
 }
 
-func TestRejectedAfterCompactionKeepsHistory(t *testing.T) {
-	reject := func(llm.Request) (llm.Message, error) {
-		return llm.Message{}, &llm.APIError{Status: 400, Body: "image not supported"}
-	}
-	p := &scriptedProvider{steps: []func(llm.Request) (llm.Message, error){reply(toolCall("x", "ls")), reply(assistantText("SUMMARY")), reject}}
-	a := newAgent(t, &fakeProvider{})
-	a.Provider = p
-	a.Cfg.CompactAt = config.Threshold{Tokens: 10}
-	a.Messages = history()[:4]
-	a.SetContextTokens(500)
-	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "go on"}}); err == nil {
-		t.Fatal("expected error")
-	}
-	if !strings.HasPrefix(a.Messages[0].Text(), compactLead) || a.Messages[len(a.Messages)-1].Text() != "go on" {
-		t.Errorf("history after a rejected retry: %+v", a.Messages)
-	}
-}
-
 func TestOverflowCompactsAndRetriesOnce(t *testing.T) {
 	summary := reply(assistantText("SUMMARY"))
 	p := &scriptedProvider{steps: []func(llm.Request) (llm.Message, error){overflow, summary}}
@@ -277,6 +260,9 @@ func TestContextTooLong(t *testing.T) {
 		if !contextTooLong(e) {
 			t.Errorf("not detected: %s", e.Body)
 		}
+	}
+	if !contextTooLong(errors.New("stream error: prompt is too long: 1200000 tokens > 1000000 maximum")) {
+		t.Error("overflow reported inside the stream not detected")
 	}
 	no := []error{
 		&llm.APIError{Status: 429, Body: "too many tokens per minute"},
@@ -376,21 +362,70 @@ func TestTryCompactIdle(t *testing.T) {
 	}
 }
 
-func TestMidTurnContinueOnlyWithoutTail(t *testing.T) {
+func TestMidTurnCompactionKeepsNoTail(t *testing.T) {
 	a := newAgent(t, &fakeProvider{})
-	a.Cfg.CompactAt = config.Threshold{Tokens: 20000}
-	a.Messages = history()[:3]
-	if err := a.compact(context.Background(), compactOpts{midTurn: true}); err != nil {
-		t.Fatal(err)
-	}
-	if len(a.Messages) != 1 || !strings.HasSuffix(a.Messages[0].Text(), compactContinue) {
-		t.Errorf("empty tail mid-turn needs the continue note: %+v", a.Messages)
-	}
 	a.Messages = history()
 	if err := a.compact(context.Background(), compactOpts{midTurn: true}); err != nil {
 		t.Fatal(err)
 	}
+	if len(a.Messages) != 1 || !strings.HasSuffix(a.Messages[0].Text(), compactContinue) {
+		t.Errorf("mid-turn compaction leaves an open tool round; it must keep no tail: %+v", a.Messages)
+	}
+	a.Messages = history()
+	if err := a.compact(context.Background(), compactOpts{}); err != nil {
+		t.Fatal(err)
+	}
 	if len(a.Messages) == 1 || strings.HasSuffix(a.Messages[0].Text(), compactContinue) {
-		t.Errorf("with a tail the model continues from it: %+v", a.Messages)
+		t.Errorf("between turns the tail is kept: %+v", a.Messages)
+	}
+}
+
+func TestThrashPauseFromMeasuredUsage(t *testing.T) {
+	p := &fakeProvider{replies: []llm.Message{assistantText("SUMMARY")}, usage: llm.Usage{Input: 5000}}
+	a := newAgent(t, p)
+	a.Cfg.CompactAt = config.Threshold{Tokens: 4000}
+	a.Messages = history()
+	a.SetContextTokens(20000)
+	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "next"}}); err != nil {
+		t.Fatal(err)
+	}
+	if !a.paused {
+		t.Error("real usage above the threshold right after compaction should pause")
+	}
+	a.Reconfigure(a.Cfg, p)
+	if a.paused {
+		t.Error("/model and /profile should lift the pause")
+	}
+}
+
+func TestIdleCompactionSizesTailFromIdleThreshold(t *testing.T) {
+	a := newAgent(t, &fakeProvider{})
+	a.Cfg.CompactIdleAt = config.Threshold{Tokens: 400}
+	a.Messages = history()
+	a.SetContextTokens(20000)
+	if err := a.TryCompactIdle(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range a.Messages {
+		if msgTokens(m) > 100 {
+			t.Errorf("tail budget should come from compact_idle_at: kept %d tokens", msgTokens(m))
+		}
+	}
+}
+
+func TestClipHistory(t *testing.T) {
+	big := strings.Repeat("y", 50000)
+	in, _ := json.Marshal(map[string]string{"content": big})
+	msgs := []llm.Message{
+		llm.UserText(big),
+		{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockToolUse, ID: "w", Name: "write", Input: in}}},
+		toolResult("w", big),
+	}
+	out := clipHistory(msgs)
+	if len(out[0].Blocks[0].Text) > clipText+100 || string(out[1].Blocks[0].Input) != "{}" || len(out[2].Blocks[0].Text) > clipToolResult+100 {
+		t.Errorf("clipped sizes: %d %d %d", len(out[0].Blocks[0].Text), len(out[1].Blocks[0].Input), len(out[2].Blocks[0].Text))
+	}
+	if len(msgs[0].Blocks[0].Text) != 50000 || len(msgs[1].Blocks[0].Input) != len(in) {
+		t.Error("clipHistory modified the history")
 	}
 }

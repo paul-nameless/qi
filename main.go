@@ -124,6 +124,9 @@ func run(o options) error {
 		a.Messages = ld.Messages
 		a.RestoreMode()
 		a.SetContextTokens(ld.CtxTokens)
+		if ld.CtxTokens == 0 {
+			a.SetContextTokens(a.EstimateTokens())
+		}
 	} else {
 		kind := "interactive"
 		if headless {
