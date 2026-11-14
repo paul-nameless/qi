@@ -76,7 +76,7 @@ func TestTurnRunsToolsAndQueuesSteering(t *testing.T) {
 	a := newAgent(t, p)
 	p.onCall = func(n int) {
 		if n == 0 {
-			a.Queue("also check x")
+			a.Queue([]llm.Block{{Type: llm.BlockText, Text: "also check x"}})
 		}
 	}
 	final, stats, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "go"}})
@@ -171,7 +171,7 @@ func TestStopHookContinuesOnceWithActiveFlag(t *testing.T) {
 	a.OnStop = func(ctx context.Context, last string, active bool) (bool, string) {
 		actives = append(actives, active)
 		if !active {
-			a.Queue("queued note")
+			a.Queue([]llm.Block{{Type: llm.BlockText, Text: "queued note"}})
 			return true, "run the tests"
 		}
 		return false, ""

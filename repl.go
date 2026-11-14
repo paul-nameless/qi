@@ -14,6 +14,7 @@ import (
 
 	"github.com/paul-nameless/aicode/internal/agent"
 	"github.com/paul-nameless/aicode/internal/config"
+	"github.com/paul-nameless/aicode/internal/llm"
 	"github.com/paul-nameless/aicode/internal/session"
 	"github.com/paul-nameless/aicode/internal/tools"
 	"github.com/paul-nameless/aicode/internal/ui"
@@ -49,6 +50,9 @@ func (r *repl) prompt() string {
 func (r *repl) toggleMode() {
 	ro := !r.agent.ReadOnly()
 	r.agent.SetReadOnly(ro)
+	if ro && !tools.HasSandbox() {
+		r.display.Info("no OS sandbox found (install bubblewrap): read-only relies on the command allowlist only")
+	}
 	if ro && r.runner != nil {
 		r.runner.StopAll()
 	}
@@ -100,9 +104,13 @@ func (r *repl) run() error {
 		if quit {
 			return nil
 		}
-		for text != "" {
-			draft = r.turn(text, draft)
-			text = strings.Join(r.agent.DrainQueue(), "\n\n")
+		if text != "" {
+			draft = r.turn(func(ctx context.Context) ([]llm.Block, error) {
+				return submitPrompt(ctx, r.agent, r.hooks, text)
+			}, draft)
+		}
+		for q := r.agent.DrainQueue(); len(q) > 0; q = r.agent.DrainQueue() {
+			draft = r.turn(func(context.Context) ([]llm.Block, error) { return q, nil }, draft)
 		}
 		r.armIdle()
 	}
@@ -189,10 +197,10 @@ func (r *repl) cancellable(fn func(ctx context.Context) error) error {
 	return fn(ctx)
 }
 
-func (r *repl) turn(text, draft string) string {
+func (r *repl) turn(prepare func(context.Context) ([]llm.Block, error), draft string) string {
 	var stats agent.TurnStats
 	err := r.cancellable(func(ctx context.Context) error {
-		blocks, err := submitPrompt(ctx, r.agent, r.hooks, text)
+		blocks, err := prepare(ctx)
 		if err != nil {
 			return err
 		}
@@ -201,15 +209,12 @@ func (r *repl) turn(text, draft string) string {
 		go func() {
 			draftCh <- r.editor.Collect(collectCtx, draft, ui.Steer{
 				OnQueue: func(s string) {
-					blocked, reason, extra := r.hooks.UserPromptSubmit(ctx, s)
-					if blocked {
-						r.display.Error("message blocked by hook: " + reason)
+					blocks, err := submitPrompt(ctx, r.agent, r.hooks, s)
+					if err != nil {
+						r.display.Error(err.Error())
 						return
 					}
-					if extra != "" {
-						s += "\n<hook-context>\n" + extra + "\n</hook-context>"
-					}
-					r.agent.Queue(s)
+					r.agent.Queue(blocks)
 					r.display.Info("queued: " + tools.OneLine(s, 80))
 				},
 				OnCancel: func() { r.cancelTurn() },
@@ -292,8 +297,17 @@ func (r *repl) switchModel(name string) error {
 	if err != nil {
 		return err
 	}
-	for _, m := range cfg.SubagentModels {
-		if m.Name == name {
+	menus := [][]config.SubagentModel{cfg.SubagentModels}
+	for _, p := range cfg.ProfileNames() {
+		if pc, err := config.Load(r.configPath, p); err == nil {
+			menus = append(menus, withProvider(pc.SubagentModels, pc.Provider))
+		}
+	}
+	for _, menu := range menus {
+		for _, m := range menu {
+			if m.Name != name {
+				continue
+			}
 			if m.Provider != "" {
 				if err := cfg.UseProvider(m.Provider); err != nil {
 					return err
@@ -305,6 +319,17 @@ func (r *repl) switchModel(name string) error {
 	}
 	cfg.Model = name
 	return r.apply(cfg)
+}
+
+func withProvider(menu []config.SubagentModel, provider string) []config.SubagentModel {
+	out := make([]config.SubagentModel, len(menu))
+	for i, m := range menu {
+		if m.Provider == "" {
+			m.Provider = provider
+		}
+		out[i] = m
+	}
+	return out
 }
 
 func (r *repl) apply(cfg config.Config) error {

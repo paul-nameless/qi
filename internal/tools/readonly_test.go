@@ -2,12 +2,14 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/paul-nameless/aicode/internal/llm"
 )
 
 func TestCheckReadOnly(t *testing.T) {
@@ -27,6 +29,9 @@ func TestCheckReadOnly(t *testing.T) {
 		"rg 'price: \\$5' .",
 		"go env GOPATH",
 		"ls *.go",
+		"sort a | uniq -c",
+		`rg "a\"b" .`,
+		`rg "price \$5" .`,
 	}
 	for _, c := range ok {
 		if err := CheckReadOnly(c, t.TempDir(), nil); err != nil {
@@ -69,6 +74,22 @@ func TestCheckReadOnly(t *testing.T) {
 		"git diff --output=f",
 		"rg --pre=x foo",
 		"rg --hostname-bin=x foo",
+		"find . -execdir touch pwned ;",
+		"find . -ok rm ;",
+		"find . -fprint out",
+		"find . -fls out",
+		"find .\t-delete",
+		"fd -X rm",
+		"fd --exec-batch rm",
+		"go vet -exec=x ./...",
+		"go list -overlay=o.json ./...",
+		"go list -modfile=x.mod ./...",
+		"git diff --ext-diff",
+		"git log --textconv",
+		"file -C -m x",
+		"git branch --set-upstream-to=origin/main",
+		"git branch --unset-upstream",
+		"git branch --track x",
 		"sort -o/tmp/x a",
 		"sort -uo out a",
 		"sort --compress-program=sh a",
@@ -91,6 +112,13 @@ func TestCheckReadOnly(t *testing.T) {
 		"go env --w GOFLAGS=-x",
 		"go list --mod=mod ./...",
 		"uniq x*",
+		"find . -maxdepth 0 \"-ex\\\nec\" sh -c id \\;",
+		"git log \"--out\\\nput=x\"",
+		"echo x | uniq - out.txt",
+		"uniq -- - -out",
+		"uniq -c in.txt",
+		"go vet -fix .",
+		"go doc -http",
 	}
 	for _, c := range bad {
 		if err := CheckReadOnly(c, t.TempDir(), nil); err == nil {
@@ -117,19 +145,47 @@ func TestReadOnlyGlobMatchingFlags(t *testing.T) {
 }
 
 func TestReadOnlySandboxBlocksWrites(t *testing.T) {
-	if _, err := exec.LookPath("sandbox-exec"); err != nil || runtime.GOOS != "darwin" {
-		t.Skip("no sandbox-exec")
+	if !HasSandbox() {
+		t.Skip("no OS sandbox")
+	}
+	allowed, _ := filepath.EvalSymlinks(t.TempDir())
+	target := filepath.Join(t.TempDir(), "probe.txt")
+	t.Cleanup(func() { os.Remove(target) })
+	out, _ := sandboxCmd(context.Background(), "find . -maxdepth 0 -fprint "+target, allowed).CombinedOutput()
+	if _, err := os.Stat(target); err == nil {
+		t.Errorf("sandbox allowed a write outside TMP: %s", out)
+	}
+	if err := sandboxCmd(context.Background(), "echo ok > "+filepath.Join(allowed, "ok.txt"), allowed).Run(); err != nil {
+		t.Errorf("write to the allowed dir failed: %v", err)
+	}
+}
+
+func TestReadOnlyBashThroughRegistry(t *testing.T) {
+	dir := t.TempDir()
+	env := &Env{Cwd: dir, ReadOnly: func() bool { return true }, SpillDir: t.TempDir()}
+	res := NewRegistry(Bash()).Execute(context.Background(), env, []llm.Block{{ID: "1", Name: "bash", Input: json.RawMessage(`{"command":"touch x"}`)}}, nopUI{})
+	if !res[0].IsError || !strings.Contains(res[0].Text, "read-only") {
+		t.Errorf("touch allowed: %+v", res[0])
+	}
+	if _, err := os.Stat(filepath.Join(dir, "x")); err == nil {
+		t.Error("file created in read-only mode")
+	}
+}
+
+func TestReadOnlyGitIgnoresFsmonitor(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
 	}
 	dir := t.TempDir()
-	home := t.TempDir()
-	cmd := readOnlySandbox(context.Background(), "echo hi > "+filepath.Join(home, "x.txt")+"; ls "+dir)
-	out, _ := cmd.CombinedOutput()
-	if _, err := os.Stat(filepath.Join(home, "x.txt")); err == nil && !strings.HasPrefix(home, os.TempDir()) {
-		t.Errorf("sandbox allowed a write: %s", out)
+	mark := filepath.Join(t.TempDir(), "fsmonitor-ran")
+	for _, args := range [][]string{{"init", "-q"}, {"config", "core.fsmonitor", "touch " + mark}} {
+		if out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
 	}
-	cmd = readOnlySandbox(context.Background(), "echo hi > /Users/Shared/aicode-sbx-probe-$$")
-	out, _ = cmd.CombinedOutput()
-	if !strings.Contains(string(out), "not permitted") {
-		t.Errorf("expected write denial, got %q", out)
+	env := &Env{Cwd: dir, ReadOnly: func() bool { return true }, SpillDir: t.TempDir()}
+	runBash(context.Background(), env, json.RawMessage(`{"command":"git status"}`), nil)
+	if _, err := os.Stat(mark); err == nil {
+		t.Error("core.fsmonitor ran in read-only mode")
 	}
 }

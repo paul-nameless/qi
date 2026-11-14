@@ -45,6 +45,11 @@ func TestProfiles(t *testing.T) {
 	path := filepath.Join(dir, "config.yml")
 	os.WriteFile(path, []byte(sample), 0o600)
 	os.WriteFile(filepath.Join(dir, "legacy.yml"), []byte("model: legacy-model\nprovider: claude\n"), 0o600)
+	v1 := filepath.Join(dir, "v1.yml")
+	os.WriteFile(v1, []byte("api_key_shell: \"pass show x\"\nprovider: \"claude\"\nmodel: claude-sonnet-4-20250514\n"), 0o600)
+	if c, err := Load(v1, ""); err != nil || c.API != "anthropic" || c.APIKeyShell != "pass show x" {
+		t.Errorf("v1 config must keep its api_key_shell: %+v %v", c, err)
+	}
 
 	c, err := Load(path, "")
 	if err != nil {
@@ -72,6 +77,14 @@ func TestProfiles(t *testing.T) {
 	}
 	if c, _ := Load(path, "local"); c.BaseURL != "http://localhost:8080/v1" || c.APIKey != "or-key" {
 		t.Errorf("profile base_url should win over its provider: %+v", c)
+	}
+	os.WriteFile(filepath.Join(dir, "filelocal.yml"), []byte("provider: openrouter\nbase_url: http://localhost:9/v1\nmodel: q\n"), 0o600)
+	fl, err := Load(path, "filelocal")
+	if err != nil || fl.BaseURL != "http://localhost:9/v1" || fl.APIKey != "or-key" {
+		t.Errorf("file profile base_url should win: %+v %v", fl, err)
+	}
+	if err := fl.UseProvider("openrouter"); err != nil || fl.BaseURL != "http://localhost:9/v1" {
+		t.Errorf("re-selecting the current provider must keep the profile url: %+v", fl)
 	}
 	if names := c.ProfileNames(); len(names) != 3 || names[0] != "glm" {
 		t.Errorf("names %v", names)

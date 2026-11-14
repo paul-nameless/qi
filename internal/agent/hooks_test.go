@@ -90,6 +90,13 @@ func TestStopPromptAndPostHooks(t *testing.T) {
 	}
 }
 
+func TestLegacyDecisionBlock(t *testing.T) {
+	h := writeHooks(t, `{"PreToolUse":[{"hooks":[{"type":"command","command":"echo '{\"decision\":\"block\",\"reason\":\"r\"}'"}]}]}`)
+	if block, reason, _ := h.PreToolUse(context.Background(), llm.Block{Name: "bash", Input: json.RawMessage(`{}`)}); !block || reason != "r" {
+		t.Errorf("legacy block: %v %q", block, reason)
+	}
+}
+
 func TestHookJSONIgnoredOnNonZeroExit(t *testing.T) {
 	h := writeHooks(t, `{"PreToolUse":[{"hooks":[{"type":"command","command":"echo '{\"decision\":\"block\",\"reason\":\"x\"}'; exit 1"}]}]}`)
 	if block, _, _ := h.PreToolUse(context.Background(), llm.Block{Name: "bash", Input: json.RawMessage(`{}`)}); block {

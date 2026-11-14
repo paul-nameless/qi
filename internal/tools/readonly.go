@@ -25,7 +25,7 @@ var forbiddenArgs = map[string][]string{
 	"file":       {"-C", "--compile"},
 	"git":        {"--output", "-O", "--open-files-in-pager", "--ext-diff", "--textconv"},
 	"git branch": {"-d", "-D", "-m", "-M", "-c", "-C", "-f", "-u", "--delete", "--move", "--copy", "--force", "--set-upstream-to", "--unset-upstream", "--edit-description", "--track", "--no-track", "--create-reflog"},
-	"go":         {"-toolexec", "-exec", "-vettool", "-modfile", "-overlay", "-mod"},
+	"go":         {"-toolexec", "-exec", "-vettool", "-modfile", "-overlay", "-mod", "-fix", "-http"},
 	"go env":     {"-w", "-u"},
 }
 
@@ -127,10 +127,19 @@ func checkPositional(words []string, sub string) error {
 	switch {
 	case sub == "git branch" && len(positional) > 0 && !contains(words, "--list") && !contains(words, "-l"):
 		return errors.New("git branch with a name creates a branch")
-	case words[0] == "uniq" && (len(positional) > 1 || (len(positional) == 1 && strings.ContainsAny(positional[0], "*?["))):
-		return errors.New("uniq with two files writes the second")
+	case words[0] == "uniq" && uniqHasFiles(words[1:]):
+		return errors.New("uniq is allowed only in pipes, without file arguments")
 	}
 	return nil
+}
+
+func uniqHasFiles(args []string) bool {
+	for _, a := range args {
+		if a == "-" || a == "--" || !strings.HasPrefix(a, "-") {
+			return true
+		}
+	}
+	return false
 }
 
 func contains(ws []string, s string) bool {
@@ -211,19 +220,28 @@ func splitCommand(s string) ([][]string, error) {
 			i = j
 		case r == '"':
 			j := i + 1
-			for j < len(rs) && rs[j] != '"' {
+			for ; j < len(rs) && rs[j] != '"'; j++ {
 				switch rs[j] {
 				case '\\':
-					j++
+					if j+1 >= len(rs) || rs[j+1] == '\n' {
+						return nil, errors.New("line continuations are not allowed")
+					}
+					if strings.ContainsRune("$`\"\\", rs[j+1]) {
+						j++
+					}
+					cur.WriteRune(rs[j])
+					if rs[j] == '$' || rs[j] == '`' {
+						continue
+					}
 				case '`', '$':
 					return nil, errors.New("expansions ($, `) are not allowed in read-only mode")
+				default:
+					cur.WriteRune(rs[j])
 				}
-				j++
 			}
 			if j >= len(rs) {
 				return nil, errors.New("unterminated quote")
 			}
-			cur.WriteString(string(rs[i+1 : j]))
 			inWord = true
 			i = j
 		case r == '`' || r == '$':

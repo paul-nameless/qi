@@ -95,3 +95,12 @@ func AskTrust(dir string, commands []string) bool {
 	}
 	return Trust(dir) == nil
 }
+
+func SelectHookFiles(roots, configured []string, interactive bool, ask func(dir string, cmds []string) bool) (files []string, skipped bool) {
+	user, project := SplitHookFiles(ExpandPaths(roots, configured))
+	cmds := HookCommands(project)
+	if len(cmds) == 0 || Trusted(roots[0]) || (interactive && ask(roots[0], cmds)) {
+		return append(user, project...), false
+	}
+	return user, true
+}

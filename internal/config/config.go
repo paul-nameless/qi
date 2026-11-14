@@ -61,6 +61,7 @@ type Config struct {
 	Profiles        map[string]any       `yaml:"profiles"`
 	DefaultProfile  string               `yaml:"default_profile"`
 	Profile         string               `yaml:"-"`
+	profileRaw      []byte
 }
 
 func Dir() string {
@@ -104,11 +105,11 @@ func Load(path, profile string) (Config, error) {
 			return c, err
 		}
 	}
-	if err := c.UseProvider(c.Provider); err != nil {
+	if err := c.applyProvider(c.Provider); err != nil {
 		return c, err
 	}
-	if p, ok := c.Profiles[c.Profile]; ok {
-		if err := c.overlay(p); err != nil {
+	if c.profileRaw != nil {
+		if err := yaml.Unmarshal(c.profileRaw, &c); err != nil {
 			return c, err
 		}
 	}
@@ -116,33 +117,32 @@ func Load(path, profile string) (Config, error) {
 	return c, nil
 }
 
-func (c *Config) overlay(p any) error {
-	data, err := yaml.Marshal(p)
-	if err != nil {
-		return err
-	}
-	return yaml.Unmarshal(data, c)
-}
-
 func (c *Config) applyProfile(name string) error {
+	var raw []byte
 	if p, ok := c.Profiles[name]; ok {
-		if err := c.overlay(p); err != nil {
+		data, err := yaml.Marshal(p)
+		if err != nil {
 			return fmt.Errorf("profile %s: %w", name, err)
 		}
-		c.Profile = name
-		return nil
-	}
-	path := name
-	if !strings.Contains(path, "/") && !strings.HasSuffix(path, ".yml") {
-		path = filepath.Join(Dir(), path+".yml")
-	}
-	if err := mergeFile(c, ExpandHome(path), true); err != nil {
+		raw = data
+	} else {
+		path := name
+		if !strings.Contains(path, "/") && !strings.HasSuffix(path, ".yml") {
+			path = filepath.Join(Dir(), path+".yml")
+		}
+		data, err := os.ReadFile(ExpandHome(path))
 		if errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("unknown profile %q (not in profiles: and no %s)", name, path)
 		}
-		return err
+		if err != nil {
+			return err
+		}
+		raw = data
 	}
-	c.Profile = name
+	if err := yaml.Unmarshal(raw, c); err != nil {
+		return fmt.Errorf("profile %s: %w", name, err)
+	}
+	c.Profile, c.profileRaw = name, raw
 	return nil
 }
 
@@ -153,15 +153,27 @@ var builtinProviders = map[string]Provider{
 }
 
 func (c *Config) UseProvider(name string) error {
+	if name == c.Provider && c.API != "" {
+		return nil
+	}
+	return c.applyProvider(name)
+}
+
+func (c *Config) applyProvider(name string) error {
 	if name == "" {
 		return nil
 	}
 	p, ok := c.Providers[name]
 	if !ok {
-		p, ok = builtinProviders[strings.ToLower(name)]
-	}
-	if !ok {
-		return fmt.Errorf("unknown provider %q", name)
+		b, isBuiltin := builtinProviders[strings.ToLower(name)]
+		if !isBuiltin {
+			return fmt.Errorf("unknown provider %q", name)
+		}
+		if _, wasNamed := c.Providers[c.Provider]; !wasNamed {
+			c.Provider, c.API, c.BaseURL = name, b.API, ""
+			return nil
+		}
+		p = b
 	}
 	c.Provider = name
 	c.API, c.BaseURL, c.APIKey, c.APIKeyShell, c.CacheControl = p.API, p.BaseURL, p.APIKey, p.APIKeyShell, p.CacheControl

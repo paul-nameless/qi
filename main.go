@@ -166,17 +166,11 @@ func run(o options) error {
 }
 
 func hookFiles(roots, configured []string, headless bool, display *ui.Printer) []string {
-	user, project := agent.SplitHookFiles(agent.ExpandPaths(roots, configured))
-	cmds := agent.HookCommands(project)
-	switch {
-	case len(cmds) == 0, agent.Trusted(roots[0]):
-		return append(user, project...)
-	case !headless && agent.AskTrust(roots[0], cmds):
-		return append(user, project...)
-	case headless && os.Getenv("AICODE_SUBAGENT") == "":
+	files, skipped := agent.SelectHookFiles(roots, configured, !headless, agent.AskTrust)
+	if skipped && headless && os.Getenv("AICODE_SUBAGENT") == "" {
 		display.Info("skipping untrusted project hooks in " + roots[0] + " (start aicode interactively there once to trust them)")
 	}
-	return user
+	return files
 }
 
 func submitPrompt(ctx context.Context, a *agent.Agent, hooks *agent.Hooks, prompt string) ([]llm.Block, error) {

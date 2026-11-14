@@ -62,6 +62,22 @@ func (e *Env) rel(p string) string {
 	return p
 }
 
+func rewrapInput(call llm.Block, input json.RawMessage) json.RawMessage {
+	if call.Name != "mcp_call" {
+		return input
+	}
+	var orig map[string]json.RawMessage
+	if json.Unmarshal(call.Input, &orig) != nil {
+		return input
+	}
+	orig["arguments"] = input
+	out, err := json.Marshal(orig)
+	if err != nil {
+		return input
+	}
+	return out
+}
+
 type Tool struct {
 	Def   llm.ToolDef
 	Run   func(ctx context.Context, env *Env, input json.RawMessage, progress func(string)) Result
@@ -164,7 +180,7 @@ func (r *Registry) runOne(ctx context.Context, env *Env, call llm.Block, ui UI) 
 				break
 			}
 			if input != nil {
-				call.Input = input
+				call.Input = rewrapInput(call, input)
 			}
 		}
 		res = t.Run(ctx, env, call.Input, func(s string) { ui.ToolProgress(call.ID, s) })

@@ -53,13 +53,7 @@ func (r *SubagentRunner) track(ctx context.Context) (context.Context, func()) {
 	}
 }
 
-func (r *SubagentRunner) Run(parent context.Context, prompt, model, provider, effort string, progress func(string)) (string, error) {
-	ctx, done := r.track(parent)
-	defer done()
-	exe, err := os.Executable()
-	if err != nil {
-		return "", err
-	}
+func (r *SubagentRunner) args(prompt, model, provider, effort string) []string {
 	args := []string{"-q", prompt, "-model", model}
 	if provider == "" {
 		provider = r.Provider
@@ -79,7 +73,17 @@ func (r *SubagentRunner) Run(parent context.Context, prompt, model, provider, ef
 	if r.ReadOnly() {
 		args = append(args, "-read-only")
 	}
-	cmd := exec.CommandContext(ctx, exe, args...)
+	return args
+}
+
+func (r *SubagentRunner) Run(parent context.Context, prompt, model, provider, effort string, progress func(string)) (string, error) {
+	ctx, done := r.track(parent)
+	defer done()
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	cmd := exec.CommandContext(ctx, exe, r.args(prompt, model, provider, effort)...)
 	cmd.Dir = r.Cwd
 	cmd.Env = append(os.Environ(), "AICODE_SUBAGENT=1")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

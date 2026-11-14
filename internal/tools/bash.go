@@ -14,7 +14,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/paul-nameless/aicode/internal/config"
 	"github.com/paul-nameless/aicode/internal/llm"
 )
 
@@ -98,24 +97,39 @@ func bashTimeout(requested, configured int) int {
 	return min(requested, 600)
 }
 
-const sandboxProfile = `(version 1)(allow default)(deny file-write*)(allow file-write* (literal "/dev/null") (literal "/dev/zero") (literal "/dev/tty") (literal "/dev/dtracehelper") (regex #"^/dev/fd/") (subpath (param "TMP")) (subpath (param "GOCACHE")) (subpath (param "GOMODCACHE")))`
+const sandboxProfile = `(version 1)(allow default)(deny file-write*)(allow file-write* (literal "/dev/null") (literal "/dev/zero") (literal "/dev/tty") (literal "/dev/dtracehelper") (regex #"^/dev/fd/") (subpath (param "TMP")))(deny process-exec (literal "/usr/bin/osascript") (literal "/usr/bin/open") (literal "/bin/launchctl") (literal "/usr/bin/defaults") (literal "/usr/bin/security") (literal "/usr/bin/sudo") (literal "/usr/bin/shortcuts"))`
 
 func readOnlySandbox(ctx context.Context, command string) *exec.Cmd {
-	sbx, err := exec.LookPath("sandbox-exec")
-	if runtime.GOOS != "darwin" || err != nil {
-		return exec.CommandContext(ctx, "bash", "-c", command)
-	}
 	tmp, _ := filepath.EvalSymlinks(os.TempDir())
-	cache, _ := os.UserCacheDir()
-	gocache := filepath.Join(cache, "go-build")
-	gomod := filepath.Join(config.Home(), "go", "pkg", "mod")
-	if v := os.Getenv("GOCACHE"); v != "" {
-		gocache = v
+	return sandboxCmd(ctx, command, tmp)
+}
+
+func sandboxCmd(ctx context.Context, command, tmp string) *exec.Cmd {
+	if runtime.GOOS == "darwin" {
+		if sbx, err := exec.LookPath("sandbox-exec"); err == nil {
+			return exec.CommandContext(ctx, sbx, "-D", "TMP="+tmp, "-p", sandboxProfile, "bash", "-c", command)
+		}
 	}
-	if v := os.Getenv("GOMODCACHE"); v != "" {
-		gomod = v
+	if bwrap, err := exec.LookPath("bwrap"); err == nil {
+		return exec.CommandContext(ctx, bwrap, "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--bind", tmp, tmp, "--die-with-parent", "bash", "-c", command)
 	}
-	return exec.CommandContext(ctx, sbx, "-D", "TMP="+tmp, "-D", "GOCACHE="+gocache, "-D", "GOMODCACHE="+gomod, "-p", sandboxProfile, "bash", "-c", command)
+	return exec.CommandContext(ctx, "bash", "-c", command)
+}
+
+func HasSandbox() bool {
+	if runtime.GOOS == "darwin" {
+		_, err := exec.LookPath("sandbox-exec")
+		return err == nil
+	}
+	_, err := exec.LookPath("bwrap")
+	return err == nil
+}
+
+func readOnlyEnv() []string {
+	return []string{
+		"GIT_CONFIG_COUNT=2", "GIT_CONFIG_KEY_0=core.fsmonitor", "GIT_CONFIG_VALUE_0=", "GIT_CONFIG_KEY_1=diff.external", "GIT_CONFIG_VALUE_1=",
+		"GOCACHE=" + filepath.Join(os.TempDir(), "aicode-readonly-gocache"), "GOFLAGS=-mod=readonly", "GOPROXY=off",
+	}
 }
 
 func runBash(ctx context.Context, env *Env, in json.RawMessage, progress func(string)) Result {
@@ -142,7 +156,7 @@ func runBash(ctx context.Context, env *Env, in json.RawMessage, progress func(st
 	cmd.Dir = env.Cwd
 	cmd.Env = append(os.Environ(), "PAGER=cat", "GIT_PAGER=cat", "GIT_TERMINAL_PROMPT=0", "TERM=dumb", "NO_COLOR=1", "CLICOLOR=0")
 	if env.readOnly() {
-		cmd.Env = append(cmd.Env, "GIT_CONFIG_COUNT=2", "GIT_CONFIG_KEY_0=core.fsmonitor", "GIT_CONFIG_VALUE_0=", "GIT_CONFIG_KEY_1=diff.external", "GIT_CONFIG_VALUE_1=")
+		cmd.Env = append(cmd.Env, readOnlyEnv()...)
 	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }

@@ -41,7 +41,7 @@ type Agent struct {
 	readOnly  atomic.Bool
 	announced bool
 	mu        sync.Mutex
-	steer     []string
+	steer     []llm.Block
 	ctxTokens int
 	busy      sync.Mutex
 }
@@ -98,13 +98,13 @@ func (a *Agent) SetContextTokens(n int) {
 	a.ctxTokens = n
 }
 
-func (a *Agent) Queue(text string) {
+func (a *Agent) Queue(blocks []llm.Block) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.steer = append(a.steer, text)
+	a.steer = append(a.steer, blocks...)
 }
 
-func (a *Agent) DrainQueue() []string {
+func (a *Agent) DrainQueue() []llm.Block {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	q := a.steer
@@ -247,7 +247,8 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 			}
 		}
 		if q := a.DrainQueue(); len(q) > 0 {
-			next = append(next, llm.Block{Type: llm.BlockText, Text: "<user-message sent while you were working>\n" + strings.Join(q, "\n\n") + "\n</user-message>"})
+			next = append(next, llm.Block{Type: llm.BlockText, Text: "The user sent this while you were working:"})
+			next = append(next, q...)
 		}
 		if mb, ok := a.modeBlock(); ok {
 			next = append(next, mb)
