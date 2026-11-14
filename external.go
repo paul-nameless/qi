@@ -148,6 +148,43 @@ func (r *repl) runTTY(cmd *exec.Cmd) error {
 	return r.editor.RunTTY(cmd)
 }
 
+func (r *repl) view(key, command, content, ext string) error {
+	if !r.toolOn(command) {
+		return fmt.Errorf("%s is off (%s not found)", key, firstWord(command))
+	}
+	vars := map[string]string{}
+	var stdin io.Reader = strings.NewReader(content)
+	if strings.Contains(command, "{file}") {
+		f, err := os.CreateTemp("", "aicode-*"+ext)
+		if err != nil {
+			return err
+		}
+		defer os.Remove(f.Name())
+		_, err = f.WriteString(content)
+		if cerr := f.Close(); err == nil {
+			err = cerr
+		}
+		if err != nil {
+			return err
+		}
+		vars["file"], stdin = f.Name(), nil
+	}
+	cmd := toolCmd(expandTool(command, r.agent.Cfg.Picker, vars))
+	cmd.Stdin = stdin
+	if err := r.runTTY(cmd); err != nil {
+		return fmt.Errorf("%s: %w", key, err)
+	}
+	return nil
+}
+
+func firstWord(command string) string {
+	f := strings.Fields(command)
+	if len(f) == 0 {
+		return "command"
+	}
+	return f[0]
+}
+
 func (r *repl) toolOn(command string) bool {
 	return toolAvailable(command, r.agent.Cfg.Picker)
 }
@@ -161,6 +198,7 @@ func (r *repl) toolKeys() [][2]string {
 		{"history_picker", cfg.HistoryPicker},
 		{"paste_image_cmd", cfg.PasteImageCmd},
 		{"session_picker", cfg.SessionPicker},
+		{"pager", cfg.Pager},
 	}
 }
 

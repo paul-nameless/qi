@@ -98,6 +98,8 @@ var builtinCommands = []pickItem{
 	{"reload", "re-read skills, commands and CLAUDE.md files"},
 	{"compact", "summarize the conversation to free context"},
 	{"resume", "switch to another session"},
+	{"history", "open the conversation in the pager"},
+	{"out", "open the last cut-off tool output in the pager"},
 	{"model", "switch the model"},
 	{"profile", "switch the profile"},
 	{"effort", "switch the reasoning effort"},

@@ -69,6 +69,7 @@ type Config struct {
 	HistoryPicker   string               `yaml:"history_picker"`
 	PasteImageCmd   string               `yaml:"paste_image_cmd"`
 	SessionPicker   string               `yaml:"session_picker"`
+	Pager           string               `yaml:"pager"`
 	Providers       map[string]Provider  `yaml:"providers"`
 	Profiles        map[string]any       `yaml:"profiles"`
 	DefaultProfile  string               `yaml:"default_profile"`
@@ -308,6 +309,8 @@ func (c *Config) toolDefaults() {
 	setDefault(&c.HistoryPicker, "{picker}")
 	setDefault(&c.PasteImageCmd, pick(mac, "pngpaste {file}", firstOnPath("wl-paste -t image/png > {file}", "xclip -selection clipboard -t image/png -o > {file}")))
 	setDefault(&c.SessionPicker, `{picker} --with-nth=2.. --nth=.. --preview '"$AICODE_BIN" -show {1}' --preview-window=right,60%`)
+	setDefault(&c.Pager, os.Getenv("PAGER"))
+	setDefault(&c.Pager, "less -R")
 	setDefault(&c.FilePicker, `(git ls-files -co --exclude-standard 2>/dev/null || fd -t f || find . -type f -not -path '*/.git/*') | {picker}`)
 }
 

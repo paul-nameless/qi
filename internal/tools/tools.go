@@ -272,15 +272,19 @@ func cutEnd(s string, n int) string {
 	return s[i:]
 }
 
-func (e *Env) spill(out string) string {
-	dir := e.SpillDir
-	if dir == "" {
-		base, err := os.UserCacheDir()
-		if err != nil {
-			base = os.TempDir()
-		}
-		dir = filepath.Join(base, "aicode", "out")
+func (e *Env) SpillPath() string {
+	if e.SpillDir != "" {
+		return e.SpillDir
 	}
+	base, err := os.UserCacheDir()
+	if err != nil {
+		base = os.TempDir()
+	}
+	return filepath.Join(base, "aicode", "out")
+}
+
+func (e *Env) spill(out string) string {
+	dir := e.SpillPath()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "(not saved: " + err.Error() + ")"
 	}

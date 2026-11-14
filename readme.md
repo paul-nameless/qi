@@ -79,7 +79,7 @@ Compaction summarizes the conversation into a structured handoff (updated on lat
 
 Keys: shift+tab toggles read-only, ctrl+g edits the prompt in `$EDITOR`, ctrl+r searches prompt history, ctrl+v attaches the clipboard image, `@` picks files, alt+enter or ctrl+j inserts a newline, ctrl+c or esc cancels a turn. Text typed while the agent works is queued and delivered after the next tool results.
 
-Commands: `/help`, `/clear`, `/context`, `/reload`, `/compact [focus]`, `/resume`, `/model`, `/profile`, `/effort`, `/skills`, `/exit`, and `/<skill-or-command> [args]`. Typing `/` on an empty line opens a picker (fzf by default; set `picker:` in the config to use another command that reads `name<TAB>description` lines and prints the chosen one).
+Commands: `/help`, `/clear`, `/context`, `/reload`, `/compact [focus]`, `/resume`, `/history`, `/out`, `/model`, `/profile`, `/effort`, `/skills`, `/exit`, and `/<skill-or-command> [args]`. Typing `/` on an empty line opens a picker (fzf by default; set `picker:` in the config to use another command that reads `name<TAB>description` lines and prints the chosen one).
 
 ## External tools
 
@@ -90,3 +90,4 @@ UI features reuse CLI tools you already have. Each is a shell string in the conf
 - `history_picker` (default `{picker}`): ctrl+r picks a prompt from history (newest first) and puts it in the input line without sending it.
 - `paste_image_cmd` (default `pngpaste {file}` on macOS, `wl-paste -t image/png > {file}` or `xclip -selection clipboard -t image/png -o > {file}` on Linux): ctrl+v saves the clipboard image under the user cache dir (`aicode/paste/<n>.png`) and attaches it as `[image N]`.
 - `session_picker` (default `{picker} --with-nth=2.. --nth=.. --preview '"$AICODE_BIN" -show {1}' --preview-window=right,60%`): `/resume` and `aicode -r` pick a session of this directory (newest first, with age, message count and first prompt) and switch to it. `$AICODE_BIN` is set to the running aicode binary for every tool; `aicode -show <id>` prints a session as plain text. The default uses fzf flags, so set it to `{picker}` with another picker.
+- `pager` (default `$PAGER`, else `less -R`): `/history` opens the whole conversation with tool calls, `/out` opens the full output of the last cut-off tool result.

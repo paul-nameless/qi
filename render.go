@@ -33,7 +33,7 @@ func renderTranscript(msgs []llm.Message, resultLines int) string {
 			renderBlock(&b, m.Role, blk, resultLines)
 		}
 	}
-	return ui.Sanitize(b.String())
+	return strings.TrimLeft(ui.Sanitize(b.String()), "\n")
 }
 
 func renderBlock(b *strings.Builder, role string, blk llm.Block, resultLines int) {

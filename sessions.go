@@ -41,7 +41,7 @@ func showSession(w io.Writer, ref string) error {
 	if err != nil {
 		return err
 	}
-	_, err = io.WriteString(w, strings.TrimLeft(renderTranscript(transcript(entries), previewResultLines), "\n"))
+	_, err = io.WriteString(w, renderTranscript(transcript(entries), previewResultLines))
 	return err
 }
 
