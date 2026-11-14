@@ -50,9 +50,10 @@ func TestSelectHookFilesAndRoots(t *testing.T) {
 		t.Fatalf("roots %v", roots)
 	}
 	never := func(string, []string) bool { return false }
-	files, skipped := SelectHookFiles(roots, []string{".claude/settings.json"}, false, never)
-	if !skipped || len(files) != 0 {
-		t.Errorf("untrusted headless: %v %v", files, skipped)
+	asked := false
+	files, skipped := SelectHookFiles(roots, []string{".claude/settings.json"}, false, func(string, []string) bool { asked = true; return true })
+	if !skipped || len(files) != 0 || asked {
+		t.Errorf("untrusted headless: %v %v asked=%v", files, skipped, asked)
 	}
 	files, skipped = SelectHookFiles(roots, []string{".claude/settings.json"}, true, func(string, []string) bool { return true })
 	if skipped || len(files) != 2 {
@@ -75,10 +76,10 @@ func TestSubagentArgsAndStopAll(t *testing.T) {
 	if strings.Contains(strings.Join(r.args("x", "m", "anth", ""), " "), "-read-only") {
 		t.Error("read-only flag without read-only mode")
 	}
-	ctx, done := r.track(context.Background())
+	ctx, done := r.Track(context.Background())
 	defer done()
 	r.StopAll()
-	if context.Cause(ctx) != errModeChanged {
+	if context.Cause(ctx) != ErrModeChanged {
 		t.Errorf("cause %v", context.Cause(ctx))
 	}
 }

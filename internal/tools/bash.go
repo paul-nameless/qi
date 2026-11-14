@@ -127,7 +127,7 @@ func HasSandbox() bool {
 
 func readOnlyEnv() []string {
 	return []string{
-		"GIT_CONFIG_COUNT=2", "GIT_CONFIG_KEY_0=core.fsmonitor", "GIT_CONFIG_VALUE_0=", "GIT_CONFIG_KEY_1=diff.external", "GIT_CONFIG_VALUE_1=",
+		"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=core.fsmonitor", "GIT_CONFIG_VALUE_0=",
 		"GOCACHE=" + filepath.Join(os.TempDir(), "aicode-readonly-gocache"), "GOFLAGS=-mod=readonly", "GOPROXY=off",
 	}
 }

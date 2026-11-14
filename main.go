@@ -79,16 +79,8 @@ func run(o options) error {
 		display = ui.NewPrinter(os.Stdout)
 	}
 
-	a := &agent.Agent{Cfg: cfg, Cwd: cwd, Provider: newProvider(cfg, key), UI: display, Headless: headless}
-	a.SetReadOnly(o.readOnly || cfg.ReadOnly)
-	env := &tools.Env{Cwd: cwd, ReadOnly: a.ReadOnly, Allow: cfg.ReadOnlyAllow, BashTimeout: cfg.BashTimeout}
-	toolset := []*tools.Tool{tools.Read(), tools.Write(), tools.Edit(), tools.Bash()}
-	var runner *agent.SubagentRunner
-	if !isSub {
-		runner = &agent.SubagentRunner{ConfigPath: o.configPath, Profile: cfg.Profile, Provider: cfg.Provider, ReadOnly: a.ReadOnly, Cwd: cwd}
-		env.Subagent = runner.Run
-		toolset = append(toolset, tools.Subagent(cfg.Model, cfg.SubagentModels, cfg.SubagentEfforts))
-	}
+	a, runner, toolset := buildAgent(cfg, o, cwd, newProvider(cfg, key), display, headless, isSub)
+	env := a.Env
 	if len(cfg.MCP) > 0 {
 		manager := mcp.NewManager(cfg.MCP)
 		defer manager.Close()
@@ -204,6 +196,20 @@ func readStdin(wait bool) string {
 	}
 	rest, _ := io.ReadAll(os.Stdin)
 	return string(head) + string(rest)
+}
+
+func buildAgent(cfg config.Config, o options, cwd string, p llm.Provider, display agent.Display, headless, isSub bool) (*agent.Agent, *agent.SubagentRunner, []*tools.Tool) {
+	a := &agent.Agent{Cfg: cfg, Cwd: cwd, Provider: p, UI: display, Headless: headless}
+	a.SetReadOnly(o.readOnly || cfg.ReadOnly)
+	a.Env = &tools.Env{Cwd: cwd, ReadOnly: a.ReadOnly, Allow: cfg.ReadOnlyAllow, BashTimeout: cfg.BashTimeout}
+	toolset := []*tools.Tool{tools.Read(), tools.Write(), tools.Edit(), tools.Bash()}
+	var runner *agent.SubagentRunner
+	if !isSub {
+		runner = &agent.SubagentRunner{ConfigPath: o.configPath, Profile: cfg.Profile, Provider: cfg.Provider, ReadOnly: a.ReadOnly, Cwd: cwd}
+		a.Env.Subagent = runner.Run
+		toolset = append(toolset, tools.Subagent(cfg.Model, cfg.SubagentModels, cfg.SubagentEfforts))
+	}
+	return a, runner, toolset
 }
 
 func newProvider(cfg config.Config, key string) llm.Provider {

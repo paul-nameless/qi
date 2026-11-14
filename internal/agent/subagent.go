@@ -25,17 +25,17 @@ type SubagentRunner struct {
 	next       int
 }
 
-var errModeChanged = errors.New("stopped because read-only mode was switched on")
+var ErrModeChanged = errors.New("stopped because read-only mode was switched on")
 
 func (r *SubagentRunner) StopAll() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, cancel := range r.running {
-		cancel(errModeChanged)
+		cancel(ErrModeChanged)
 	}
 }
 
-func (r *SubagentRunner) track(ctx context.Context) (context.Context, func()) {
+func (r *SubagentRunner) Track(ctx context.Context) (context.Context, func()) {
 	ctx, cancel := context.WithCancelCause(ctx)
 	r.mu.Lock()
 	if r.running == nil {
@@ -77,7 +77,7 @@ func (r *SubagentRunner) args(prompt, model, provider, effort string) []string {
 }
 
 func (r *SubagentRunner) Run(parent context.Context, prompt, model, provider, effort string, progress func(string)) (string, error) {
-	ctx, done := r.track(parent)
+	ctx, done := r.Track(parent)
 	defer done()
 	exe, err := os.Executable()
 	if err != nil {

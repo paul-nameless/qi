@@ -21,15 +21,15 @@ import (
 )
 
 type repl struct {
-	agent      *agent.Agent
-	display    *ui.Printer
-	editor     *ui.Editor
-	term       *ui.Terminal
-	skills     []agent.Skill
-	commands   []agent.Command
-	hooks      *agent.Hooks
-	runner     *agent.SubagentRunner
-	opts       options
+	agent    *agent.Agent
+	display  *ui.Printer
+	editor   *ui.Editor
+	term     *ui.Terminal
+	skills   []agent.Skill
+	commands []agent.Command
+	hooks    *agent.Hooks
+	runner   *agent.SubagentRunner
+	opts     options
 
 	mu         sync.Mutex
 	turnCancel context.CancelFunc

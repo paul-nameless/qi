@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -78,6 +79,14 @@ func TestCheckReadOnly(t *testing.T) {
 		"rg --pre=x foo",
 		"rg --hostname-bin=x foo",
 		"find . -execdir touch pwned ;",
+		"find . -exec touch x \\;",
+		"find . -fprint0 o",
+		"find . -fprintf o x",
+		"find . -okdir rm \\;",
+		"file --compile -m x",
+		"go env -u GOFLAGS",
+		"git branch --edit-description",
+		"ls a#; touch pwned",
 		"echo #'\ntouch pwned #'",
 		"ls #'\ncp a b #'",
 		"cat <<EOF\necho '\nEOF\ntouch pwned #'",
@@ -157,12 +166,37 @@ func TestReadOnlySandboxBlocksWrites(t *testing.T) {
 	allowed, _ := filepath.EvalSymlinks(t.TempDir())
 	target := filepath.Join(t.TempDir(), "probe.txt")
 	t.Cleanup(func() { os.Remove(target) })
-	out, _ := sandboxCmd(context.Background(), "find . -maxdepth 0 -fprint "+target, allowed).CombinedOutput()
-	if _, err := os.Stat(target); err == nil {
+	out, _ := sandboxCmd(context.Background(), "echo x > "+target, allowed).CombinedOutput()
+	if _, err := os.Stat(target); err == nil || !strings.Contains(string(out), "not permitted") {
 		t.Errorf("sandbox allowed a write outside TMP: %s", out)
 	}
 	if err := sandboxCmd(context.Background(), "echo ok > "+filepath.Join(allowed, "ok.txt"), allowed).Run(); err != nil {
 		t.Errorf("write to the allowed dir failed: %v", err)
+	}
+	if runtime.GOOS == "darwin" {
+		bin := filepath.Join(allowed, "e")
+		data, _ := os.ReadFile("/bin/echo")
+		os.WriteFile(bin, data, 0o700)
+		if out, err := sandboxCmd(context.Background(), bin+" hi", allowed).CombinedOutput(); err == nil {
+			t.Errorf("binary in TMP ran under the sandbox: %s", out)
+		}
+		if out, err := sandboxCmd(context.Background(), "/usr/bin/open -h", allowed).CombinedOutput(); err == nil {
+			t.Errorf("open ran under the sandbox: %s", out)
+		}
+	}
+}
+
+func TestRunBashUsesSandbox(t *testing.T) {
+	if !HasSandbox() {
+		t.Skip("no OS sandbox")
+	}
+	t.Setenv("TMPDIR", t.TempDir())
+	outside := t.TempDir()
+	target := filepath.Join(outside, "x")
+	env := &Env{Cwd: outside, ReadOnly: func() bool { return true }, Allow: []string{"touch"}, SpillDir: t.TempDir()}
+	runBash(context.Background(), env, json.RawMessage(`{"command":"touch `+target+`"}`), nil)
+	if _, err := os.Stat(target); err == nil {
+		t.Error("allowlisted touch wrote outside TMP: runBash is not sandboxed")
 	}
 }
 
