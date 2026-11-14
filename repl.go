@@ -284,19 +284,25 @@ func (r *repl) stopIdle() {
 	}
 }
 
+func (r *repl) resolve(profile string) (config.Config, error) {
+	return config.Resolve(r.opts.configPath, profile, r.opts.provider, "", r.opts.effort)
+}
+
 func (r *repl) switchProfile(name string) error {
-	cfg, err := config.Resolve(r.opts.configPath, name, "", "", r.opts.effort)
+	r.opts.provider = ""
+	cfg, err := r.resolve(name)
 	if err != nil {
 		return err
 	}
-	return r.apply(cfg)
+	return r.apply(cfg, cfg.Provider)
 }
 
 func (r *repl) switchModel(name string) error {
-	cfg, err := config.Resolve(r.opts.configPath, r.agent.Cfg.Profile, r.opts.provider, "", r.opts.effort)
+	cfg, err := r.resolve(r.agent.Cfg.Profile)
 	if err != nil {
 		return err
 	}
+	base := cfg.Provider
 	menus := [][]config.SubagentModel{cfg.SubagentModels}
 	for _, p := range cfg.ProfileNames() {
 		if pc, err := config.Load(r.opts.configPath, p); err == nil {
@@ -314,11 +320,11 @@ func (r *repl) switchModel(name string) error {
 				}
 			}
 			cfg.Model = m.Model
-			return r.apply(cfg)
+			return r.apply(cfg, base)
 		}
 	}
 	cfg.Model = name
-	return r.apply(cfg)
+	return r.apply(cfg, base)
 }
 
 func withProvider(menu []config.SubagentModel, provider string) []config.SubagentModel {
@@ -332,7 +338,7 @@ func withProvider(menu []config.SubagentModel, provider string) []config.Subagen
 	return out
 }
 
-func (r *repl) apply(cfg config.Config) error {
+func (r *repl) apply(cfg config.Config, baseProvider string) error {
 	key, err := cfg.ResolveAPIKey()
 	if err != nil {
 		return err
@@ -340,8 +346,8 @@ func (r *repl) apply(cfg config.Config) error {
 	r.agent.Reconfigure(cfg, newProvider(cfg, key))
 	r.agent.Env.Allow, r.agent.Env.BashTimeout = cfg.ReadOnlyAllow, cfg.BashTimeout
 	if r.runner != nil {
-		r.runner.Profile, r.runner.Provider = cfg.Profile, cfg.Provider
-		r.agent.Registry.Replace(tools.Subagent(cfg.Model, cfg.SubagentModels, cfg.SubagentEfforts))
+		r.runner.Profile, r.runner.Provider = cfg.Profile, baseProvider
+		r.agent.Registry.Replace(tools.Subagent(cfg.Model, withProvider(cfg.SubagentModels, baseProvider), cfg.SubagentEfforts))
 	}
 	return nil
 }
