@@ -17,7 +17,7 @@ import (
 const helpText = `Commands:
   /help              this help
   /clear             start a new session
-  /compact           summarize the conversation to free context
+  /compact [focus]   summarize the conversation to free context (optional focus for the summary)
   /model [name]      show or switch the model (switching loses the prompt cache)
   /profile [name]    show or switch the profile
   /effort [level]    show or switch the reasoning effort (default, none, low, medium, high, xhigh, max)
@@ -52,7 +52,7 @@ func (r *repl) handleInput(line string) (string, bool) {
 			r.display.Info("new session " + r.agent.Session.ID)
 		}
 	case "compact":
-		err := r.cancellable(r.agent.Compact)
+		err := r.cancellable(func(ctx context.Context) error { return r.agent.Compact(ctx, args) })
 		if errors.Is(err, context.Canceled) {
 			r.display.Info("compaction cancelled")
 		} else if err != nil {

@@ -21,17 +21,18 @@ import (
 const Version = 1
 
 type Entry struct {
-	Type    string       `json:"type"`
-	ID      string       `json:"id"`
-	Parent  string       `json:"parent,omitempty"`
-	Time    string       `json:"time"`
-	Version int          `json:"version,omitempty"`
-	Cwd     string       `json:"cwd,omitempty"`
-	Kind    string       `json:"kind,omitempty"`
-	Model   string       `json:"model,omitempty"`
-	Message *llm.Message `json:"message,omitempty"`
-	Usage   *llm.Usage   `json:"usage,omitempty"`
-	Summary string       `json:"summary,omitempty"`
+	Type    string        `json:"type"`
+	ID      string        `json:"id"`
+	Parent  string        `json:"parent,omitempty"`
+	Time    string        `json:"time"`
+	Version int           `json:"version,omitempty"`
+	Cwd     string        `json:"cwd,omitempty"`
+	Kind    string        `json:"kind,omitempty"`
+	Model   string        `json:"model,omitempty"`
+	Message *llm.Message  `json:"message,omitempty"`
+	Usage   *llm.Usage    `json:"usage,omitempty"`
+	Summary string        `json:"summary,omitempty"`
+	Kept    []llm.Message `json:"kept,omitempty"`
 }
 
 type Session struct {
@@ -194,8 +195,8 @@ func Open(path string) (*Session, Loaded, error) {
 				ld.Messages = ld.Messages[:n-1]
 			}
 		case "compaction":
-			ld.Messages = []llm.Message{llm.UserText(e.Summary)}
-			ld.CtxTokens = len(e.Summary) / 4
+			ld.Messages = append([]llm.Message{llm.UserText(e.Summary)}, e.Kept...)
+			ld.CtxTokens = chars(ld.Messages) / 4
 		}
 	}
 	f.Close()
@@ -299,8 +300,18 @@ func (s *Session) Drop() error {
 	return s.write(Entry{Type: "drop"})
 }
 
-func (s *Session) Compaction(summary, model string) error {
-	return s.write(Entry{Type: "compaction", Summary: summary, Model: model})
+func (s *Session) Compaction(summary string, kept []llm.Message, model string) error {
+	return s.write(Entry{Type: "compaction", Summary: summary, Kept: kept, Model: model})
+}
+
+func chars(msgs []llm.Message) int {
+	n := 0
+	for _, m := range msgs {
+		for _, b := range m.Blocks {
+			n += len(b.Text) + len(b.Input)
+		}
+	}
+	return n
 }
 
 func (s *Session) Close() {

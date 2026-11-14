@@ -61,7 +61,7 @@ func TestRoundTrip(t *testing.T) {
 	reasoning := llm.Block{Type: llm.BlockReasoning, Raw: json.RawMessage(`{"type":"reasoning.encrypted","data":"x"}`), Model: "m"}
 	_ = s.Message(llm.UserText("first"), "m", nil)
 	_ = s.Message(llm.Message{Role: "assistant", Blocks: []llm.Block{reasoning, {Type: llm.BlockText, Text: "a"}}}, "m", &llm.Usage{Input: 100, Output: 20})
-	_ = s.Compaction("summary text", "m")
+	_ = s.Compaction("summary text", nil, "m")
 	_ = s.Message(llm.UserText("after"), "m", nil)
 	_ = s.Message(llm.Message{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: "b"}}}, "m", &llm.Usage{Input: 50, Output: 5})
 	s.Close()

@@ -145,11 +145,11 @@ func TestCompactBeforeNewPrompt(t *testing.T) {
 	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "new request"}}); err != nil {
 		t.Fatal(err)
 	}
-	if len(p.requests[0]) != 3 || !strings.Contains(lastText(p.requests[0][2]), "Summarize") {
+	if len(p.requests[0]) != 3 || !strings.Contains(lastText(p.requests[0][2]), "Write a summary") {
 		t.Fatalf("first request should be the compaction: %+v", p.requests[0])
 	}
 	sent := p.requests[1]
-	if len(sent) != 2 || !strings.Contains(lastText(sent[0]), "SUMMARY") || lastText(sent[1]) != "new request" {
+	if len(sent) != 3 || !strings.Contains(lastText(sent[0]), "SUMMARY") || lastText(sent[1]) != "old answer" || lastText(sent[2]) != "new request" {
 		t.Fatalf("after compaction: %+v", sent)
 	}
 }
@@ -158,7 +158,7 @@ func TestCompactRejectsEmptySummary(t *testing.T) {
 	p := &fakeProvider{replies: []llm.Message{{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockToolUse, ID: "x", Name: "bash", Input: json.RawMessage(`{}`)}}}}}
 	a := newAgent(t, p)
 	a.Messages = []llm.Message{llm.UserText("old")}
-	if err := a.Compact(context.Background()); err == nil {
+	if err := a.Compact(context.Background(), ""); err == nil {
 		t.Fatal("expected error")
 	}
 	if len(a.Messages) != 1 {
@@ -203,7 +203,7 @@ func TestCompactRejectsToolCallsAndTriesOncePerTurn(t *testing.T) {
 	}
 	compactions := 0
 	for _, req := range p.requests {
-		if strings.Contains(lastText(req[len(req)-1]), "Summarize this conversation") {
+		if strings.Contains(lastText(req[len(req)-1]), "Write a summary of the conversation") {
 			compactions++
 		}
 	}

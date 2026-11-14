@@ -46,13 +46,14 @@ type Agent struct {
 	steer     []llm.Block
 	ctxTokens int
 	busy      sync.Mutex
+
+	paused       bool
+	windowWarned bool
 }
 
 const (
 	readOnlyNote = "<mode>Read-only mode is on: write and edit are refused, and bash only runs allowlisted read-only commands.</mode>"
 	yoloNote     = "<mode>Read-only mode is off: all tools are available again.</mode>"
-	compactAsk   = "Summarize this conversation so it can continue in a fresh context. Do not call tools. Include: the user's goal and requests, decisions made, files read or changed (with paths), commands run and their important results, the current state, and the next steps. Be dense and specific; this summary replaces the conversation."
-	compactLead  = "This session was compacted to save context. Summary of the conversation so far:\n\n"
 )
 
 func (a *Agent) ReadOnly() bool { return a.readOnly.Load() }
@@ -70,6 +71,7 @@ func (a *Agent) Reset(s *session.Session) {
 	a.Session = s
 	a.Messages = nil
 	a.announced = false
+	a.paused = false
 	a.SetContextTokens(0)
 }
 
@@ -80,6 +82,7 @@ func (a *Agent) Reconfigure(cfg config.Config, p llm.Provider) {
 	defer a.mu.Unlock()
 	a.Cfg = cfg
 	a.Provider = p
+	a.windowWarned = false
 }
 
 func (a *Agent) SetEffort(effort string) {
@@ -122,18 +125,35 @@ func (a *Agent) DrainQueue() []llm.Block {
 	return q
 }
 
-func (a *Agent) RestoreMode() {
-	for i := len(a.Messages) - 1; i >= 0; i-- {
-		for _, b := range a.Messages[i].Blocks {
+func lastModeNote(msgs []llm.Message) (readOnly, found bool) {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		for _, b := range msgs[i].Blocks {
 			switch b.Text {
 			case readOnlyNote:
-				a.announced = true
-				return
+				return true, true
 			case yoloNote:
-				a.announced = false
-				return
+				return false, true
 			}
 		}
+	}
+	return false, false
+}
+
+func (a *Agent) RestoreMode() {
+	if ro, ok := lastModeNote(a.Messages); ok {
+		a.announced = ro
+	}
+}
+
+func (a *Agent) restoreModeAfter(hadNote bool) {
+	ro, ok := lastModeNote(a.Messages)
+	switch {
+	case ok:
+		a.announced = ro
+	case hadNote:
+		a.announced = !a.ReadOnly()
+	default:
+		a.announced = false
 	}
 }
 
@@ -216,8 +236,8 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 	a.busy.Lock()
 	defer a.busy.Unlock()
 	var stats TurnStats
-	if a.ContextTokens() > a.Cfg.CompactTokens() {
-		if err := a.compact(ctx, false); err != nil {
+	if a.needsCompaction() {
+		if err := a.compact(ctx, compactOpts{auto: true}); err != nil {
 			a.UI.Error("compaction failed: " + err.Error())
 		}
 	}
@@ -226,21 +246,34 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 	}
 	a.appendMsg(llm.Message{Role: "user", Blocks: blocks}, nil)
 	stopActive := false
+	compacted := false
 	compactFailed := false
+	overflowRetried := false
 	for round := 0; ; round++ {
 		if a.Cfg.MaxRounds > 0 && round >= a.Cfg.MaxRounds {
 			return "", stats, fmt.Errorf("stopped after %d model requests (max_rounds)", a.Cfg.MaxRounds)
 		}
-		if !compactFailed && a.ContextTokens() > a.Cfg.CompactTokens() {
-			if err := a.compact(ctx, true); err != nil {
+		if !compactFailed && a.needsCompaction() {
+			compacted = true
+			if err := a.compact(ctx, compactOpts{auto: true, midTurn: true}); err != nil {
 				compactFailed = true
 				a.UI.Error("compaction failed: " + err.Error())
 			}
 		}
 		msg, usage, err := a.stream(ctx)
 		a.UI.EndBlock()
+		if err != nil && !overflowRetried && ctx.Err() == nil && contextTooLong(err) {
+			overflowRetried = true
+			compacted = true
+			a.UI.Info("context too long for the model; compacting and retrying")
+			cerr := a.compact(ctx, compactOpts{midTurn: true, overflow: true})
+			if cerr == nil {
+				continue
+			}
+			a.UI.Error("compaction failed: " + cerr.Error())
+		}
 		if err != nil {
-			if round == 0 && (ctx.Err() != nil || rejected(err)) {
+			if round == 0 && !compacted && (ctx.Err() != nil || rejected(err)) {
 				a.dropLast()
 			}
 			if ctx.Err() != nil {
@@ -331,30 +364,11 @@ func (a *Agent) estimateTokens() int {
 	for _, d := range a.Registry.Defs() {
 		n += len(d.Description) + len(d.Schema)
 	}
+	n /= 4
 	for _, m := range a.Messages {
-		for _, b := range m.Blocks {
-			n += len(b.Text) + len(b.Input) + len(b.Raw)
-		}
+		n += msgTokens(m)
 	}
-	return n / 4
-}
-
-const maxCompactToolResult = 8000
-
-func shrinkToolResults(msgs []llm.Message) []llm.Message {
-	out := make([]llm.Message, len(msgs))
-	for i, m := range msgs {
-		blocks := make([]llm.Block, len(m.Blocks))
-		for j, b := range m.Blocks {
-			if b.Type == llm.BlockToolResult && len(b.Text) > maxCompactToolResult {
-				b.Text = b.Text[:maxCompactToolResult/2] + "\n… [shortened for compaction] …\n" + b.Text[len(b.Text)-maxCompactToolResult/2:]
-				b.Images = nil
-			}
-			blocks[j] = b
-		}
-		out[i] = llm.Message{Role: m.Role, Blocks: blocks}
-	}
-	return out
+	return n
 }
 
 func (a *Agent) stream(ctx context.Context) (llm.Message, llm.Usage, error) {
@@ -383,59 +397,4 @@ func retryableStream(err error) bool {
 	}
 	s := err.Error()
 	return errors.Is(err, llm.ErrStalled) || strings.Contains(s, "overloaded") || strings.Contains(s, "api_error") || strings.Contains(s, "stream ended") || strings.Contains(s, "unexpected EOF") || strings.Contains(s, "connection reset")
-}
-
-func (a *Agent) Compact(ctx context.Context) error {
-	if !a.busy.TryLock() {
-		return errors.New("busy")
-	}
-	defer a.busy.Unlock()
-	return a.compact(ctx, false)
-}
-
-func (a *Agent) TryCompactIdle(ctx context.Context) error {
-	if !a.busy.TryLock() {
-		return nil
-	}
-	defer a.busy.Unlock()
-	if a.ContextTokens() < a.Cfg.CompactIdleTokens() {
-		return nil
-	}
-	return a.compact(ctx, false)
-}
-
-func (a *Agent) compact(ctx context.Context, midTurn bool) error {
-	if len(a.Messages) == 0 {
-		return errors.New("nothing to compact")
-	}
-	before := a.ContextTokens()
-	a.UI.ToolStart("compact", fmt.Sprintf("compacting %s tokens", fmtTokens(before)))
-	msgs := append(shrinkToolResults(a.Messages), llm.UserText(compactAsk))
-	msg, usage, err := a.Provider.Stream(ctx, a.request(msgs), func(llm.Delta) {})
-	summary := strings.TrimSpace(msg.Text())
-	switch {
-	case err != nil:
-	case len(msg.ToolUses()) > 0:
-		err = errors.New("model called tools instead of summarizing")
-	case summary == "":
-		err = errors.New("model returned no summary")
-	}
-	if err != nil {
-		a.UI.ToolDone("compact", false, "compaction failed")
-		return err
-	}
-	text := compactLead + summary
-	if midTurn {
-		text += "\n\nContinue the task from where it stopped."
-	}
-	a.Messages = []llm.Message{llm.UserText(text)}
-	a.announced = false
-	if a.Session != nil {
-		if err := a.Session.Compaction(text, a.Model()); err != nil {
-			a.UI.Error("session: " + err.Error())
-		}
-	}
-	a.SetContextTokens(max(usage.Output, len(text)/4))
-	a.UI.ToolDone("compact", true, fmt.Sprintf("compacted %s → %s tokens%s", fmtTokens(before), fmtTokens(usage.Output), cachedPct(usage)))
-	return nil
 }
