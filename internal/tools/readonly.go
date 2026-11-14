@@ -200,6 +200,14 @@ func splitCommand(s string) ([][]string, error) {
 	for i := 0; i < len(rs); i++ {
 		r := rs[i]
 		switch {
+		case r == '#' && !inWord:
+			for i+1 < len(rs) && rs[i+1] != '\n' {
+				i++
+			}
+		case r == '#' && !inWord:
+			for i+1 < len(rs) && rs[i+1] != '\n' {
+				i++
+			}
 		case r == '\\':
 			if i+1 >= len(rs) || rs[i+1] == '\n' {
 				return nil, errors.New("line continuations are not allowed")
