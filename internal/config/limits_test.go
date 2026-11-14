@@ -20,7 +20,7 @@ func TestParseThreshold(t *testing.T) {
 			t.Errorf("%q: got %+v %v, want %+v", in, got, err, want)
 		}
 	}
-	for _, in := range []string{"", "abc", "0", "-5k", "0%", "120%", "k", "10x"} {
+	for _, in := range []string{"", "abc", "0", "-5k", "0%", "120%", "k", "10x", "nan", "NaN%", "inf", "inf%", "1e400", "1e12"} {
 		if _, err := ParseThreshold(in); err == nil {
 			t.Errorf("%q accepted", in)
 		}
@@ -70,7 +70,7 @@ func TestResolveThresholds(t *testing.T) {
 		guessWarn bool
 	}{
 		{"percent of table window", Config{Model: "claude-opus-5-5", MaxTokens: 32000, CompactAt: Threshold{Percent: 50}, CompactIdleAt: Threshold{Percent: 10}}, 500000, 100000, false},
-		{"old claude is 200k", Config{Model: "claude-haiku-4-5", MaxTokens: 32000, CompactAt: Threshold{Percent: 50}, CompactIdleAt: Threshold{Tokens: 100000}}, 100000, 100000, false},
+		{"old claude is 200k", Config{Model: "anthropic/claude-opus-4.5", MaxTokens: 32000, CompactAt: Threshold{Percent: 50}, CompactIdleAt: Threshold{Tokens: 100000}}, 100000, 100000, false},
 		{"clamped to window minus output", Config{Model: "x", ContextWindow: 128000, MaxTokens: 32000, CompactAt: Threshold{Tokens: 150000}, CompactIdleAt: Threshold{Tokens: 100000}}, 96000, 96000, false},
 		{"no clamp against the guess", Config{Model: "mystery", MaxTokens: 32000, CompactAt: Threshold{Tokens: 500000}, CompactIdleAt: Threshold{Tokens: 100000}}, 500000, 100000, false},
 		{"percent of the guess", Config{Model: "mystery", MaxTokens: 32000, CompactAt: Threshold{Percent: 3}, CompactIdleAt: Threshold{Tokens: 100000}}, 6000, 6000, true},
@@ -85,5 +85,31 @@ func TestResolveThresholds(t *testing.T) {
 		if got := tc.cfg.WindowGuessed(); got != tc.guessWarn {
 			t.Errorf("%s: guessed %v", tc.name, got)
 		}
+	}
+}
+
+func TestClaudeWindows(t *testing.T) {
+	cases := map[string]int{
+		"claude-opus-5-5": 1000000, "anthropic/claude-sonnet-4.6": 1000000, "claude-opus-4-8": 1000000,
+		"claude-fable-5-2": 1000000, "claude-haiku-5-5": 1000000,
+		"claude-haiku-4-5": 200000, "claude-sonnet-4-5": 200000, "claude-opus-4-1": 200000,
+		"claude-opus-4-20250514": 200000, "anthropic/claude-sonnet-4": 200000, "claude-3-7-sonnet-latest": 200000,
+	}
+	for model, want := range cases {
+		if got, known := (Config{Model: model}).Window(); got != want || !known {
+			t.Errorf("%s: %d %v, want %d", model, got, known, want)
+		}
+	}
+}
+
+func TestSetModelDropsProfileWindow(t *testing.T) {
+	c := Config{Model: "a", ContextWindow: 128000}
+	c.SetModel("a")
+	if c.ContextWindow != 128000 {
+		t.Error("same model must keep context_window")
+	}
+	c.SetModel("claude-opus-5-5")
+	if w, _ := c.Window(); w != 1000000 {
+		t.Errorf("context_window of the previous model applied: %d", w)
 	}
 }

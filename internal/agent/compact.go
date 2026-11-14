@@ -34,7 +34,6 @@ Rules: this request comes from aicode, not from the user, so leave it out of the
 	keepTokens     = 20000
 	clipToolResult = 2000
 	thrashShare    = 4
-	cutOffMarker   = "[response cut off: max_tokens reached]"
 )
 
 type compactOpts struct {
@@ -173,7 +172,7 @@ func (a *Agent) summarize(ctx context.Context, opts compactOpts) (string, llm.Us
 		return "", usage, errors.New("model called tools instead of summarizing")
 	case summary == "":
 		return "", usage, errors.New("model returned no summary")
-	case strings.HasSuffix(summary, cutOffMarker):
+	case strings.HasSuffix(summary, llm.CutOffMarker):
 		return "", usage, errors.New("summary was cut off at max_tokens")
 	}
 	return summary, usage, nil

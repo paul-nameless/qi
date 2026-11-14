@@ -326,7 +326,7 @@ func (o *OpenAI) Stream(ctx context.Context, req Request, onDelta func(Delta)) (
 		return Message{}, usage, errors.New("the model returned an empty response")
 	}
 	if finish == "length" {
-		msg.Blocks = append(msg.Blocks, Block{Type: BlockText, Text: "\n[response cut off: max_tokens reached]"})
+		msg.Blocks = append(msg.Blocks, Block{Type: BlockText, Text: "\n" + CutOffMarker})
 	}
 	return msg, usage, nil
 }

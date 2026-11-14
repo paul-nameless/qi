@@ -2,6 +2,8 @@ package config
 
 import (
 	"fmt"
+	"math"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -21,14 +23,32 @@ var knownWindows = []struct {
 	match  string
 	tokens int
 }{
-	{"claude-3", 200000},
-	{"haiku-4-5", 200000}, {"haiku-4.5", 200000},
-	{"sonnet-4-5", 200000}, {"sonnet-4.5", 200000},
-	{"opus-4-5", 200000}, {"opus-4.5", 200000},
-	{"opus-4-1", 200000}, {"opus-4.1", 200000},
-	{"claude", 1000000},
 	{"gpt-6", 1050000},
 	{"gemini", 1048576},
+}
+
+var claudeVersion = regexp.MustCompile(`(opus|sonnet|haiku)-(\d)(?:[-.](\d)(?:\D|$))?`)
+
+func claudeWindow(model string) int {
+	if strings.Contains(model, "fable") || strings.Contains(model, "mythos") {
+		return 1000000
+	}
+	v := claudeVersion.FindStringSubmatch(model)
+	if v == nil {
+		return 200000
+	}
+	major, minor := int(v[2][0]-'0'), 0
+	if v[3] != "" {
+		minor = int(v[3][0] - '0')
+	}
+	if major >= 5 || major == 4 && minor >= 6 {
+		return 1000000
+	}
+	return 200000
+}
+
+func finite(f float64) bool {
+	return !math.IsNaN(f) && !math.IsInf(f, 0)
 }
 
 func ParseTokens(s string) (int, error) {
@@ -41,7 +61,7 @@ func ParseTokens(s string) (int, error) {
 		mult, s = 1e6, strings.TrimSuffix(s, "m")
 	}
 	f, err := strconv.ParseFloat(s, 64)
-	if err != nil || f <= 0 {
+	if err != nil || !finite(f) || f <= 0 || f*mult > math.MaxInt32 {
 		return 0, fmt.Errorf("invalid token count %q (use 150000, 150k or 1.5m)", s)
 	}
 	return int(f * mult), nil
@@ -51,7 +71,7 @@ func ParseThreshold(s string) (Threshold, error) {
 	s = strings.TrimSpace(s)
 	if p, ok := strings.CutSuffix(s, "%"); ok {
 		f, err := strconv.ParseFloat(strings.TrimSpace(p), 64)
-		if err != nil || f <= 0 || f > 100 {
+		if err != nil || !finite(f) || f <= 0 || f > 100 {
 			return Threshold{}, fmt.Errorf("invalid percentage %q (use 1%%–100%%)", s)
 		}
 		return Threshold{Percent: f}, nil
@@ -108,12 +128,22 @@ func (c Config) Window() (int, bool) {
 		return int(c.ContextWindow), true
 	}
 	m := strings.ToLower(c.Model)
+	if strings.Contains(m, "claude") {
+		return claudeWindow(m), true
+	}
 	for _, w := range knownWindows {
 		if strings.Contains(m, w.match) {
 			return w.tokens, true
 		}
 	}
 	return FallbackWindow, false
+}
+
+func (c *Config) SetModel(model string) {
+	if model != c.Model {
+		c.Model = model
+		c.ContextWindow = 0
+	}
 }
 
 func (c Config) resolve(t Threshold) int {

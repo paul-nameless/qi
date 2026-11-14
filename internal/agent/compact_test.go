@@ -144,7 +144,7 @@ func TestSummaryClipsOnlyWhenTooLong(t *testing.T) {
 }
 
 func TestCompactRejectsCutOffSummary(t *testing.T) {
-	cut := assistantText("## Objective\nhalf\n" + cutOffMarker)
+	cut := llm.Message{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: "## Objective\nhalf"}, {Type: llm.BlockText, Text: "\n" + llm.CutOffMarker}}}
 	a := newAgent(t, &fakeProvider{replies: []llm.Message{cut}})
 	a.Messages = history()
 	if err := a.Compact(context.Background(), ""); err == nil || len(a.Messages) != len(history()) {
@@ -287,5 +287,110 @@ func TestContextTooLong(t *testing.T) {
 		if contextTooLong(e) {
 			t.Errorf("false positive: %v", e)
 		}
+	}
+}
+
+func TestFailedOverflowCompactionDropsPrompt(t *testing.T) {
+	p := &scriptedProvider{steps: []func(llm.Request) (llm.Message, error){overflow, overflow, overflow}}
+	a := newAgent(t, &fakeProvider{})
+	a.Provider = p
+	a.Messages = history()[:4]
+	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "huge paste"}}); !contextTooLong(err) {
+		t.Fatalf("want the overflow error, got %v", err)
+	}
+	if len(p.requests) != 2 {
+		t.Errorf("overflow compaction must not retry its own clipped request: %d requests", len(p.requests))
+	}
+	if !reflect.DeepEqual(a.Messages, history()[:4]) {
+		t.Errorf("rejected prompt should be dropped, history kept: %+v", a.Messages)
+	}
+
+	p = &scriptedProvider{steps: []func(llm.Request) (llm.Message, error){overflow, overflow, overflow}}
+	a.Provider = p
+	a.Messages = history()
+	if err := a.Compact(context.Background(), ""); err == nil || len(p.requests) != 2 || !reflect.DeepEqual(a.Messages, history()) {
+		t.Errorf("manual compaction: err %v, %d requests", err, len(p.requests))
+	}
+}
+
+func TestSummaryRequestMatchesTurnRequest(t *testing.T) {
+	p := &scriptedProvider{}
+	a := newAgent(t, &fakeProvider{})
+	a.Provider = p
+	a.System = "system prompt"
+	a.Cfg.MaxTokens, a.Cfg.ReasoningEffort, a.Cfg.CacheTTL = 1000, "low", "1h"
+	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "hi"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Compact(context.Background(), ""); err != nil {
+		t.Fatal(err)
+	}
+	turn, sum := p.requests[0], p.requests[1]
+	if !reflect.DeepEqual(sum.Messages[:len(turn.Messages)], turn.Messages) {
+		t.Error("summary request must extend the last turn's messages")
+	}
+	turn.Messages, sum.Messages = nil, nil
+	if !reflect.DeepEqual(turn, sum) {
+		t.Errorf("summary request differs outside messages:\n%+v\n%+v", turn, sum)
+	}
+}
+
+func TestTryCompactIdle(t *testing.T) {
+	cases := []struct {
+		name   string
+		tokens int
+		paused bool
+		busy   bool
+		want   int
+	}{
+		{"below threshold", 50, false, false, 0},
+		{"above threshold", 500, false, false, 1},
+		{"paused", 500, true, false, 0},
+		{"busy", 500, false, true, 0},
+	}
+	for _, tc := range cases {
+		p := &fakeProvider{}
+		a := newAgent(t, p)
+		a.Cfg.CompactIdleAt = config.Threshold{Tokens: 100}
+		a.Messages = history()
+		a.SetContextTokens(tc.tokens)
+		a.paused = tc.paused
+		if tc.busy {
+			a.busy.Lock()
+		}
+		if err := a.TryCompactIdle(context.Background()); err != nil {
+			t.Errorf("%s: %v", tc.name, err)
+		}
+		if len(p.requests) != tc.want {
+			t.Errorf("%s: %d requests, want %d", tc.name, len(p.requests), tc.want)
+		}
+		if tc.busy {
+			a.busy.Unlock()
+		}
+	}
+	a := newAgent(t, &fakeProvider{})
+	a.paused = true
+	a.Reset(nil)
+	if a.paused {
+		t.Error("/clear must lift the compaction pause")
+	}
+}
+
+func TestMidTurnContinueOnlyWithoutTail(t *testing.T) {
+	a := newAgent(t, &fakeProvider{})
+	a.Cfg.CompactAt = config.Threshold{Tokens: 20000}
+	a.Messages = history()[:3]
+	if err := a.compact(context.Background(), compactOpts{midTurn: true}); err != nil {
+		t.Fatal(err)
+	}
+	if len(a.Messages) != 1 || !strings.HasSuffix(a.Messages[0].Text(), compactContinue) {
+		t.Errorf("empty tail mid-turn needs the continue note: %+v", a.Messages)
+	}
+	a.Messages = history()
+	if err := a.compact(context.Background(), compactOpts{midTurn: true}); err != nil {
+		t.Fatal(err)
+	}
+	if len(a.Messages) == 1 || strings.HasSuffix(a.Messages[0].Text(), compactContinue) {
+		t.Errorf("with a tail the model continues from it: %+v", a.Messages)
 	}
 }

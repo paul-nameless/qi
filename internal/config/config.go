@@ -128,7 +128,7 @@ func Resolve(path, profile, provider, model, effort string) (Config, error) {
 		}
 	}
 	if model != "" {
-		c.Model = model
+		c.SetModel(model)
 	}
 	if effort != "" {
 		c.ReasoningEffort = effort

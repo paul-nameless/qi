@@ -254,20 +254,21 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 			return "", stats, fmt.Errorf("stopped after %d model requests (max_rounds)", a.Cfg.MaxRounds)
 		}
 		if !compactFailed && a.needsCompaction() {
-			compacted = true
 			if err := a.compact(ctx, compactOpts{auto: true, midTurn: true}); err != nil {
 				compactFailed = true
 				a.UI.Error("compaction failed: " + err.Error())
+			} else {
+				compacted = true
 			}
 		}
 		msg, usage, err := a.stream(ctx)
 		a.UI.EndBlock()
 		if err != nil && !overflowRetried && ctx.Err() == nil && contextTooLong(err) {
 			overflowRetried = true
-			compacted = true
 			a.UI.Info("context too long for the model; compacting and retrying")
 			cerr := a.compact(ctx, compactOpts{midTurn: true, overflow: true})
 			if cerr == nil {
+				compacted = true
 				continue
 			}
 			a.UI.Error("compaction failed: " + cerr.Error())

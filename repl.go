@@ -335,11 +335,11 @@ func (r *repl) switchModel(name string) error {
 					return err
 				}
 			}
-			cfg.Model = m.Model
+			cfg.SetModel(m.Model)
 			return r.apply(cfg, base)
 		}
 	}
-	cfg.Model = name
+	cfg.SetModel(name)
 	return r.apply(cfg, base)
 }
 

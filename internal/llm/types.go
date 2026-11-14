@@ -105,6 +105,8 @@ type Provider interface {
 	Stream(ctx context.Context, req Request, onDelta func(Delta)) (Message, Usage, error)
 }
 
+const CutOffMarker = "[response cut off: max_tokens reached]"
+
 func MergeConsecutive(msgs []Message) []Message {
 	var out []Message
 	for _, m := range msgs {

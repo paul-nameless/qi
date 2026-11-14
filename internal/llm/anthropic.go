@@ -330,7 +330,7 @@ func (a *Anthropic) Stream(ctx context.Context, req Request, onDelta func(Delta)
 		return Message{}, u, errors.New("the model returned an empty response")
 	}
 	if stop == "max_tokens" {
-		msg.Blocks = append(msg.Blocks, Block{Type: BlockText, Text: "\n[response cut off: max_tokens reached]"})
+		msg.Blocks = append(msg.Blocks, Block{Type: BlockText, Text: "\n" + CutOffMarker})
 	}
 	return msg, u, nil
 }
