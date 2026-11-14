@@ -79,3 +79,9 @@ Compaction summarizes the conversation into a structured handoff (updated on lat
 Keys: shift+tab toggles read-only, ctrl+g edits the prompt in `$EDITOR`, alt+enter or ctrl+j inserts a newline, ctrl+c or esc cancels a turn. Text typed while the agent works is queued and delivered after the next tool results.
 
 Commands: `/help`, `/clear`, `/context`, `/reload`, `/compact [focus]`, `/model`, `/profile`, `/effort`, `/skills`, `/exit`, and `/<skill-or-command> [args]`. Typing `/` on an empty line opens a picker (fzf by default; set `picker:` in the config to use another command that reads `name<TAB>description` lines and prints the chosen one).
+
+## External tools
+
+UI features reuse CLI tools you already have. Each is a shell string in the config; `{prompt}`, `{file}`, `{title}`, `{msg}` are replaced shell-quoted and `{picker}` expands to the `picker` value. `{file}` is a temp file aicode writes input to or reads the result from; without it input goes on stdin and the result comes from stdout. A tool is off when set to `off` or when its command is not installed; `/help` shows which are active.
+
+- `notify_cmd` (default `terminal-notifier -title {title} -message {msg}` on macOS, `notify-send {title} {msg}` on Linux): runs when a turn took longer than `notify_after` (default `20s`) and the terminal is not focused (always, if the terminal does not report focus), and when aicode asks whether to trust project hooks.

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -62,6 +63,8 @@ type Config struct {
 	HookFiles       []string             `yaml:"hook_files"`
 	MCP             map[string]MCPServer `yaml:"mcp"`
 	Picker          string               `yaml:"picker"`
+	NotifyCmd       string               `yaml:"notify_cmd"`
+	NotifyAfter     string               `yaml:"notify_after"`
 	Providers       map[string]Provider  `yaml:"providers"`
 	Profiles        map[string]any       `yaml:"profiles"`
 	DefaultProfile  string               `yaml:"default_profile"`
@@ -276,6 +279,7 @@ func (c *Config) applyDefaults() {
 	if c.Picker == "" {
 		c.Picker = DefaultPicker
 	}
+	c.toolDefaults()
 	if c.BashTimeout == 0 {
 		c.BashTimeout = 120
 	}
@@ -291,6 +295,25 @@ func (c *Config) applyDefaults() {
 	if len(c.HookFiles) == 0 {
 		c.HookFiles = []string{"~/.claude/settings.json", ".claude/settings.json", ".claude/settings.local.json", filepath.Join(Dir(), "settings.json")}
 	}
+}
+
+func (c *Config) toolDefaults() {
+	mac := runtime.GOOS == "darwin"
+	setDefault(&c.NotifyCmd, pick(mac, "terminal-notifier -title {title} -message {msg}", "notify-send {title} {msg}"))
+	setDefault(&c.NotifyAfter, "20s")
+}
+
+func setDefault(field *string, value string) {
+	if *field == "" {
+		*field = value
+	}
+}
+
+func pick(cond bool, a, b string) string {
+	if cond {
+		return a
+	}
+	return b
 }
 
 func (c Config) ShowReasoningOn() bool {

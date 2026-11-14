@@ -35,6 +35,13 @@ const (
 	KeyEditor
 	KeyPaste
 	KeyClear
+	keyFocusIn
+	keyFocusOut
+)
+
+const (
+	modesOn  = "\x1b[?2004h\x1b[?1004h"
+	modesOff = "\x1b[?2004l\x1b[?1004l"
 )
 
 type Key struct {
@@ -51,6 +58,7 @@ type Terminal struct {
 	pauseAck chan struct{}
 	raw      chan []byte
 	closed   atomic.Bool
+	focus    atomic.Int32
 	once     sync.Once
 }
 
@@ -69,7 +77,7 @@ func OpenTerminal() (*Terminal, error) {
 	if err := t.applyMode(); err != nil {
 		return nil, err
 	}
-	os.Stdout.WriteString("\x1b[?2004h")
+	os.Stdout.WriteString(modesOn)
 	go t.readLoop()
 	go t.decodeLoop()
 	return t, nil
@@ -89,7 +97,7 @@ func (t *Terminal) applyMode() error {
 func (t *Terminal) Restore() {
 	t.once.Do(func() {
 		t.closed.Store(true)
-		os.Stdout.WriteString("\x1b[?2004l")
+		os.Stdout.WriteString(modesOff)
 		_ = unix.IoctlSetTermios(t.fd, ioctlSetTermios, t.orig)
 	})
 }
@@ -100,13 +108,13 @@ func (t *Terminal) Suspend() {
 	case <-t.pauseAck:
 	case <-time.After(200 * time.Millisecond):
 	}
-	os.Stdout.WriteString("\x1b[?2004l")
+	os.Stdout.WriteString(modesOff)
 	_ = unix.IoctlSetTermios(t.fd, ioctlSetTermios, t.orig)
 }
 
 func (t *Terminal) Resume() {
 	_ = t.applyMode()
-	os.Stdout.WriteString("\x1b[?2004h")
+	os.Stdout.WriteString(modesOn)
 	t.paused.Store(false)
 }
 
@@ -195,12 +203,28 @@ func (t *Terminal) decodeLoop() {
 				inPaste = true
 				continue
 			}
-			if k.Kind == -1 {
+			if k.Kind == -1 || t.trackFocus(k.Kind) {
 				continue
 			}
 			t.Keys <- k
 		}
 	}
+}
+
+func (t *Terminal) trackFocus(k KeyKind) bool {
+	switch k {
+	case keyFocusIn:
+		t.focus.Store(1)
+	case keyFocusOut:
+		t.focus.Store(2)
+	default:
+		return false
+	}
+	return true
+}
+
+func (t *Terminal) Focused() bool {
+	return t.focus.Load() == 1
 }
 
 func normalizePaste(s string) string {
@@ -354,6 +378,10 @@ func csiKey(seq string) Key {
 		return Key{Kind: KeyNewline}
 	case "200~":
 		return Key{Kind: KeyPaste}
+	case "I":
+		return Key{Kind: keyFocusIn}
+	case "O":
+		return Key{Kind: keyFocusOut}
 	}
 	return Key{Kind: -1}
 }

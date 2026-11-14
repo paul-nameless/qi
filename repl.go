@@ -211,6 +211,8 @@ func (r *repl) cancellable(fn func(ctx context.Context) error) error {
 
 func (r *repl) turn(prepare func(context.Context) ([]llm.Block, error), draft string) string {
 	var stats agent.TurnStats
+	var final string
+	start := time.Now()
 	err := r.cancellable(func(ctx context.Context) error {
 		blocks, err := prepare(ctx)
 		if err != nil {
@@ -236,13 +238,16 @@ func (r *repl) turn(prepare func(context.Context) ([]llm.Block, error), draft st
 				},
 			})
 		}()
-		_, stats, err = r.agent.Turn(ctx, blocks)
+		final, stats, err = r.agent.Turn(ctx, blocks)
 		stopCollect()
 		draft = <-draftCh
 		return err
 	})
 	r.display.EndBlock()
 	r.lastCancelled = errors.Is(err, context.Canceled)
+	if !r.lastCancelled {
+		r.notifyTurn(final, err, time.Since(start))
+	}
 	switch {
 	case errors.Is(err, context.Canceled):
 		r.display.Line(r.display.Color(ui.Yellow, "interrupted"))

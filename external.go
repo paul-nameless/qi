@@ -156,6 +156,7 @@ func (r *repl) toolKeys() [][2]string {
 	cfg := r.agent.Cfg
 	return [][2]string{
 		{"picker", cfg.Picker},
+		{"notify_cmd", cfg.NotifyCmd},
 	}
 }
 

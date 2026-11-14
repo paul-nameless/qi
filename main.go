@@ -139,7 +139,11 @@ func run(o options) error {
 		a.Session = s
 	}
 	defer a.Session.Close()
-	hooks := agent.LoadHooks(roots[0], hookFiles(roots, cfg.HookFiles, headless, display))
+	ask := func(dir string, cmds []string) bool {
+		notifyAsync(cfg, cwd, "waiting: trust the hooks in "+dir+"?", display)
+		return agent.AskTrust(dir, cmds)
+	}
+	hooks := agent.LoadHooks(roots[0], hookFiles(roots, cfg.HookFiles, headless, display, ask))
 	hooks.Session, hooks.SessionID, hooks.ReadOnly = a.Session.Path, a.Session.ID, a.ReadOnly
 	if !hooks.Empty() {
 		env.PreHook = hooks.PreToolUse
@@ -173,8 +177,8 @@ func run(o options) error {
 	return r.run()
 }
 
-func hookFiles(roots, configured []string, headless bool, display *ui.Printer) []string {
-	files, skipped := agent.SelectHookFiles(roots, configured, !headless, agent.AskTrust)
+func hookFiles(roots, configured []string, headless bool, display *ui.Printer, ask func(string, []string) bool) []string {
+	files, skipped := agent.SelectHookFiles(roots, configured, !headless, ask)
 	if skipped && headless && os.Getenv("AICODE_SUBAGENT") == "" {
 		display.Info("skipping untrusted project hooks in " + roots[0] + " (start aicode interactively there once to trust them)")
 	}

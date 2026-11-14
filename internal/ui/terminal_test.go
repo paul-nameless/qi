@@ -64,3 +64,30 @@ func TestSanitize(t *testing.T) {
 		t.Errorf("got %q", got)
 	}
 }
+
+func TestFocusEvents(t *testing.T) {
+	tm := &Terminal{raw: make(chan []byte, 8), Keys: make(chan Key, 64)}
+	go tm.decodeLoop()
+	if tm.Focused() {
+		t.Fatal("focused before any event")
+	}
+	tm.raw <- []byte("\x1b[Ia\x1b[O")
+	k := <-tm.Keys
+	if k.Kind != KeyRune || k.Rune != 'a' {
+		t.Errorf("focus events leaked as keys: %+v", k)
+	}
+	deadline := time.Now().Add(time.Second)
+	for tm.focus.Load() != 2 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if tm.Focused() {
+		t.Error("still focused after focus-out")
+	}
+	tm.raw <- []byte("\x1b[I")
+	for !tm.Focused() && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !tm.Focused() {
+		t.Error("not focused after focus-in")
+	}
+}
