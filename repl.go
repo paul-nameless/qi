@@ -1,0 +1,351 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"strings"
+	"sync"
+	"syscall"
+	"time"
+
+	"github.com/paul-nameless/aicode/internal/agent"
+	"github.com/paul-nameless/aicode/internal/config"
+	"github.com/paul-nameless/aicode/internal/session"
+	"github.com/paul-nameless/aicode/internal/tools"
+	"github.com/paul-nameless/aicode/internal/ui"
+)
+
+type repl struct {
+	agent      *agent.Agent
+	display    *ui.Printer
+	editor     *ui.Editor
+	term       *ui.Terminal
+	skills     []agent.Skill
+	commands   []agent.Command
+	hooks      *agent.Hooks
+	runner     *agent.SubagentRunner
+	configPath string
+
+	mu         sync.Mutex
+	turnCancel context.CancelFunc
+	turnDone   chan struct{}
+	idle       *time.Timer
+	idleCancel context.CancelFunc
+	idleGen    int
+	lastIntr   time.Time
+}
+
+func (r *repl) prompt() string {
+	if r.agent.ReadOnly() {
+		return r.display.Color(ui.Yellow, "read-only") + r.display.Color(ui.Cyan, " ❯ ")
+	}
+	return r.display.Color(ui.Cyan, "❯ ")
+}
+
+func (r *repl) toggleMode() {
+	ro := !r.agent.ReadOnly()
+	r.agent.SetReadOnly(ro)
+	if ro && r.runner != nil {
+		r.runner.StopAll()
+	}
+}
+
+func (r *repl) modeName() string {
+	if r.agent.ReadOnly() {
+		return "read-only"
+	}
+	return "yolo"
+}
+
+func (r *repl) run() error {
+	t, err := ui.OpenTerminal()
+	if err != nil {
+		return fmt.Errorf("terminal: %w", err)
+	}
+	r.term = t
+	defer t.Restore()
+	hist := filepath.Join(config.Home(), ".local", "share", "aicode", "history")
+	r.editor = ui.NewEditor(t, r.display, hist)
+	r.editor.OnToggle = func() string {
+		r.toggleMode()
+		return r.prompt()
+	}
+	r.handleSignals()
+	r.banner()
+
+	draft := ""
+	for {
+		line, err := r.editor.ReadLine(r.prompt(), draft)
+		draft = ""
+		if errors.Is(err, ui.ErrEOF) {
+			return nil
+		}
+		if errors.Is(err, ui.ErrInterrupt) {
+			if time.Since(r.lastIntr) < 2*time.Second {
+				return nil
+			}
+			r.lastIntr = time.Now()
+			r.display.Info("press Ctrl-C again to exit")
+			continue
+		}
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		text, quit := r.handleInput(line)
+		if quit {
+			return nil
+		}
+		for text != "" {
+			draft = r.turn(text, draft)
+			text = strings.Join(r.agent.DrainQueue(), "\n\n")
+		}
+		r.armIdle()
+	}
+}
+
+func (r *repl) banner() {
+	where := filepath.Base(r.agent.Session.Path)
+	r.display.Line(r.display.Color(ui.Bold, "aicode") + r.display.Color(ui.Dim, fmt.Sprintf(" %s · %s · %s · session %s", version, r.agent.Model(), r.modeName(), where)))
+	if n := len(r.agent.Messages); n > 0 {
+		r.display.Info(fmt.Sprintf("resumed %d messages", n))
+	}
+	r.display.Info("/help for commands · shift+tab toggles read-only · ctrl+g opens $EDITOR")
+}
+
+func (r *repl) handleSignals() {
+	ch := make(chan os.Signal, 4)
+	signal.Notify(ch, os.Interrupt, syscall.SIGTSTP, syscall.SIGTERM, syscall.SIGHUP)
+	go func() {
+		for s := range ch {
+			switch s {
+			case os.Interrupt:
+				if !r.cancelTurn() {
+					select {
+					case r.editor.Interrupt <- struct{}{}:
+					default:
+					}
+				}
+			case syscall.SIGTSTP:
+				r.display.ClearFooter()
+				r.term.Suspend()
+				signal.Reset(syscall.SIGTSTP)
+				_ = syscall.Kill(os.Getpid(), syscall.SIGTSTP)
+				time.Sleep(50 * time.Millisecond)
+				signal.Notify(ch, syscall.SIGTSTP)
+				r.term.Resume()
+				r.display.RenderPrompt()
+			default:
+				r.shutdown()
+			}
+		}
+	}()
+}
+
+func (r *repl) cancelTurn() bool {
+	r.mu.Lock()
+	cancel := r.turnCancel
+	r.mu.Unlock()
+	if cancel == nil {
+		return false
+	}
+	cancel()
+	return true
+}
+
+func (r *repl) shutdown() {
+	r.stopIdle()
+	r.mu.Lock()
+	done := r.turnDone
+	r.mu.Unlock()
+	if r.cancelTurn() && done != nil {
+		select {
+		case <-done:
+		case <-time.After(3 * time.Second):
+		}
+	}
+	r.term.Restore()
+	os.Exit(1)
+}
+
+func (r *repl) cancellable(fn func(ctx context.Context) error) error {
+	r.stopIdle()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	r.mu.Lock()
+	r.turnCancel, r.turnDone = cancel, done
+	r.mu.Unlock()
+	defer func() {
+		r.mu.Lock()
+		r.turnCancel, r.turnDone = nil, nil
+		r.mu.Unlock()
+		cancel()
+		close(done)
+	}()
+	return fn(ctx)
+}
+
+func (r *repl) turn(text, draft string) string {
+	var stats agent.TurnStats
+	err := r.cancellable(func(ctx context.Context) error {
+		blocks, err := submitPrompt(ctx, r.agent, r.hooks, text)
+		if err != nil {
+			return err
+		}
+		collectCtx, stopCollect := context.WithCancel(context.Background())
+		draftCh := make(chan string, 1)
+		go func() {
+			draftCh <- r.editor.Collect(collectCtx, draft, ui.Steer{
+				OnQueue: func(s string) {
+					blocked, reason, extra := r.hooks.UserPromptSubmit(ctx, s)
+					if blocked {
+						r.display.Error("message blocked by hook: " + reason)
+						return
+					}
+					if extra != "" {
+						s += "\n<hook-context>\n" + extra + "\n</hook-context>"
+					}
+					r.agent.Queue(s)
+					r.display.Info("queued: " + tools.OneLine(s, 80))
+				},
+				OnCancel: func() { r.cancelTurn() },
+				OnToggle: func() {
+					r.toggleMode()
+					r.display.Info("mode: " + r.modeName())
+				},
+			})
+		}()
+		_, stats, err = r.agent.Turn(ctx, blocks)
+		stopCollect()
+		draft = <-draftCh
+		return err
+	})
+	r.display.EndBlock()
+	switch {
+	case errors.Is(err, context.Canceled):
+		r.display.Line(r.display.Color(ui.Yellow, "interrupted"))
+	case err != nil:
+		r.display.Error(err.Error())
+	}
+	if stats.Requests > 0 {
+		r.display.Info(stats.String(r.agent.ContextTokens()))
+	}
+	return draft
+}
+
+func (r *repl) armIdle() {
+	ttl, err := time.ParseDuration(r.agent.Cfg.CacheTTL)
+	if err != nil || ttl <= 5*time.Minute {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.idle != nil {
+		r.idle.Stop()
+	}
+	r.idleGen++
+	gen := r.idleGen
+	r.idle = time.AfterFunc(ttl-5*time.Minute, func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+		defer cancel()
+		r.mu.Lock()
+		if gen != r.idleGen {
+			r.mu.Unlock()
+			return
+		}
+		r.idleCancel = cancel
+		r.mu.Unlock()
+		if err := r.agent.TryCompactIdle(ctx); err != nil && ctx.Err() == nil {
+			r.display.Error("idle compaction failed: " + err.Error())
+		}
+	})
+}
+
+func (r *repl) stopIdle() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.idleGen++
+	if r.idle != nil {
+		r.idle.Stop()
+		r.idle = nil
+	}
+	if r.idleCancel != nil {
+		r.idleCancel()
+		r.idleCancel = nil
+	}
+}
+
+func (r *repl) switchProfile(name string) error {
+	cfg, err := config.Load(r.configPath, name)
+	if err != nil {
+		return err
+	}
+	return r.apply(cfg)
+}
+
+func (r *repl) switchModel(name string) error {
+	cfg, err := config.Load(r.configPath, r.agent.Cfg.Profile)
+	if err != nil {
+		return err
+	}
+	for _, m := range cfg.SubagentModels {
+		if m.Name == name {
+			if m.Provider != "" {
+				if err := cfg.UseProvider(m.Provider); err != nil {
+					return err
+				}
+			}
+			cfg.Model = m.Model
+			return r.apply(cfg)
+		}
+	}
+	cfg.Model = name
+	return r.apply(cfg)
+}
+
+func (r *repl) apply(cfg config.Config) error {
+	key, err := cfg.ResolveAPIKey()
+	if err != nil {
+		return err
+	}
+	r.agent.Reconfigure(cfg, newProvider(cfg, key))
+	if r.runner != nil {
+		r.runner.Profile, r.runner.Provider = cfg.Profile, cfg.Provider
+		r.agent.Registry.Replace(tools.Subagent(cfg.Model, cfg.SubagentModels, cfg.SubagentEfforts))
+	}
+	return nil
+}
+
+func (r *repl) modelList() string {
+	cfg := r.agent.Cfg
+	var b strings.Builder
+	fmt.Fprintf(&b, "model: %s", cfg.Model)
+	if cfg.Provider != "" {
+		fmt.Fprintf(&b, " (provider %s)", cfg.Provider)
+	}
+	if cfg.Profile != "" {
+		fmt.Fprintf(&b, " · profile %s", cfg.Profile)
+	}
+	for _, m := range cfg.SubagentModels {
+		fmt.Fprintf(&b, "\n  /model %-10s %s", m.Name, m.Model)
+	}
+	for _, p := range cfg.ProfileNames() {
+		fmt.Fprintf(&b, "\n  /profile %s", p)
+	}
+	return b.String()
+}
+
+func (r *repl) newSession() error {
+	r.stopIdle()
+	s, err := session.Create(r.agent.Cwd, r.agent.Model(), false)
+	if err != nil {
+		return err
+	}
+	r.agent.Reset(s)
+	r.hooks.Session, r.hooks.SessionID = s.Path, s.ID
+	return nil
+}

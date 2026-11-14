@@ -3,40 +3,26 @@
 version: "3"
 
 tasks:
-  o:
-    - go build . && ./aicode -p configs/gpt.yml {{.CLI_ARGS}}
-  u:
-    - go build . && BASE_URL=http://localhost:8084 ./aicode -p configs/gpt.yml {{.CLI_ARGS}}
-  h:
-    - go build . && ANTHROPIC_MODEL=claude-3-5-haiku-latest ANTHROPIC_API_KEY=$(pass show i/aicode-claude-api-key| head -n 1) ./aicode {{.CLI_ARGS}}
-  b:
-    - go build . && ANTHROPIC_MODEL=claude-3-7-sonnet-latest ANTHROPIC_API_KEY=$(pass show i/aicode-claude-api-key| head -n 1) ./aicode {{.CLI_ARGS}}
-  a:
-    - go build . && BASE_URL=http://localhost:8084 ANTHROPIC_MODEL=claude-3-7-sonnet-latest ANTHROPIC_API_KEY=$(pass show i/aicode-claude-api-key| head -n 1) ./aicode {{.CLI_ARGS}}
-
   default:
-    - go build . && OPENAI_API_KEY=$(pass show i/openai.com-api-key| head -n 1) ./aicode
-
-  t:
-    - go build . && OPENAI_API_KEY=$(pass show i/openai.com-api-key| head -n 1) ./aicode -q "grep ai"
-
-  r:
-    - go build . && OPENAI_API_KEY=$(pass show i/openai.com-api-key| head -n 1) ./aicode {{.CLI_ARGS}}
+    - go build -o aicode . && ./aicode -config bench/config.yml {{.CLI_ARGS}}
 
   build:
-    - go build .
+    - go build -o aicode .
 
-  proxy-openai:
-    - mitmproxy --mode reverse:https://api.openai.com --listen-host 127.0.0.1 --listen-port 8084
-
-  lint:
-    - docker run --rm -v "$(pwd):/app" -w /app golangci/golangci-lint:v1.64.7 golangci-lint run
+  test:
+    - go test ./...
 
   fmt:
-    - go fmt .
+    - go fmt ./...
+
+  lint:
+    - go vet ./...
 
   ch:
-    deps: [fmt, lint]
+    deps: [fmt, lint, test]
+
+  bench:
+    - go build -o aicode . && bench/run.sh {{.CLI_ARGS}}
 
   release:
     - |
@@ -44,23 +30,17 @@ tasks:
       MAJOR=$(echo $LASTTAG | cut -d. -f1 | tr -d 'v')
       MINOR=$(echo $LASTTAG | cut -d. -f2)
       PATCH=$(echo $LASTTAG | cut -d. -f3)
-
-      # Default to minor bump, but allow overriding with CLI_ARGS
       TYPE="{{.CLI_ARGS}}"
       if [ -z "$TYPE" ] || [ "$TYPE" = "minor" ]; then
-        NEWMINOR=$((MINOR + 1))
-        NEWTAG="v$MAJOR.$NEWMINOR.0"
+        NEWTAG="v$MAJOR.$((MINOR + 1)).0"
       elif [ "$TYPE" = "patch" ]; then
-        NEWPATCH=$((PATCH + 1))
-        NEWTAG="v$MAJOR.$MINOR.$NEWPATCH"
+        NEWTAG="v$MAJOR.$MINOR.$((PATCH + 1))"
       elif [ "$TYPE" = "major" ]; then
-        NEWMAJOR=$((MAJOR + 1))
-        NEWTAG="v$NEWMAJOR.0.0"
+        NEWTAG="v$((MAJOR + 1)).0.0"
       else
         echo "Invalid release type. Use 'minor', 'patch', or 'major'"
         exit 1
       fi
-
       echo "Last tag: $LASTTAG, New tag: $NEWTAG"
       git tag $NEWTAG
       git push origin master --tags

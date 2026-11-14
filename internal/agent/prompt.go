@@ -1,0 +1,231 @@
+package agent
+
+import (
+	"crypto/sha256"
+	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/goccy/go-yaml"
+
+	"github.com/paul-nameless/aicode/internal/config"
+	"github.com/paul-nameless/aicode/internal/tools"
+)
+
+const basePrompt = `You are aicode, a coding agent running in the user's terminal. You help with software engineering tasks by reading, editing and running code in the working directory.
+
+How to work:
+- Look before you change: read files before editing them, search with rg/fd through bash.
+- Put independent tool calls in the same response: they run in parallel. For example read several files at once, or run a search and a read together.
+- Use edit for changes to existing files and write for new files. Copy old_string exactly from the file, without line-number prefixes.
+- Use bash for builds, tests, git and search. Commands get no stdin, so avoid interactive programs.
+- Check your work with the project's build or tests when it makes sense.
+- If a tool result says the mode is read-only, don't try to work around it: explain what you would change instead.
+- Be concise. Lead with the answer, skip preamble, and finish with a short summary of what changed.`
+
+type Skill struct {
+	Name        string
+	Description string
+	Path        string
+	Hidden      bool
+}
+
+type skillMeta struct {
+	Name                   string `yaml:"name"`
+	Description            string `yaml:"description"`
+	DisableModelInvocation bool   `yaml:"disable-model-invocation"`
+}
+
+func ParseFrontmatter(data string) (skillMeta, string) {
+	var m skillMeta
+	if !strings.HasPrefix(data, "---") {
+		return m, data
+	}
+	rest := strings.TrimLeft(data[3:], "\r\n")
+	end := strings.Index(rest, "\n---")
+	if end < 0 {
+		return m, data
+	}
+	_ = yaml.Unmarshal([]byte(rest[:end]), &m)
+	body := rest[end+4:]
+	if i := strings.IndexByte(body, '\n'); i >= 0 {
+		body = body[i+1:]
+	} else {
+		body = ""
+	}
+	return m, body
+}
+
+func ProjectRoots(cwd string) []string {
+	for d := cwd; ; d = filepath.Dir(d) {
+		if _, err := os.Stat(filepath.Join(d, ".git")); err == nil {
+			if d == cwd {
+				return []string{cwd}
+			}
+			return []string{d, cwd}
+		}
+		if filepath.Dir(d) == d {
+			return []string{cwd}
+		}
+	}
+}
+
+func ExpandPaths(roots, paths []string) []string {
+	var out []string
+	for _, p := range paths {
+		p = config.ExpandHome(p)
+		if filepath.IsAbs(p) {
+			out = append(out, p)
+			continue
+		}
+		for _, r := range roots {
+			out = append(out, filepath.Join(r, p))
+		}
+	}
+	return out
+}
+
+func LoadSkills(dirs []string) []Skill {
+	seen := map[string]bool{}
+	var out []Skill
+	ordered := append([]string{}, dirs...)
+	home := config.Home()
+	sort.SliceStable(ordered, func(i, j int) bool {
+		return !strings.HasPrefix(ordered[i], home+"/.") && strings.HasPrefix(ordered[j], home+"/.")
+	})
+	for _, d := range ordered {
+		var found []string
+		findSkillFiles(d, 0, &found)
+		sort.Strings(found)
+		for _, path := range found {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				continue
+			}
+			meta, _ := ParseFrontmatter(string(data))
+			name := meta.Name
+			if name == "" {
+				name = filepath.Base(filepath.Dir(path))
+			}
+			if seen[name] {
+				continue
+			}
+			seen[name] = true
+			out = append(out, Skill{Name: name, Description: strings.TrimSpace(meta.Description), Path: path, Hidden: meta.DisableModelInvocation})
+		}
+	}
+	return out
+}
+
+func findSkillFiles(dir string, depth int, out *[]string) {
+	if depth > 4 {
+		return
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if strings.HasPrefix(name, ".") || name == "node_modules" {
+			continue
+		}
+		path := filepath.Join(dir, name)
+		st, err := os.Stat(path)
+		if err != nil {
+			continue
+		}
+		if st.IsDir() {
+			findSkillFiles(path, depth+1, out)
+		} else if name == "SKILL.md" {
+			*out = append(*out, path)
+		}
+	}
+}
+
+type Command struct {
+	Name string
+	Path string
+}
+
+func LoadCommands(roots []string) []Command {
+	var out []Command
+	seen := map[string]bool{}
+	var dirs []string
+	for i := len(roots) - 1; i >= 0; i-- {
+		dirs = append(dirs, filepath.Join(roots[i], ".claude", "commands"))
+	}
+	dirs = append(dirs, config.ExpandHome("~/.claude/commands"), filepath.Join(config.Dir(), "commands"))
+	for _, root := range dirs {
+		_ = filepath.WalkDir(root, func(path string, e os.DirEntry, err error) error {
+			if err != nil || e.IsDir() || !strings.HasSuffix(path, ".md") {
+				return nil
+			}
+			rel, _ := filepath.Rel(root, path)
+			name := strings.ReplaceAll(strings.TrimSuffix(rel, ".md"), string(filepath.Separator), ":")
+			if !seen[name] {
+				seen[name] = true
+				out = append(out, Command{Name: name, Path: path})
+			}
+			return nil
+		})
+	}
+	return out
+}
+
+func loadInstructions(files []string) []string {
+	var out []string
+	seenHash := map[[32]byte]bool{}
+	for _, path := range files {
+		data, err := os.ReadFile(path)
+		if err != nil || len(strings.TrimSpace(string(data))) == 0 {
+			continue
+		}
+		h := sha256.Sum256([]byte(strings.TrimSpace(string(data))))
+		if seenHash[h] {
+			continue
+		}
+		seenHash[h] = true
+		out = append(out, fmt.Sprintf("# Instructions from %s\n\n%s", path, strings.TrimSpace(string(data))))
+	}
+	return out
+}
+
+func isGitRepo(cwd string) bool {
+	roots := ProjectRoots(cwd)
+	if len(roots) > 1 {
+		return true
+	}
+	_, err := os.Stat(filepath.Join(cwd, ".git"))
+	return err == nil
+}
+
+func BuildSystemPrompt(cwd string, instructionFiles []string, skills []Skill) string {
+	var b strings.Builder
+	b.WriteString(basePrompt)
+	git := "no"
+	if isGitRepo(cwd) {
+		git = "yes"
+	}
+	fmt.Fprintf(&b, "\n\n<env>\nWorking directory: %s\nPlatform: %s\nDate: %s\nGit repository: %s\n</env>\n", cwd, runtime.GOOS, time.Now().Format("2006-01-02"), git)
+	for _, inst := range loadInstructions(instructionFiles) {
+		b.WriteString("\n" + inst + "\n")
+	}
+	var visible []Skill
+	for _, s := range skills {
+		if !s.Hidden {
+			visible = append(visible, s)
+		}
+	}
+	if len(visible) > 0 {
+		b.WriteString("\n# Skills\n\nSkills are instruction files for specific tasks. When a task matches a skill, read its SKILL.md with the read tool before starting and follow it.\n\n")
+		for _, s := range visible {
+			fmt.Fprintf(&b, "- %s: %s (%s)\n", s.Name, tools.OneLine(s.Description, 300), s.Path)
+		}
+	}
+	return b.String()
+}
