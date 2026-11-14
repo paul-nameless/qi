@@ -10,6 +10,7 @@ import (
 
 	"github.com/paul-nameless/aicode/internal/agent"
 	"github.com/paul-nameless/aicode/internal/config"
+	"github.com/paul-nameless/aicode/internal/tools"
 )
 
 func waitFile(t *testing.T, path string) string {
@@ -55,6 +56,7 @@ func newTestAgent(t *testing.T, cfg config.Config) *agent.Agent {
 	if cfg.Picker == "" {
 		cfg.Picker = "cat"
 	}
-	a, _, _ := buildAgent(cfg, options{}, t.TempDir(), nopProvider{}, devNullPrinter(t), true, true)
+	a, _, toolset := buildAgent(cfg, options{}, t.TempDir(), nopProvider{}, devNullPrinter(t), true, true)
+	a.Registry = tools.NewRegistry(toolset...)
 	return a
 }

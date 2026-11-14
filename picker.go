@@ -97,6 +97,7 @@ var builtinCommands = []pickItem{
 	{"context", "show what takes space in the context"},
 	{"reload", "re-read skills, commands and CLAUDE.md files"},
 	{"compact", "summarize the conversation to free context"},
+	{"resume", "switch to another session"},
 	{"model", "switch the model"},
 	{"profile", "switch the profile"},
 	{"effort", "switch the reasoning effort"},

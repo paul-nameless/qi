@@ -82,6 +82,26 @@ func (a *Agent) Reset(s *session.Session) {
 	a.SetContextTokens(0)
 }
 
+func (a *Agent) Load(s *session.Session, ld session.Loaded) {
+	a.busy.Lock()
+	defer a.busy.Unlock()
+	if a.Session != nil && a.Session != s {
+		a.Session.Close()
+	}
+	a.Session = s
+	a.Messages = ld.Messages
+	if a.Env != nil {
+		a.Env.ForgetFiles()
+	}
+	a.announced = false
+	a.paused, a.thrashAt = false, 0
+	a.RestoreMode()
+	if ld.CtxTokens == 0 {
+		ld.CtxTokens = a.EstimateTokens()
+	}
+	a.SetContextTokens(ld.CtxTokens)
+}
+
 func (a *Agent) Reconfigure(cfg config.Config, p llm.Provider) {
 	a.busy.Lock()
 	defer a.busy.Unlock()

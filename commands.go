@@ -22,6 +22,7 @@ const helpText = `Commands:
   /context           show what takes space in the context
   /reload            re-read skills, commands and CLAUDE.md files (rebuilds the cached prompt)
   /compact [focus]   summarize the conversation to free context (optional focus for the summary)
+  /resume [id]       switch to another session of this directory (picker without id)
   /model [name]      show or switch the model (switching loses the prompt cache)
   /profile [name]    show or switch the profile
   /effort [level]    show or switch the reasoning effort (default, none, low, medium, high, xhigh, max)
@@ -62,6 +63,10 @@ func (r *repl) handleInput(line string) (string, bool) {
 		r.reload()
 	case "context":
 		r.display.Info(r.agent.ContextReport())
+	case "resume":
+		if err := r.resume(args); err != nil {
+			r.display.Error(err.Error())
+		}
 	case "compact":
 		err := r.cancellable(func(ctx context.Context) error { return r.agent.Compact(ctx, args) })
 		if errors.Is(err, context.Canceled) {

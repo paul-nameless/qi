@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -23,15 +24,16 @@ import (
 var version = "dev"
 
 type options struct {
-	query      string
-	cont       bool
-	profile    string
-	configPath string
-	model      string
-	provider   string
-	effort     string
-	readOnly   bool
-	sessionID  string
+	query       string
+	cont        bool
+	profile     string
+	configPath  string
+	model       string
+	provider    string
+	effort      string
+	readOnly    bool
+	sessionID   string
+	pickSession bool
 }
 
 func main() {
@@ -45,10 +47,19 @@ func main() {
 	flag.StringVar(&o.effort, "effort", "", "reasoning effort override")
 	flag.BoolVar(&o.readOnly, "read-only", false, "start in read-only mode")
 	flag.StringVar(&o.sessionID, "session-id", "", "use this session id: continues it if it exists, creates it otherwise")
+	flag.BoolVar(&o.pickSession, "r", false, "pick a session of this directory to resume")
+	show := flag.String("show", "", "print a session of this directory (id or path) as plain text and exit")
 	showVersion := flag.Bool("version", false, "print version")
 	flag.Parse()
 	if *showVersion {
 		fmt.Println("aicode", version)
+		return
+	}
+	if *show != "" {
+		if err := showSession(os.Stdout, *show); err != nil {
+			fmt.Fprintln(os.Stderr, "aicode:", err)
+			os.Exit(1)
+		}
 		return
 	}
 	if err := run(o); err != nil {
@@ -113,20 +124,22 @@ func run(o options) error {
 			return err
 		}
 		resume = path
+	case o.pickSession:
+		if headless {
+			return errors.New("-r needs a terminal")
+		}
+		path, err := pickSession(runPlain, cfg, cwd, "")
+		if err != nil || path == "" {
+			return err
+		}
+		resume = path
 	}
 	if resume != "" {
-		path := resume
-		s, ld, err := session.Open(path)
+		s, ld, err := session.Open(resume)
 		if err != nil {
 			return err
 		}
-		a.Session = s
-		a.Messages = ld.Messages
-		a.RestoreMode()
-		a.SetContextTokens(ld.CtxTokens)
-		if ld.CtxTokens == 0 {
-			a.SetContextTokens(a.EstimateTokens())
-		}
+		a.Load(s, ld)
 	} else {
 		kind := "interactive"
 		if headless {

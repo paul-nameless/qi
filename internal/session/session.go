@@ -168,19 +168,34 @@ type Loaded struct {
 	CtxTokens int
 }
 
-func Open(path string) (*Session, Loaded, error) {
-	var ld Loaded
+func Entries(path string) ([]Entry, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, ld, fmt.Errorf("open session: %w", err)
+		return nil, fmt.Errorf("open session: %w", err)
 	}
+	defer f.Close()
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 1<<20), 256<<20)
+	var out []Entry
 	for sc.Scan() {
 		var e Entry
-		if err := json.Unmarshal(sc.Bytes(), &e); err != nil {
-			continue
+		if json.Unmarshal(sc.Bytes(), &e) == nil {
+			out = append(out, e)
 		}
+	}
+	if err := sc.Err(); err != nil {
+		return nil, fmt.Errorf("read session: %w", err)
+	}
+	return out, nil
+}
+
+func Load(path string) (Loaded, error) {
+	var ld Loaded
+	entries, err := Entries(path)
+	if err != nil {
+		return ld, err
+	}
+	for _, e := range entries {
 		ld.LastID = e.ID
 		switch e.Type {
 		case "message":
@@ -199,11 +214,15 @@ func Open(path string) (*Session, Loaded, error) {
 			ld.CtxTokens = 0
 		}
 	}
-	f.Close()
-	if err := sc.Err(); err != nil {
-		return nil, ld, fmt.Errorf("read session: %w", err)
-	}
 	ld.Messages = Repair(ld.Messages)
+	return ld, nil
+}
+
+func Open(path string) (*Session, Loaded, error) {
+	ld, err := Load(path)
+	if err != nil {
+		return nil, ld, err
+	}
 	wf, err := os.OpenFile(path, os.O_RDWR|os.O_APPEND, 0o600)
 	if err != nil {
 		return nil, ld, fmt.Errorf("open session for append: %w", err)

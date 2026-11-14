@@ -160,6 +160,7 @@ func (r *repl) toolKeys() [][2]string {
 		{"file_picker", cfg.FilePicker},
 		{"history_picker", cfg.HistoryPicker},
 		{"paste_image_cmd", cfg.PasteImageCmd},
+		{"session_picker", cfg.SessionPicker},
 	}
 }
 
