@@ -200,6 +200,7 @@ func (r *repl) toolKeys() [][2]string {
 		{"session_picker", cfg.SessionPicker},
 		{"pager", cfg.Pager},
 		{"viewer", cfg.Viewer},
+		{"diff_cmd", cfg.DiffCmd},
 	}
 }
 

@@ -241,9 +241,13 @@ func Write() *Tool {
 			}
 			path := env.resolve(a.FilePath)
 			_, statErr := os.Stat(path)
+			var before []byte
 			if statErr == nil {
 				if err := env.files.check(path); err != nil {
 					return errResult("%v", err)
+				}
+				if env.OnDiff != nil {
+					before, _ = os.ReadFile(path)
 				}
 			}
 			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -261,7 +265,7 @@ func Write() *Tool {
 			if statErr != nil {
 				verb = "created"
 			}
-			return Result{Text: fmt.Sprintf("%s %s (%d lines)", verb, env.rel(path), n), Summary: fmt.Sprintf("%s, %d lines", verb, n)}
+			return Result{Text: fmt.Sprintf("%s %s (%d lines)", verb, env.rel(path), n), Summary: fmt.Sprintf("%s, %d lines", verb, n), Diff: env.diff(path, string(before), a.Content)}
 		},
 	}
 }
@@ -314,7 +318,7 @@ func Edit() *Tool {
 				summary += fmt.Sprintf(" (%d places)", count)
 			}
 			text := fmt.Sprintf("edited %s: %s\n%s", env.rel(path), summary, snippet(updated, a.NewString))
-			return Result{Text: text, Summary: summary}
+			return Result{Text: text, Summary: summary, Diff: env.diff(path, string(data), updated)}
 		},
 	}
 }

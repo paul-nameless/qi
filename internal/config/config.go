@@ -71,6 +71,7 @@ type Config struct {
 	SessionPicker   string               `yaml:"session_picker"`
 	Pager           string               `yaml:"pager"`
 	Viewer          string               `yaml:"viewer"`
+	DiffCmd         string               `yaml:"diff_cmd"`
 	Providers       map[string]Provider  `yaml:"providers"`
 	Profiles        map[string]any       `yaml:"profiles"`
 	DefaultProfile  string               `yaml:"default_profile"`
@@ -313,6 +314,7 @@ func (c *Config) toolDefaults() {
 	setDefault(&c.Pager, os.Getenv("PAGER"))
 	setDefault(&c.Pager, "less -R")
 	setDefault(&c.Viewer, "glow -p {file}")
+	setDefault(&c.DiffCmd, "delta --paging=never")
 	setDefault(&c.FilePicker, `(git ls-files -co --exclude-standard 2>/dev/null || fd -t f || find . -type f -not -path '*/.git/*') | {picker}`)
 }
 
