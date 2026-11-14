@@ -22,7 +22,7 @@ Minimal Go coding agent for the terminal (v2 rewrite). Plan: `docs/plans/aicode-
 - UI testing: run in tmux (`tmux new-session -d -s ai -x 120 -y 40 './aicode'`, then `send-keys`/`capture-pane`); shift+tab is `$'\e[Z'`, bracketed paste via `tmux paste-buffer -p`
 
 ## Rules
-- Keep the request prefix byte-stable for prompt caching: no timestamps in the system prompt, fixed tool list (read-only is enforced at execution, not by removing tools), deterministic JSON
+- Keep the request prefix byte-stable for prompt caching: no timestamps in the system prompt, fixed tool list (read-only is enforced at execution, not by removing tools), deterministic JSON. The system prompt is two cached blocks: the static part (base prompt, global instruction files, global skills) must not depend on the directory, so every session shares it; cwd, date and project files go in the second block
 - Every `tool_use` in the log needs a `tool_result`; append assistant messages only when the stream completes
 - Never `MakeRaw` the terminal: it clears OPOST and output staircases; `ui.Terminal` keeps ISIG so ctrl+c is SIGINT
 - No code comments

@@ -3,6 +3,8 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -272,5 +274,20 @@ func TestBlockCharsCountsImagesBySize(t *testing.T) {
 	}
 	if got := blockChars(blocks) / 4; got > 5000 {
 		t.Errorf("two images estimated at %d tokens", got)
+	}
+}
+
+func TestSystemPromptStaticPartIsDirectoryFree(t *testing.T) {
+	home, proj := t.TempDir(), t.TempDir()
+	os.WriteFile(filepath.Join(home, "CLAUDE.md"), []byte("global rules"), 0o600)
+	os.WriteFile(filepath.Join(proj, "CLAUDE.md"), []byte("project rules"), 0o600)
+	skills := []Skill{{Name: "g", Description: "global", Path: filepath.Join(home, "skills/g/SKILL.md")}, {Name: "p", Description: "proj", Path: filepath.Join(proj, ".claude/skills/p/SKILL.md")}}
+	sys, n := BuildSystemPrompt(proj, []string{filepath.Join(home, "CLAUDE.md"), filepath.Join(proj, "CLAUDE.md")}, skills)
+	static, rest := sys[:n], sys[n:]
+	if strings.Contains(static, proj) || !strings.Contains(static, "global rules") || !strings.Contains(static, "- g: global") {
+		t.Errorf("static part: %q", static)
+	}
+	if !strings.Contains(rest, proj) || !strings.Contains(rest, "project rules") || !strings.Contains(rest, "- p: proj") {
+		t.Errorf("directory part: %q", rest)
 	}
 }
