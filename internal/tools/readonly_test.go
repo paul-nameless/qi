@@ -110,6 +110,8 @@ func TestCheckReadOnly(t *testing.T) {
 		"sort --compress-program=sh a",
 		"tree -o/tmp/x",
 		"tree -ao out",
+		"tree -R -L 1",
+		"tree -RH. -L1",
 		"fd -xrm",
 		"fd -Hx rm",
 		"uniq in out",

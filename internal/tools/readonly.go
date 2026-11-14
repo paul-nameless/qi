@@ -21,7 +21,7 @@ var forbiddenArgs = map[string][]string{
 	"fd":         {"-x", "-X", "--exec", "--exec-batch"},
 	"rg":         {"--pre", "--hostname-bin"},
 	"sort":       {"-o", "--output", "--compress-program"},
-	"tree":       {"-o"},
+	"tree":       {"-o", "-R"},
 	"file":       {"-C", "--compile"},
 	"git":        {"--output", "-O", "--open-files-in-pager", "--ext-diff", "--textconv"},
 	"git branch": {"-d", "-D", "-m", "-M", "-c", "-C", "-f", "-u", "--delete", "--move", "--copy", "--force", "--set-upstream-to", "--unset-upstream", "--edit-description", "--track", "--no-track", "--create-reflog"},
