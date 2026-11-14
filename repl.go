@@ -86,6 +86,9 @@ func (r *repl) run() error {
 	if r.toolOn(r.agent.Cfg.Picker) {
 		r.editor.OnSlash = r.slashPicker
 	}
+	if r.toolOn(r.agent.Cfg.HistoryPicker) {
+		r.editor.OnHistory = r.historyPicker
+	}
 	if r.toolOn(r.agent.Cfg.FilePicker) {
 		r.editor.OnAt = r.filePicker
 	}

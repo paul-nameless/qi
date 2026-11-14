@@ -49,6 +49,31 @@ func (r *repl) filePicker() (string, bool) {
 	return strings.Join(parts, " ") + " ", true
 }
 
+func (r *repl) historyPicker(entries []string) (string, bool) {
+	items, back := historyItems(entries)
+	name, ok := r.pickWith(r.agent.Cfg.HistoryPicker, "history ", items)
+	if !ok {
+		return "", false
+	}
+	text, ok := back[name]
+	return text, ok
+}
+
+func historyItems(entries []string) ([]pickItem, map[string]string) {
+	shown := strings.NewReplacer("\r\n", "⏎", "\n", "⏎", "\r", "⏎", "\t", " ")
+	back := map[string]string{}
+	var items []pickItem
+	for i := len(entries) - 1; i >= 0; i-- {
+		name := shown.Replace(entries[i])
+		if _, dup := back[name]; dup || strings.TrimSpace(name) == "" {
+			continue
+		}
+		back[name] = entries[i]
+		items = append(items, pickItem{name: name})
+	}
+	return items, back
+}
+
 func relPath(cwd, p string) string {
 	if rel, err := filepath.Rel(cwd, p); err == nil && filepath.IsAbs(p) && !strings.HasPrefix(rel, "..") {
 		return rel

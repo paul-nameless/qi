@@ -27,6 +27,7 @@ type Editor struct {
 	IsImage   func(text string) []string
 	OnSlash   func() (text string, submit bool)
 	OnAt      func() (text string, ok bool)
+	OnHistory func(entries []string) (text string, ok bool)
 	images    []string
 	histPath  string
 	history   []string
@@ -204,6 +205,11 @@ func (e *Editor) hook(st *lineState, k Key) (submit, handled bool) {
 			text = "@"
 		}
 		e.P.Locked(func() { st.insert([]rune(e.pasteText(text))) })
+		return false, true
+	case k.Kind == KeyHistory && e.OnHistory != nil:
+		if text, ok := e.OnHistory(append([]string(nil), e.history...)); ok {
+			e.P.Locked(func() { st.set(text) })
+		}
 		return false, true
 	}
 	return false, false

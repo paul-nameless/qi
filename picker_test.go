@@ -112,3 +112,24 @@ func TestFilePicker(t *testing.T) {
 		t.Error("failing picker should cancel")
 	}
 }
+
+func TestHistoryPicker(t *testing.T) {
+	r := &repl{agent: newTestAgent(t, config.Config{}), display: devNullPrinter(t)}
+	entries := []string{"old", "two\nlines\tx", "new", "old"}
+	items, _ := historyItems(entries)
+	var names []string
+	for _, it := range items {
+		names = append(names, it.name)
+	}
+	if strings.Join(names, "|") != "old|new|two⏎lines x" {
+		t.Errorf("items %q", names)
+	}
+	r.agent.Cfg.HistoryPicker = "grep lines"
+	if got, ok := r.historyPicker(entries); !ok || got != "two\nlines\tx" {
+		t.Errorf("got %q, %v", got, ok)
+	}
+	r.agent.Cfg.HistoryPicker = "{picker} | head -1"
+	if got, _ := r.historyPicker(entries); got != "old" {
+		t.Errorf("newest first: got %q", got)
+	}
+}
