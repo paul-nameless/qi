@@ -136,3 +136,10 @@ func TestSupportsAdaptive(t *testing.T) {
 		}
 	}
 }
+
+func TestEffortNoneDisablesThinking(t *testing.T) {
+	body := NewAnthropic("", "k").buildBody(Request{Model: "claude-haiku-5-5", ReasoningEffort: "none", Messages: []Message{UserText("hi")}})
+	if body["thinking"].(map[string]any)["type"] != "disabled" || body["output_config"] != nil {
+		t.Errorf("thinking %v output_config %v", body["thinking"], body["output_config"])
+	}
+}

@@ -148,7 +148,10 @@ func (a *Anthropic) buildBody(req Request) map[string]any {
 		}
 		body["tools"] = tools
 	}
-	if supportsAdaptive(req.Model) {
+	switch {
+	case req.ReasoningEffort == "none":
+		body["thinking"] = map[string]any{"type": "disabled"}
+	case supportsAdaptive(req.Model):
 		body["thinking"] = map[string]any{"type": "adaptive", "display": "summarized"}
 		if e := anthropicEffort(req.ReasoningEffort); e != "" {
 			body["output_config"] = map[string]any{"effort": e}

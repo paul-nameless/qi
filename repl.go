@@ -345,6 +345,7 @@ func (r *repl) switchModel(name string) error {
 
 var efforts = []pickItem{
 	{"default", "the model's own default"},
+	{"none", "thinking off (Haiku and some others; Opus can't)"},
 	{"low", "fastest, least thinking"},
 	{"medium", ""},
 	{"high", ""},

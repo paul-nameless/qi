@@ -20,7 +20,7 @@ const helpText = `Commands:
   /compact           summarize the conversation to free context
   /model [name]      show or switch the model (switching loses the prompt cache)
   /profile [name]    show or switch the profile
-  /effort [level]    show or switch the reasoning effort (default, low, medium, high, xhigh, max)
+  /effort [level]    show or switch the reasoning effort (default, none, low, medium, high, xhigh, max)
   /skills            list skills (/<skill-name> [args] runs one)
   /exit              quit
 Keys:
