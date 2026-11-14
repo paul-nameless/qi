@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -33,6 +34,36 @@ func (r *repl) pick(prompt string, items []pickItem) (string, bool) {
 
 func (r *repl) pickWith(command, prompt string, items []pickItem) (string, bool) {
 	return pick(r.runTTY, command, r.agent.Cfg.Picker, prompt, items)
+}
+
+func (r *repl) filePicker() (string, bool) {
+	lines, ok := choose(r.runTTY, r.agent.Cfg.FilePicker, r.agent.Cfg.Picker, "@ ", nil)
+	if !ok {
+		return "", false
+	}
+	parts := make([]string, len(lines))
+	for i, l := range lines {
+		name, _, _ := strings.Cut(l, "\t")
+		parts[i] = quotePath(relPath(r.agent.Cwd, name))
+	}
+	return strings.Join(parts, " ") + " ", true
+}
+
+func relPath(cwd, p string) string {
+	if rel, err := filepath.Rel(cwd, p); err == nil && filepath.IsAbs(p) && !strings.HasPrefix(rel, "..") {
+		return rel
+	}
+	return p
+}
+
+func quotePath(p string) string {
+	if !strings.ContainsAny(p, " \t'\"") {
+		return p
+	}
+	if strings.Contains(p, "'") {
+		return `"` + p + `"`
+	}
+	return "'" + p + "'"
 }
 
 var builtinCommands = []pickItem{

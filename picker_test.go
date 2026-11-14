@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/paul-nameless/aicode/internal/config"
 )
 
 func TestPick(t *testing.T) {
@@ -88,4 +90,25 @@ func mustExecutable(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return p
+}
+
+func TestFilePicker(t *testing.T) {
+	r := &repl{agent: newTestAgent(t, config.Config{}), display: devNullPrinter(t)}
+	cwd := r.agent.Cwd
+	cases := []struct{ command, want string }{
+		{"printf '%s\\n' 'a b.txt' " + shellQuote(cwd+"/sub/x.go") + " /etc/hosts \"it's\"", `'a b.txt' sub/x.go /etc/hosts "it's" `},
+		{"printf 'z.go\\n' > {file}", "z.go "},
+		{"printf 'main.go\\tdesc\\n' | {picker}", "main.go "},
+	}
+	for _, c := range cases {
+		r.agent.Cfg.FilePicker = c.command
+		got, ok := r.filePicker()
+		if !ok || got != c.want {
+			t.Errorf("%s: got %q, %v; want %q", c.command, got, ok, c.want)
+		}
+	}
+	r.agent.Cfg.FilePicker = "false"
+	if _, ok := r.filePicker(); ok {
+		t.Error("failing picker should cancel")
+	}
 }

@@ -65,6 +65,7 @@ type Config struct {
 	Picker          string               `yaml:"picker"`
 	NotifyCmd       string               `yaml:"notify_cmd"`
 	NotifyAfter     string               `yaml:"notify_after"`
+	FilePicker      string               `yaml:"file_picker"`
 	Providers       map[string]Provider  `yaml:"providers"`
 	Profiles        map[string]any       `yaml:"profiles"`
 	DefaultProfile  string               `yaml:"default_profile"`
@@ -301,6 +302,7 @@ func (c *Config) toolDefaults() {
 	mac := runtime.GOOS == "darwin"
 	setDefault(&c.NotifyCmd, pick(mac, "terminal-notifier -title {title} -message {msg}", "notify-send {title} {msg}"))
 	setDefault(&c.NotifyAfter, "20s")
+	setDefault(&c.FilePicker, `(git ls-files -co --exclude-standard 2>/dev/null || fd -t f || find . -type f -not -path '*/.git/*') | {picker}`)
 }
 
 func setDefault(field *string, value string) {

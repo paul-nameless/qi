@@ -26,6 +26,7 @@ type Editor struct {
 	OnToggle  func() string
 	IsImage   func(text string) []string
 	OnSlash   func() (text string, submit bool)
+	OnAt      func() (text string, ok bool)
 	images    []string
 	histPath  string
 	history   []string
@@ -142,27 +143,16 @@ func (e *Editor) ReadLine(prompt, initial string) (string, error) {
 			return "", ErrInterrupt
 		case k = <-e.T.Keys:
 		}
-		if k.Kind == KeyRune && k.Rune == '/' && e.OnSlash != nil {
-			empty := false
-			e.P.Locked(func() { empty = len(st.buf) == 0 })
-			if empty {
-				time.Sleep(20 * time.Millisecond)
-				empty = len(e.T.Keys) == 0
+		if submit, handled := e.hook(st, k); handled {
+			if submit {
+				var line string
+				e.P.Locked(func() { line = string(st.buf) })
+				e.P.FinishPrompt()
+				e.addHistory(line)
+				return line, nil
 			}
-			if empty {
-				text, submit := e.OnSlash()
-				e.P.Locked(func() {
-					st.buf = []rune(text)
-					st.pos = len(st.buf)
-				})
-				if submit {
-					e.P.FinishPrompt()
-					e.addHistory(text)
-					return text, nil
-				}
-				e.P.RenderPrompt()
-				continue
-			}
+			e.P.RenderPrompt()
+			continue
 		}
 		switch k.Kind {
 		case KeyEnter:
@@ -192,10 +182,7 @@ func (e *Editor) ReadLine(prompt, initial string) (string, error) {
 			e.P.Locked(func() { cur = string(st.buf) })
 			text, err := e.external(cur)
 			if err == nil {
-				e.P.Locked(func() {
-					st.buf = []rune(text)
-					st.pos = len(st.buf)
-				})
+				e.P.Locked(func() { st.set(text) })
 			}
 		case KeyClear:
 			e.P.Raw("\x1b[2J\x1b[H")
@@ -203,6 +190,33 @@ func (e *Editor) ReadLine(prompt, initial string) (string, error) {
 		e.P.Locked(func() { e.apply(st, k, &histIdx, &draft) })
 		e.P.RenderPrompt()
 	}
+}
+
+func (e *Editor) hook(st *lineState, k Key) (submit, handled bool) {
+	switch {
+	case k.Kind == KeyRune && k.Rune == '/' && e.OnSlash != nil && e.quiet(st, func() bool { return len(st.buf) == 0 }):
+		text, submit := e.OnSlash()
+		e.P.Locked(func() { st.set(text) })
+		return submit, true
+	case k.Kind == KeyRune && k.Rune == '@' && e.OnAt != nil && e.quiet(st, st.atWordStart):
+		text, ok := e.OnAt()
+		if !ok {
+			text = "@"
+		}
+		e.P.Locked(func() { st.insert([]rune(e.pasteText(text))) })
+		return false, true
+	}
+	return false, false
+}
+
+func (e *Editor) quiet(st *lineState, cond func() bool) bool {
+	ok := false
+	e.P.Locked(func() { ok = cond() })
+	if !ok {
+		return false
+	}
+	time.Sleep(20 * time.Millisecond)
+	return len(e.T.Keys) == 0
 }
 
 func (e *Editor) apply(st *lineState, k Key, histIdx *int, draft *string) {
@@ -292,6 +306,15 @@ func (e *Editor) TakeImages(line string) []string {
 	}
 	e.images = nil
 	return used
+}
+
+func (st *lineState) set(text string) {
+	st.buf = []rune(text)
+	st.pos = len(st.buf)
+}
+
+func (st *lineState) atWordStart() bool {
+	return st.pos == 0 || unicode.IsSpace(st.buf[st.pos-1])
 }
 
 func (st *lineState) insert(rs []rune) {

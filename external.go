@@ -157,6 +157,7 @@ func (r *repl) toolKeys() [][2]string {
 	return [][2]string{
 		{"picker", cfg.Picker},
 		{"notify_cmd", cfg.NotifyCmd},
+		{"file_picker", cfg.FilePicker},
 	}
 }
 
