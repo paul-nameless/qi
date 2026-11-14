@@ -284,7 +284,7 @@ func (p *Printer) ToolDone(id string, ok bool, line string) {
 	if !p.atLineStart {
 		p.write("\n")
 	}
-	p.write(mark + " " + Sanitize(line) + p.Color(Dim, dur) + "\n")
+	p.write(mark + " " + p.Color(Dim, Sanitize(line)+dur) + "\n")
 	if len(p.running) == 0 {
 		p.stopTicker()
 	}

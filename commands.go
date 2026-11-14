@@ -20,6 +20,7 @@ const helpText = `Commands:
   /compact           summarize the conversation to free context
   /model [name]      show or switch the model (switching loses the prompt cache)
   /profile [name]    show or switch the profile
+  /effort [level]    show or switch the reasoning effort (default, low, medium, high, xhigh, max)
   /skills            list skills (/<skill-name> [args] runs one)
   /exit              quit
 Keys:
@@ -71,6 +72,13 @@ func (r *repl) handleInput(line string) (string, bool) {
 			}
 		}
 		r.display.Info(r.modelList())
+	case "effort":
+		if args != "" {
+			if err := r.setEffort(args); err != nil {
+				r.display.Error(err.Error())
+			}
+		}
+		r.display.Info("effort: " + effortName(r.agent.Cfg.ReasoningEffort))
 	case "skills":
 		var lines []string
 		for _, s := range r.skills {

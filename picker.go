@@ -57,6 +57,7 @@ var builtinCommands = []pickItem{
 	{"compact", "summarize the conversation to free context"},
 	{"model", "switch the model"},
 	{"profile", "switch the profile"},
+	{"effort", "switch the reasoning effort"},
 	{"skills", "pick a skill"},
 	{"exit", "quit"},
 }
@@ -69,6 +70,8 @@ func (r *repl) slashPicker() (string, bool) {
 	switch name {
 	case "model":
 		return r.pickArg("model", r.modelItems())
+	case "effort":
+		return r.pickArg("effort", r.effortItems())
 	case "profile":
 		items := r.profileItems()
 		if len(items) == 0 {
@@ -150,6 +153,18 @@ func (r *repl) profileItems() []pickItem {
 			desc += " (current)"
 		}
 		items = append(items, pickItem{p, desc})
+	}
+	return items
+}
+
+func (r *repl) effortItems() []pickItem {
+	current := effortName(r.agent.Cfg.ReasoningEffort)
+	items := make([]pickItem, len(efforts))
+	for i, e := range efforts {
+		if e.name == current {
+			e.desc = strings.TrimSpace("current " + e.desc)
+		}
+		items[i] = e
 	}
 	return items
 }

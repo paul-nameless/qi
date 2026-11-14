@@ -343,6 +343,36 @@ func (r *repl) switchModel(name string) error {
 	return r.apply(cfg, base)
 }
 
+var efforts = []pickItem{
+	{"default", "the model's own default"},
+	{"low", "fastest, least thinking"},
+	{"medium", ""},
+	{"high", ""},
+	{"xhigh", "not supported by every model"},
+	{"max", "Anthropic only"},
+}
+
+func effortName(e string) string {
+	if e == "" {
+		return "default"
+	}
+	return e
+}
+
+func (r *repl) setEffort(level string) error {
+	for _, e := range efforts {
+		if e.name == level {
+			if level == "default" {
+				level = ""
+			}
+			r.opts.effort = level
+			r.agent.SetEffort(level)
+			return nil
+		}
+	}
+	return fmt.Errorf("unknown effort %q", level)
+}
+
 func withProvider(menu []config.SubagentModel, provider string) []config.SubagentModel {
 	out := make([]config.SubagentModel, len(menu))
 	for i, m := range menu {
@@ -375,6 +405,7 @@ func (r *repl) modelList() string {
 	if cfg.Provider != "" {
 		fmt.Fprintf(&b, " (provider %s)", cfg.Provider)
 	}
+	fmt.Fprintf(&b, " · effort %s", effortName(cfg.ReasoningEffort))
 	if cfg.Profile != "" {
 		fmt.Fprintf(&b, " · profile %s", cfg.Profile)
 	}

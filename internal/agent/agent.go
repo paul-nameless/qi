@@ -81,6 +81,14 @@ func (a *Agent) Reconfigure(cfg config.Config, p llm.Provider) {
 	a.Provider = p
 }
 
+func (a *Agent) SetEffort(effort string) {
+	a.busy.Lock()
+	defer a.busy.Unlock()
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.Cfg.ReasoningEffort = effort
+}
+
 func (a *Agent) Model() string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
