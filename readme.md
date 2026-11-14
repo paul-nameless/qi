@@ -1,138 +1,88 @@
-# AiCode
+# aicode
 
-AI-powered CLI agent for software engineering tasks
+A small coding agent for the terminal. One Go binary, two dependencies, about 20MB of RAM, plain scrolling output (no fullscreen UI).
 
-![Demo of AiCode in action](./.github/demo.gif)
+- Works with OpenRouter, any OpenAI-compatible API, and Anthropic.
+- Tools: `read`, `write`, `edit`, `bash`, `subagent`. Several calls in one response run in parallel.
+- Prompt caching always on, sessions saved as JSONL, `-c` to continue.
+- Claude Code compatible: reads `CLAUDE.md`/`AGENTS.md`, skills from `~/.claude/skills` and `.claude/skills`, commands from `.claude/commands`, hooks from `.claude/settings.json`.
+- Two modes, toggled with shift+tab: yolo (default) and read-only (no write/edit, bash limited to an allowlist).
 
-## Features
-
-- Interactive CLI interface with AI assistance
-- Seamless integration with your local development environment
-- Support for multiple AI models (OpenAI, Anthropic)
-- Persistent memory for project context via rule files
-
-## Installation
-
-### Using Go
+## Install
 
 ```bash
 go install github.com/paul-nameless/aicode@latest
 ```
 
-### Using Docker
+## Configure
 
-```bash
-docker run --rm -it -v $PWD:/app -e ANTHROPIC_API_KEY=$(pass show example/claude-api-key| head -n 1) ghcr.io/paul-nameless/aicode:latest
-```
-
-### Manual Installation
-
-```bash
-git clone https://github.com/paul-nameless/aicode.git
-cd aicode
-go build .
-```
-
-## Configuration
-
-AiCode requires an API key from OpenAI or Anthropic:
-
-### OpenAI
-
-```bash
-export OPENAI_API_KEY=your_api_key
-aicode
-```
-
-### Anthropic
-
-```bash
-export ANTHROPIC_API_KEY=your_api_key
-aicode
-```
-
-## Usage
-
-### Basic Usage
-
-```bash
-# Start interactive session
-aicode
-
-# Run with a specific prompt
-aicode -q "find all TODO comments in the codebase"
-```
-
-## Profiles
-
-Profiles let you easily switch between AI Code configurations for different workflows. Example use cases include:
-
-- Commit profile: uses a simple model, non-interactive mode, and a custom commit message prompt
-- Task-completion profile: fetches descriptions from Jira/Linear, completes tasks, tests, commits, pushes, and updates task status
-- Analysis profile: read-only for code review
-
-Profiles are configured as YAML files in the `configs/` directory. Pass `-c <profile>` to select a profile, e.g. `aicode -c commit`.
-
-### Example profile (`configs/commit.yml`):
+`~/.config/aicode/config.yml` defines providers and profiles:
 
 ```yaml
-api_key_shell: "pass show example/openai.com-api-key" # Use shell cmd to get the API key, do not store it in the config file
-model: "gpt-4.1-nano" # Model name for this profile
-initial_prompt: "Create a commit message for the following changes:..."
-non_interactive: true # Disable interactive UI
-notify_cmd: "notify AiCode Done" # Sent when AI finished and terminal is not in focus
-system_files:
-  - AI.md
-  - CLAUDE.md
+providers:
+  openrouter:
+    base_url: https://openrouter.ai/api/v1
+    api_key_shell: "pass show openrouter-api-key | head -n 1"
+  routeway:
+    base_url: https://api.routeway.ai/v1
+    api_key_shell: "pass show routeway-api-key | head -n 1"
+  anthropic:
+    api: anthropic                     # native Messages API (base_url optional)
+    api_key_shell: "pass show anthropic-api-key | head -n 1"
+
+default_profile: smart
+
+profiles:
+  smart:
+    provider: openrouter
+    model: openai/gpt-6.1-sol
+    reasoning_effort: medium
+    subagent_models:                   # the model picks one per subagent; /model <name> switches to it
+      - name: luna
+        model: openai/gpt-6-luna
+        use_for: fast and cheap; search, summaries
+      - name: terra
+        model: openai/gpt-6.1-terra
+        use_for: solid mid-tier; focused implementation and reviews
+  glm:
+    provider: routeway
+    model: glm-5.3-flash-uncensored
+
+# shared settings (a profile can override any of them)
+subagent_efforts: [low, medium, high]
+# cache_ttl: 1h             # prompt cache TTL; idle compaction runs 5 min before it expires
+# compact_at: 150000        # compact when context passes this many tokens
+# read_only_allow: [make lint, go test]
+# mcp:
+#   github:
+#     command: github-mcp-server
+#     args: [stdio]
+#     description: GitHub issues and pull requests
 ```
 
-## Rule files
+`aicode -p glm` picks a profile, `/profile glm` and `/model luna` switch at runtime. A plain `~/.config/aicode/<name>.yml` also works as a profile. The API key can also come from `OPENROUTER_API_KEY`, `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`. Project hooks from `.claude/settings.json` run only after you trust the project once.
 
-By default it can generate `AI.md` file with `/init` command but also it is reading `CLAUDE.md` by default and you can customize files with `system_files` config.
+## Use
 
-## Ideas
-
-- Realtime voice transcription to control AiCode
-- At the end, run aicode with another profile which will check results of first run. It can improve the quality.
-- Run multiples aicode instances, each in it's own git workspace, with different models. At the end, let them review others work and vote for the best approach. The best one will be shown to the user first and others to choose from.
-- Use reasoning model at the beginning to create a plan to do the task. Maybe run separate contexts for each step of the plan, but give plan at the beginning.
-- Resume conversations from where you left off from with --resume
-- Todo list
-
-## Slash Commands
-
-Interact using slash commands to streamline your workflow or trigger specific AI-powered tasks. The following commands are available:
-
-- `/help`: Display help information.
-- `/init`: Generate an AI.md file with conventions and project context.
-- `/clear`: Clear context.
-- `/cmd:<name> [arguments]`: Run a custom prompt or workflow associated with `<name>`. Examples:
-    - `/cmd:review`: Runs a custom code review prompt on the current changes.
-    - `/cmd:commit-msg`: Generates a commit message for staged changes.
-    - `/cmd:test-summary`: Summarizes recent test outcomes.
-
-Custom prompts can be added and configured in the `~/.config/aicode/cmds/` directory. Use them to define reusable, specialized AI actions tailored to your workflow. Pass arguments after the command to fine-tune the prompt.
-
-**Examples:**
 ```bash
-/cmd:review last git commit
-/cmd:review uncommited changes
+aicode                          # interactive
+aicode -c                       # continue the last session in this directory
+aicode -q "fix the failing test"  # headless: progress on stderr, answer on stdout
+git diff | aicode -q "review this"
+aicode -read-only               # start in read-only mode
 ```
 
-Example of custom cmd `~/.config/aicode/cmds/review.md`:
+Keys: shift+tab toggles read-only, ctrl+g edits the prompt in `$EDITOR`, alt+enter or ctrl+j inserts a newline, ctrl+c or esc cancels a turn. Text typed while the agent works is queued and delivered after the next tool results.
 
-```markdown
-Review {{.ARGS}}
+Commands: `/help`, `/clear`, `/compact`, `/model`, `/profile`, `/skills`, `/exit`, and `/<skill-or-command> [args]`.
 
-Focus on:
-1. Logic flaws and edge cases
-2. Performance bottlenecks
-3. Security vulnerabilities
-4. Maintainability concerns
+## Bench
 
-Suggest specific improvements with brief explanations. First, give a detailed plan. Then, implement it with the least changes and updating minimal code.
+`bench/` has 11 tasks (7 Go exercises from the Aider polyglot benchmark, 4 exploration tasks on a small Go repo), each with an automatic check.
+
+```bash
+bench/run.sh                 # all tasks, headless; prints tokens, CPU time and peak memory per task
+bench/run.sh -- -p glm       # extra flags go to aicode
+bench/run.sh rename forth    # some tasks
+bench/try.sh poker           # open one interactively
 ```
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
