@@ -69,7 +69,12 @@ func Read() *Tool {
 			if a.FilePath == "" {
 				return errResult("file_path is required")
 			}
-			return readPath(env.resolve(a.FilePath), a.Offset, a.Limit)
+			path := env.resolve(a.FilePath)
+			res := readPath(path, a.Offset, a.Limit)
+			if !res.IsError {
+				env.files.remember(path)
+			}
+			return res
 		},
 	}
 }
@@ -128,7 +133,10 @@ func readPath(path string, offset, limit int) Result {
 		}
 		fmt.Fprintf(&b, "%d\t%s\n", i+1, line)
 	}
-	if end < len(lines) || offset > 1 {
+	switch {
+	case end < len(lines):
+		fmt.Fprintf(&b, "(lines %d-%d of %d; continue with offset=%d)\n", offset, end, len(lines), end+1)
+	case offset > 1:
 		fmt.Fprintf(&b, "(lines %d-%d of %d)\n", offset, end, len(lines))
 	}
 	return Result{Text: b.String(), Summary: fmt.Sprintf("%d lines", end-offset+1)}
@@ -214,7 +222,7 @@ func Write() *Tool {
 	return &Tool{
 		Def: llm.ToolDef{
 			Name:        "write",
-			Description: "Create or overwrite a file. Prefer edit for changes to existing files.",
+			Description: "Create or overwrite a file. Prefer edit for changes to existing files; to overwrite one, read it first.",
 			Schema:      json.RawMessage(`{"type":"object","properties":{"file_path":{"type":"string"},"content":{"type":"string"}},"required":["file_path","content"]}`),
 		},
 		Path:  pathKey,
@@ -232,12 +240,18 @@ func Write() *Tool {
 			}
 			path := env.resolve(a.FilePath)
 			_, statErr := os.Stat(path)
+			if statErr == nil {
+				if err := env.files.check(path, true); err != nil {
+					return errResult("%v", err)
+				}
+			}
 			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 				return errResult("%v", err)
 			}
 			if err := os.WriteFile(path, []byte(a.Content), 0o644); err != nil {
 				return errResult("%v", err)
 			}
+			env.files.remember(path)
 			n := strings.Count(a.Content, "\n")
 			if a.Content != "" && !strings.HasSuffix(a.Content, "\n") {
 				n++
@@ -281,6 +295,9 @@ func Edit() *Tool {
 			} else if !st.Mode().IsRegular() || st.Size() > maxReadBytes {
 				return errResult("%s is not a regular file under %d MB", path, maxReadBytes>>20)
 			}
+			if err := env.files.check(path, false); err != nil {
+				return errResult("%v", err)
+			}
 			data, err := os.ReadFile(path)
 			if err != nil {
 				return errResult("%v", err)
@@ -292,12 +309,14 @@ func Edit() *Tool {
 			if err := os.WriteFile(path, []byte(updated), 0o644); err != nil {
 				return errResult("%v", err)
 			}
+			env.files.remember(path)
 			added, removed := lineDelta(a.OldString, a.NewString, count)
 			summary := fmt.Sprintf("+%d -%d", added, removed)
 			if count > 1 {
 				summary += fmt.Sprintf(" (%d places)", count)
 			}
-			return Result{Text: fmt.Sprintf("edited %s: %s", env.rel(path), summary), Summary: summary}
+			text := fmt.Sprintf("edited %s: %s\n%s", env.rel(path), summary, snippet(updated, a.NewString))
+			return Result{Text: text, Summary: summary}
 		},
 	}
 }
@@ -411,4 +430,39 @@ func replaceTrimmed(content, old, new string) (string, int) {
 	}
 	out := append(append(append([]string{}, lines[:match]...), repl...), lines[match+len(oldLines):]...)
 	return strings.Join(out, "\n"), 1
+}
+
+const snippetContext = 3
+
+func snippet(content, changed string) string {
+	i := strings.Index(content, strings.ReplaceAll(changed, "\n", lineEnding(content)))
+	if i < 0 || changed == "" {
+		return ""
+	}
+	lines := strings.Split(strings.TrimSuffix(content, "\n"), "\n")
+	first := strings.Count(content[:i], "\n")
+	last := first + strings.Count(changed, "\n")
+	from, to := max(first-snippetContext, 0), min(last+snippetContext, len(lines)-1)
+	if from > to {
+		return ""
+	}
+	if to-from > 40 {
+		return ""
+	}
+	var b strings.Builder
+	for n := from; n <= to; n++ {
+		line := strings.TrimSuffix(lines[n], "\r")
+		if len(line) > maxLineLen {
+			line = cutStart(line, maxLineLen) + "…"
+		}
+		fmt.Fprintf(&b, "%d\t%s\n", n+1, line)
+	}
+	return strings.TrimSuffix(b.String(), "\n")
+}
+
+func lineEnding(content string) string {
+	if strings.Contains(content, "\r\n") {
+		return "\r\n"
+	}
+	return "\n"
 }

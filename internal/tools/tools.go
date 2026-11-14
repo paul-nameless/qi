@@ -41,6 +41,7 @@ type Env struct {
 	Subagent    func(ctx context.Context, prompt, model, provider, effort string, progress func(string)) (string, error)
 	PreHook     Hook
 	PostHook    PostHook
+	files       fileTimes
 }
 
 func (e *Env) readOnly() bool {

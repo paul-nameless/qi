@@ -145,7 +145,7 @@ func TestReadPath(t *testing.T) {
 	p := filepath.Join(dir, "f.txt")
 	os.WriteFile(p, []byte("a\nb\nc\nd\n"), 0o600)
 	res := readPath(p, 2, 2)
-	if res.Text != "2\tb\n3\tc\n(lines 2-3 of 4)\n" {
+	if res.Text != "2\tb\n3\tc\n(lines 2-3 of 4; continue with offset=4)\n" {
 		t.Errorf("got %q", res.Text)
 	}
 	if res := readPath(p, 9, 0); !res.IsError {
@@ -223,7 +223,7 @@ func TestReadCapsOutputBytes(t *testing.T) {
 	line := strings.Repeat("x", 1999) + "\n"
 	os.WriteFile(p, []byte(strings.Repeat(line, 2000)), 0o600)
 	res := readPath(p, 0, 0)
-	if len(res.Text) > maxReadOutput+5000 || !strings.Contains(res.Text, "of 2000)") {
+	if len(res.Text) > maxReadOutput+5000 || !strings.Contains(res.Text, "of 2000; continue with offset=") {
 		t.Errorf("read returned %d bytes", len(res.Text))
 	}
 }
@@ -245,5 +245,36 @@ func TestBashTTYReadFailsFast(t *testing.T) {
 	runBash(context.Background(), &Env{Cwd: t.TempDir(), SpillDir: t.TempDir()}, json.RawMessage(`{"command":"head -1 </dev/tty; echo done","timeout":20}`), nil)
 	if time.Since(start) > 5*time.Second {
 		t.Error("reading /dev/tty blocked instead of failing")
+	}
+}
+
+func TestStaleFileGuard(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "f.txt")
+	os.WriteFile(p, []byte("one\ntwo\nthree\n"), 0o600)
+	env := &Env{Cwd: dir}
+	r := NewRegistry(Read(), Write(), Edit())
+	run := func(name, input string) llm.Block {
+		return r.Execute(context.Background(), env, []llm.Block{{ID: "x", Name: name, Input: json.RawMessage(input)}}, nopUI{})[0]
+	}
+	if res := run("write", `{"file_path":"f.txt","content":"x"}`); !res.IsError || !strings.Contains(res.Text, "not read it") {
+		t.Errorf("overwrite without read: %+v", res)
+	}
+	run("read", `{"file_path":"f.txt"}`)
+	res := run("edit", `{"file_path":"f.txt","old_string":"two","new_string":"TWO"}`)
+	if res.IsError || !strings.Contains(res.Text, "2\tTWO") || !strings.Contains(res.Text, "1\tone") {
+		t.Errorf("edit snippet: %q", res.Text)
+	}
+	future := time.Now().Add(time.Hour)
+	os.Chtimes(p, future, future)
+	if res := run("edit", `{"file_path":"f.txt","old_string":"one","new_string":"ONE"}`); !res.IsError || !strings.Contains(res.Text, "changed on disk") {
+		t.Errorf("stale edit: %+v", res)
+	}
+	run("read", `{"file_path":"f.txt"}`)
+	if res := run("write", `{"file_path":"f.txt","content":"new\n"}`); res.IsError {
+		t.Errorf("write after read: %+v", res)
+	}
+	if res := run("write", `{"file_path":"g.txt","content":"new\n"}`); res.IsError {
+		t.Errorf("create: %+v", res)
 	}
 }
