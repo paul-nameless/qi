@@ -45,6 +45,7 @@ type Printer struct {
 	stopTick    chan struct{}
 	promptDraw  func()
 	promptFinal func() string
+	md          markdown
 }
 
 func NewPrinter(out *os.File) *Printer {
@@ -192,16 +193,34 @@ func (p *Printer) Text(s string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.endReasoning()
-	p.write(Sanitize(s))
+	s = Sanitize(s)
+	if p.TTY {
+		p.md.width = p.width()
+		s = p.md.feed(s)
+	}
+	p.write(s)
+}
+
+func (p *Printer) breakLine() {
+	if !p.atLineStart && p.TTY {
+		p.write(p.md.feed("\n"))
+	}
+	if !p.atLineStart {
+		p.write("\n")
+	}
+}
+
+func (p *Printer) flushMarkdown() {
+	if p.TTY {
+		p.write(p.md.flush())
+	}
 }
 
 func (p *Printer) Reasoning(s string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if !p.inReasoning {
-		if !p.atLineStart {
-			p.write("\n")
-		}
+		p.breakLine()
 		p.inReasoning = true
 	}
 	s = Sanitize(s)
@@ -217,6 +236,7 @@ func (p *Printer) EndBlock() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.endReasoning()
+	p.flushMarkdown()
 	if !p.atLineStart {
 		p.write("\n")
 	}
@@ -226,9 +246,7 @@ func (p *Printer) Line(s string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.endReasoning()
-	if !p.atLineStart {
-		p.write("\n")
-	}
+	p.breakLine()
 	p.write(s + "\n")
 }
 
@@ -244,6 +262,7 @@ func (p *Printer) ToolStart(id, label string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.endReasoning()
+	p.flushMarkdown()
 	if !p.atLineStart {
 		p.write("\n")
 	}
@@ -443,18 +462,18 @@ func truncateVisible(s string, width int) string {
 			i = j
 			continue
 		}
-		if visible == width-1 {
+		r, n := utf8.DecodeRuneInString(s[i:])
+		if visible+runeWidth(r) > width-1 {
 			b.WriteString("…")
 			break
 		}
-		r, n := utf8.DecodeRuneInString(s[i:])
 		b.WriteRune(r)
-		visible++
+		visible += runeWidth(r)
 		i += n
 	}
 	return b.String() + Reset
 }
 
 func VisibleLen(s string) int {
-	return utf8.RuneCountInString(stripANSI(s))
+	return displayWidth(stripANSI(s))
 }

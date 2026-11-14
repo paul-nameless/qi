@@ -434,7 +434,8 @@ func (r *repl) printHistory() {
 					r.display.Line(r.display.Color(ui.Cyan, "❯ ") + firstLines(t, 6))
 				}
 			case b.Type == llm.BlockText:
-				r.display.Line(strings.TrimSpace(b.Text))
+				r.display.Text(strings.TrimSpace(b.Text))
+				r.display.EndBlock()
 			case b.Type == llm.BlockToolUse:
 				r.display.Info("· " + b.Name + " " + tools.OneLine(string(b.Input), 90))
 			case b.Type == llm.BlockImage:
