@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/paul-nameless/aicode/internal/llm"
 	"github.com/paul-nameless/aicode/internal/session"
@@ -30,6 +31,23 @@ func lastSpill(msgs []llm.Message, dir string) string {
 		}
 	}
 	return ""
+}
+
+func lastAnswer(msgs []llm.Message) string {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if t := strings.TrimSpace(msgs[i].Text()); msgs[i].Role == "assistant" && t != "" {
+			return t
+		}
+	}
+	return ""
+}
+
+func (r *repl) showAnswer() error {
+	text := lastAnswer(r.agent.Messages)
+	if text == "" {
+		return errors.New("no answer yet")
+	}
+	return r.view("viewer", r.agent.Cfg.Viewer, text+"\n", ".md")
 }
 
 func (r *repl) showHistory() error {

@@ -100,6 +100,7 @@ var builtinCommands = []pickItem{
 	{"resume", "switch to another session"},
 	{"history", "open the conversation in the pager"},
 	{"out", "open the last cut-off tool output in the pager"},
+	{"view", "open the last answer in the viewer"},
 	{"model", "switch the model"},
 	{"profile", "switch the profile"},
 	{"effort", "switch the reasoning effort"},

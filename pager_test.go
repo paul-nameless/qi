@@ -68,3 +68,30 @@ func TestPager(t *testing.T) {
 		t.Errorf("missing pager: %v", err)
 	}
 }
+
+func answer(text string) llm.Message {
+	return llm.Message{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: text}}}
+}
+
+func TestView(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "viewed")
+	r := &repl{agent: newTestAgent(t, config.Config{Viewer: "cp {file} " + out + "; case {file} in *.md) ;; *) exit 1;; esac"}), display: devNullPrinter(t)}
+	if err := r.showAnswer(); err == nil {
+		t.Error("expected no answer")
+	}
+	r.agent.Messages = []llm.Message{answer("# old"), llm.UserText("q"), answer("# Title\n\n| a | b |"), toolResult("r"), {Role: "assistant"}}
+	if err := r.showAnswer(); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(out); string(data) != "# Title\n\n| a | b |\n" {
+		t.Errorf("viewed %q", data)
+	}
+	r.agent.Cfg.Viewer = "cat > " + out
+	r.agent.Messages = append(r.agent.Messages, answer("stdin mode"))
+	if err := r.showAnswer(); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(out); string(data) != "stdin mode\n" {
+		t.Errorf("stdin viewer %q", data)
+	}
+}

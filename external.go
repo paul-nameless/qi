@@ -199,6 +199,7 @@ func (r *repl) toolKeys() [][2]string {
 		{"paste_image_cmd", cfg.PasteImageCmd},
 		{"session_picker", cfg.SessionPicker},
 		{"pager", cfg.Pager},
+		{"viewer", cfg.Viewer},
 	}
 }
 

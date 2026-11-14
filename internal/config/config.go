@@ -70,6 +70,7 @@ type Config struct {
 	PasteImageCmd   string               `yaml:"paste_image_cmd"`
 	SessionPicker   string               `yaml:"session_picker"`
 	Pager           string               `yaml:"pager"`
+	Viewer          string               `yaml:"viewer"`
 	Providers       map[string]Provider  `yaml:"providers"`
 	Profiles        map[string]any       `yaml:"profiles"`
 	DefaultProfile  string               `yaml:"default_profile"`
@@ -311,6 +312,7 @@ func (c *Config) toolDefaults() {
 	setDefault(&c.SessionPicker, `{picker} --with-nth=2.. --nth=.. --preview '"$AICODE_BIN" -show {1}' --preview-window=right,60%`)
 	setDefault(&c.Pager, os.Getenv("PAGER"))
 	setDefault(&c.Pager, "less -R")
+	setDefault(&c.Viewer, "glow -p {file}")
 	setDefault(&c.FilePicker, `(git ls-files -co --exclude-standard 2>/dev/null || fd -t f || find . -type f -not -path '*/.git/*') | {picker}`)
 }
 
