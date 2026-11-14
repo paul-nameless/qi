@@ -26,6 +26,7 @@ const helpText = `Commands:
   /history           open the whole conversation in the pager
   /out               open the full output of the last cut-off tool result in the pager
   /view              open the last answer in the viewer (rendered markdown)
+  /copy [code]       copy the last answer (or its last code block) to the clipboard
   /model [name]      show or switch the model (switching loses the prompt cache)
   /profile [name]    show or switch the profile
   /effort [level]    show or switch the reasoning effort (default, none, low, medium, high, xhigh, max)
@@ -74,6 +75,8 @@ func (r *repl) handleInput(line string) (string, bool) {
 		r.report(r.showOut())
 	case "view":
 		r.report(r.showAnswer())
+	case "copy":
+		r.report(r.copyAnswer(args))
 	case "compact":
 		err := r.cancellable(func(ctx context.Context) error { return r.agent.Compact(ctx, args) })
 		if errors.Is(err, context.Canceled) {

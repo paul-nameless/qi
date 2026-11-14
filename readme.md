@@ -79,7 +79,7 @@ Compaction summarizes the conversation into a structured handoff (updated on lat
 
 Keys: shift+tab toggles read-only, ctrl+g edits the prompt in `$EDITOR`, ctrl+r searches prompt history, ctrl+v attaches the clipboard image, `@` picks files, alt+enter or ctrl+j inserts a newline, ctrl+c or esc cancels a turn. Text typed while the agent works is queued and delivered after the next tool results.
 
-Commands: `/help`, `/clear`, `/context`, `/reload`, `/compact [focus]`, `/resume`, `/history`, `/out`, `/view`, `/model`, `/profile`, `/effort`, `/skills`, `/exit`, and `/<skill-or-command> [args]`. Typing `/` on an empty line opens a picker (fzf by default; set `picker:` in the config to use another command that reads `name<TAB>description` lines and prints the chosen one).
+Commands: `/help`, `/clear`, `/context`, `/reload`, `/compact [focus]`, `/resume`, `/history`, `/out`, `/view`, `/copy`, `/model`, `/profile`, `/effort`, `/skills`, `/exit`, and `/<skill-or-command> [args]`. Typing `/` on an empty line opens a picker (fzf by default; set `picker:` in the config to use another command that reads `name<TAB>description` lines and prints the chosen one).
 
 ## External tools
 
@@ -93,3 +93,4 @@ UI features reuse CLI tools you already have. Each is a shell string in the conf
 - `pager` (default `$PAGER`, else `less -R`): `/history` opens the whole conversation with tool calls, `/out` opens the full output of the last cut-off tool result.
 - `viewer` (default `glow -p {file}`): `/view` opens the last answer as a `.md` file, handy for long answers with tables and code.
 - `diff_cmd` (default `delta --paging=never`): after a successful edit or write, the unified diff goes to its stdin and the colored output is shown below the tool line (up to 40 lines). Display only; the model gets the usual short result.
+- `copy_cmd` (default `pbcopy` on macOS, `wl-copy` or `xclip -selection clipboard` on Linux): `/copy` copies the last answer, `/copy code` its last code block.

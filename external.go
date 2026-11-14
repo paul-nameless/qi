@@ -201,6 +201,7 @@ func (r *repl) toolKeys() [][2]string {
 		{"pager", cfg.Pager},
 		{"viewer", cfg.Viewer},
 		{"diff_cmd", cfg.DiffCmd},
+		{"copy_cmd", cfg.CopyCmd},
 	}
 }
 
