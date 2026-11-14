@@ -1,4 +1,9 @@
 aicode
 *.log
 .*
+!.gitignore
+!.github/
+!.golangci.yml
+!.goreleaser.yml
 docs/
+dist/

@@ -68,7 +68,7 @@ func (p *Printer) width() int {
 
 func (p *Printer) clearFooter() {
 	if p.footerShown {
-		p.out.WriteString("\r\x1b[K")
+		_, _ = p.out.WriteString("\r\x1b[K")
 		p.footerShown = false
 	}
 }
@@ -123,7 +123,7 @@ func (p *Printer) drawFooter() {
 	if text == "" {
 		return
 	}
-	p.out.WriteString("\r\x1b[K" + truncateVisible(text, p.width()-1))
+	_, _ = p.out.WriteString("\r\x1b[K" + truncateVisible(text, p.width()-1))
 	p.footerShown = true
 }
 
@@ -132,7 +132,7 @@ func (p *Printer) write(s string) {
 		return
 	}
 	p.clearFooter()
-	p.out.WriteString(s)
+	_, _ = p.out.WriteString(s)
 	p.atLineStart = strings.HasSuffix(s, "\n")
 	p.drawFooter()
 }
@@ -142,7 +142,7 @@ func (p *Printer) endReasoning() {
 		p.inReasoning = false
 		if p.TTY {
 			p.clearFooter()
-			p.out.WriteString(Reset)
+			_, _ = p.out.WriteString(Reset)
 		}
 		if !p.atLineStart {
 			p.write("\n")
@@ -343,7 +343,7 @@ func (p *Printer) SetPrompt(draw func(), final func() string) {
 		return
 	}
 	if !p.atLineStart {
-		p.out.WriteString("\n")
+		_, _ = p.out.WriteString("\n")
 		p.atLineStart = true
 	}
 	p.drawFooter()
@@ -362,7 +362,7 @@ func (p *Printer) FinishPrompt() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.promptFinal != nil {
-		p.out.WriteString("\r\x1b[K" + p.promptFinal() + "\n")
+		_, _ = p.out.WriteString("\r\x1b[K" + p.promptFinal() + "\n")
 	}
 	p.promptDraw, p.promptFinal = nil, nil
 	p.footerShown = false
@@ -378,7 +378,7 @@ func (p *Printer) ClearFooter() {
 func (p *Printer) Raw(s string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.out.WriteString(s)
+	_, _ = p.out.WriteString(s)
 }
 
 func formatDuration(d time.Duration) string {

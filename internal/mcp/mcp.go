@@ -99,7 +99,7 @@ func (c *client) readLoop(r io.Reader) {
 			continue
 		}
 		if m.ID != nil && m.Method != "" {
-			c.send(rpcMsg{JSONRPC: "2.0", ID: m.ID, Error: &rpcError{Code: -32601, Message: "method not supported by aicode"}})
+			_ = c.send(rpcMsg{JSONRPC: "2.0", ID: m.ID, Error: &rpcError{Code: -32601, Message: "method not supported by aicode"}})
 			continue
 		}
 		if m.ID == nil {

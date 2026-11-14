@@ -70,7 +70,7 @@ func (e *Editor) addHistory(s string) {
 	}
 	defer f.Close()
 	data, _ := json.Marshal(s)
-	f.Write(append(data, '\n'))
+	_, _ = f.Write(append(data, '\n'))
 }
 
 type lineState struct {
@@ -109,7 +109,7 @@ func (e *Editor) render(st *lineState) func() {
 		if col := pw + pos - start; col > 0 {
 			s += fmt.Sprintf("\x1b[%dC", col)
 		}
-		e.P.out.WriteString(s)
+		_, _ = e.P.out.WriteString(s)
 	}
 }
 
@@ -314,8 +314,13 @@ func (e *Editor) external(text string) (string, error) {
 		return "", err
 	}
 	defer os.Remove(f.Name())
-	f.WriteString(text)
-	f.Close()
+	_, werr := f.WriteString(text)
+	if cerr := f.Close(); werr == nil {
+		werr = cerr
+	}
+	if werr != nil {
+		return "", fmt.Errorf("write draft for editor: %w", werr)
+	}
 	editor := os.Getenv("VISUAL")
 	if editor == "" {
 		editor = os.Getenv("EDITOR")

@@ -75,14 +75,3 @@ aicode -read-only               # start in read-only mode
 Keys: shift+tab toggles read-only, ctrl+g edits the prompt in `$EDITOR`, alt+enter or ctrl+j inserts a newline, ctrl+c or esc cancels a turn. Text typed while the agent works is queued and delivered after the next tool results.
 
 Commands: `/help`, `/clear`, `/compact`, `/model`, `/profile`, `/skills`, `/exit`, and `/<skill-or-command> [args]`.
-
-## Bench
-
-`bench/` has 11 tasks (7 Go exercises from the Aider polyglot benchmark, 4 exploration tasks on a small Go repo), each with an automatic check.
-
-```bash
-bench/run.sh                 # all tasks, headless; prints tokens, CPU time and peak memory per task
-bench/run.sh -- -p glm       # extra flags go to aicode
-bench/run.sh rename forth    # some tasks
-bench/try.sh poker           # open one interactively
-```

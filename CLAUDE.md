@@ -11,15 +11,13 @@ Minimal Go coding agent for the terminal (v2 rewrite). Plan: `docs/plans/aicode-
 - `internal/ui` termios, key decoder, line editor, printer with status line
 - `internal/session` append-only JSONL sessions
 - `internal/mcp` stdio MCP client (lazy start, tool search); exposed as `tool_search`/`mcp_call` in `internal/tools/mcp.go`
-- `bench/` 11 tasks with checks: `bench/run.sh [task...]`, `bench/try.sh <task>`
 
 ## Commands
 - Build: `go build -o aicode .`
 - Test: `go test ./...`
-- Format and vet: `go fmt ./... && go vet ./...` (or `task ch`)
-- Headless smoke test: `./aicode -config bench/config.yml -q "prompt" </dev/null` (OpenRouter key from `pass`)
-- Bench: `bench/run.sh` (uses `bench/config.yml`, model openai/gpt-6-luna effort low)
-- UI testing: run in tmux (`tmux new-session -d -s ai -x 120 -y 40 './aicode -config bench/config.yml'`, then `send-keys`/`capture-pane`); shift+tab is `$'\e[Z'`, bracketed paste via `tmux paste-buffer -p`
+- Format, vet, lint, test: `task ch` (lint runs golangci-lint v2.15.0 via `go run`, same as CI)
+- Headless smoke test: `./aicode -q "prompt" </dev/null` (uses `~/.config/aicode/config.yml`)
+- UI testing: run in tmux (`tmux new-session -d -s ai -x 120 -y 40 './aicode'`, then `send-keys`/`capture-pane`); shift+tab is `$'\e[Z'`, bracketed paste via `tmux paste-buffer -p`
 
 ## Rules
 - Two deps only (`golang.org/x/sys`, `goccy/go-yaml`); no SDKs, no TUI libraries

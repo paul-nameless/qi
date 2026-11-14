@@ -1,7 +1,0 @@
-{
-  "port": 8080,
-  "currency": "EUR",
-  "tax_rate": 0.2,
-  "session_ttl_minutes": 30,
-  "free_shipping_over": 5000
-}

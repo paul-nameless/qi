@@ -4,7 +4,7 @@ version: "3"
 
 tasks:
   default:
-    - go build -o aicode . && ./aicode -config bench/config.yml {{.CLI_ARGS}}
+    - go build -o aicode . && ./aicode {{.CLI_ARGS}}
 
   build:
     - go build -o aicode .
@@ -17,12 +17,10 @@ tasks:
 
   lint:
     - go vet ./...
+    - GOTOOLCHAIN=$(go env GOVERSION) go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0 run
 
   ch:
     deps: [fmt, lint, test]
-
-  bench:
-    - go build -o aicode . && bench/run.sh {{.CLI_ARGS}}
 
   release:
     - |

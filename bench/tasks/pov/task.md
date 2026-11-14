@@ -1,1 +1,0 @@
-This directory is a Go exercise. Read .docs/instructions.md, then implement the solution in the existing stub file so that `go test ./...` passes. Do not modify the test files. You can run the tests yourself.

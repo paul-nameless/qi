@@ -1,1 +1,0 @@
-List every TODO comment in the Go source whose comment text mentions auth (case-insensitive; words like authz or Authorization count). A TODO that merely lives in a file or directory named auth does not count. Answer with one `path:line` per match, paths relative to the repo root.
