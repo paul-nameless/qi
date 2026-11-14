@@ -31,6 +31,7 @@ Keys:
   shift+tab          toggle read-only / yolo
   ctrl+g             edit the prompt in $EDITOR
   ctrl+r             pick a prompt from history
+  ctrl+v             attach the image in the clipboard
   @                  pick files to insert (at the start of a word)
   alt+enter, ctrl+j  newline
   ctrl+c, esc        cancel the running turn (ctrl+c twice at the prompt quits)

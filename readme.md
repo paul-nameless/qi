@@ -76,7 +76,7 @@ aicode -read-only               # start in read-only mode
 
 Compaction summarizes the conversation into a structured handoff (updated on later compactions); between turns it also keeps the newest ~20k tokens verbatim. The summary request resends the history unchanged, so it reads the prompt cache. A "context too long" error triggers one compaction and a retry.
 
-Keys: shift+tab toggles read-only, ctrl+g edits the prompt in `$EDITOR`, ctrl+r searches prompt history, `@` picks files, alt+enter or ctrl+j inserts a newline, ctrl+c or esc cancels a turn. Text typed while the agent works is queued and delivered after the next tool results.
+Keys: shift+tab toggles read-only, ctrl+g edits the prompt in `$EDITOR`, ctrl+r searches prompt history, ctrl+v attaches the clipboard image, `@` picks files, alt+enter or ctrl+j inserts a newline, ctrl+c or esc cancels a turn. Text typed while the agent works is queued and delivered after the next tool results.
 
 Commands: `/help`, `/clear`, `/context`, `/reload`, `/compact [focus]`, `/model`, `/profile`, `/effort`, `/skills`, `/exit`, and `/<skill-or-command> [args]`. Typing `/` on an empty line opens a picker (fzf by default; set `picker:` in the config to use another command that reads `name<TAB>description` lines and prints the chosen one).
 
@@ -87,3 +87,4 @@ UI features reuse CLI tools you already have. Each is a shell string in the conf
 - `notify_cmd` (default `terminal-notifier -title {title} -message {msg}` on macOS, `notify-send {title} {msg}` on Linux): runs when a turn took longer than `notify_after` (default `20s`) and the terminal is not focused (always, if the terminal does not report focus), and when aicode asks whether to trust project hooks.
 - `file_picker` (default `(git ls-files -co --exclude-standard 2>/dev/null || fd -t f || find . -type f -not -path '*/.git/*') | {picker}`): typing `@` at the start of a word opens it and inserts the chosen paths (images become `[image N]`). Works with file managers too: `ranger --choosefile={file}`, `yazi --chooser-file={file}`, `nnn -p {file}`.
 - `history_picker` (default `{picker}`): ctrl+r picks a prompt from history (newest first) and puts it in the input line without sending it.
+- `paste_image_cmd` (default `pngpaste {file}` on macOS, `wl-paste -t image/png > {file}` or `xclip -selection clipboard -t image/png -o > {file}` on Linux): ctrl+v saves the clipboard image under the user cache dir (`aicode/paste/<n>.png`) and attaches it as `[image N]`.

@@ -28,6 +28,7 @@ type Editor struct {
 	OnSlash   func() (text string, submit bool)
 	OnAt      func() (text string, ok bool)
 	OnHistory func(entries []string) (text string, ok bool)
+	OnImage   func() (path string, ok bool)
 	images    []string
 	histPath  string
 	history   []string
@@ -211,6 +212,11 @@ func (e *Editor) hook(st *lineState, k Key) (submit, handled bool) {
 			e.P.Locked(func() { st.set(text) })
 		}
 		return false, true
+	case k.Kind == KeyPasteImage && e.OnImage != nil:
+		if path, ok := e.OnImage(); ok {
+			e.P.Locked(func() { st.insert([]rune(e.attach(path))) })
+		}
+		return false, true
 	}
 	return false, false
 }
@@ -297,10 +303,14 @@ func (e *Editor) pasteText(text string) string {
 	}
 	var b strings.Builder
 	for _, p := range paths {
-		e.images = append(e.images, p)
-		fmt.Fprintf(&b, "[image %d] ", len(e.images))
+		b.WriteString(e.attach(p))
 	}
 	return b.String()
+}
+
+func (e *Editor) attach(path string) string {
+	e.images = append(e.images, path)
+	return fmt.Sprintf("[image %d] ", len(e.images))
 }
 
 func (e *Editor) TakeImages(line string) []string {

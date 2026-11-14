@@ -67,6 +67,7 @@ type Config struct {
 	NotifyAfter     string               `yaml:"notify_after"`
 	FilePicker      string               `yaml:"file_picker"`
 	HistoryPicker   string               `yaml:"history_picker"`
+	PasteImageCmd   string               `yaml:"paste_image_cmd"`
 	Providers       map[string]Provider  `yaml:"providers"`
 	Profiles        map[string]any       `yaml:"profiles"`
 	DefaultProfile  string               `yaml:"default_profile"`
@@ -304,7 +305,17 @@ func (c *Config) toolDefaults() {
 	setDefault(&c.NotifyCmd, pick(mac, "terminal-notifier -title {title} -message {msg}", "notify-send {title} {msg}"))
 	setDefault(&c.NotifyAfter, "20s")
 	setDefault(&c.HistoryPicker, "{picker}")
+	setDefault(&c.PasteImageCmd, pick(mac, "pngpaste {file}", firstOnPath("wl-paste -t image/png > {file}", "xclip -selection clipboard -t image/png -o > {file}")))
 	setDefault(&c.FilePicker, `(git ls-files -co --exclude-standard 2>/dev/null || fd -t f || find . -type f -not -path '*/.git/*') | {picker}`)
+}
+
+func firstOnPath(commands ...string) string {
+	for _, c := range commands {
+		if _, err := exec.LookPath(strings.Fields(c)[0]); err == nil {
+			return c
+		}
+	}
+	return commands[0]
 }
 
 func setDefault(field *string, value string) {
