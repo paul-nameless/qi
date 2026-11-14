@@ -263,3 +263,14 @@ func TestMaxRounds(t *testing.T) {
 		t.Errorf("expected max_rounds error, got %v", err)
 	}
 }
+
+func TestBlockCharsCountsImagesBySize(t *testing.T) {
+	big := strings.Repeat("A", 2_000_000)
+	blocks := []llm.Block{
+		{Type: llm.BlockToolResult, Text: "ok", Images: []llm.Block{{Type: llm.BlockImage, Data: big}}},
+		{Type: llm.BlockImage, Data: big},
+	}
+	if got := blockChars(blocks) / 4; got > 5000 {
+		t.Errorf("two images estimated at %d tokens", got)
+	}
+}

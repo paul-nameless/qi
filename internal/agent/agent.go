@@ -285,13 +285,16 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 	}
 }
 
+const imageChars = 8000
+
 func blockChars(blocks []llm.Block) int {
 	n := 0
 	for _, b := range blocks {
-		n += len(b.Text) + len(b.Data)
-		for _, img := range b.Images {
-			n += len(img.Data)
+		n += len(b.Text)
+		if b.Type == llm.BlockImage {
+			n += imageChars
 		}
+		n += len(b.Images) * imageChars
 	}
 	return n
 }
