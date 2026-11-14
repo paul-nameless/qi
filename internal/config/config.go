@@ -90,6 +90,10 @@ func ExpandHome(p string) string {
 }
 
 func Load(path, profile string) (Config, error) {
+	return Resolve(path, profile, "", "", "")
+}
+
+func Resolve(path, profile, provider, model, effort string) (Config, error) {
 	var c Config
 	if path == "" {
 		path = filepath.Join(Dir(), "config.yml")
@@ -105,13 +109,24 @@ func Load(path, profile string) (Config, error) {
 			return c, err
 		}
 	}
-	if err := c.applyProvider(c.Provider); err != nil {
+	if err := c.loadProvider(c.Provider); err != nil {
 		return c, err
 	}
 	if c.profileRaw != nil {
 		if err := yaml.Unmarshal(c.profileRaw, &c); err != nil {
 			return c, err
 		}
+	}
+	if provider != "" {
+		if err := c.UseProvider(provider); err != nil {
+			return c, err
+		}
+	}
+	if model != "" {
+		c.Model = model
+	}
+	if effort != "" {
+		c.ReasoningEffort = effort
 	}
 	c.applyDefaults()
 	return c, nil
@@ -153,31 +168,42 @@ var builtinProviders = map[string]Provider{
 }
 
 func (c *Config) UseProvider(name string) error {
-	if name == c.Provider && c.API != "" {
+	if name == "" || (name == c.Provider && c.API != "") {
 		return nil
 	}
-	return c.applyProvider(name)
-}
-
-func (c *Config) applyProvider(name string) error {
-	if name == "" {
-		return nil
-	}
-	p, ok := c.Providers[name]
-	if !ok {
-		b, isBuiltin := builtinProviders[strings.ToLower(name)]
-		if !isBuiltin {
-			return fmt.Errorf("unknown provider %q", name)
-		}
-		if _, wasNamed := c.Providers[c.Provider]; !wasNamed {
-			c.Provider, c.API, c.BaseURL = name, b.API, ""
-			return nil
-		}
-		p = b
+	p, err := c.provider(name)
+	if err != nil {
+		return err
 	}
 	c.Provider = name
 	c.API, c.BaseURL, c.APIKey, c.APIKeyShell, c.CacheControl = p.API, p.BaseURL, p.APIKey, p.APIKeyShell, p.CacheControl
 	return nil
+}
+
+func (c *Config) loadProvider(name string) error {
+	if name == "" {
+		return nil
+	}
+	if _, named := c.Providers[name]; named {
+		c.API = ""
+		return c.UseProvider(name)
+	}
+	p, err := c.provider(name)
+	if err != nil {
+		return err
+	}
+	c.API = p.API
+	return nil
+}
+
+func (c *Config) provider(name string) (Provider, error) {
+	if p, ok := c.Providers[name]; ok {
+		return p, nil
+	}
+	if p, ok := builtinProviders[strings.ToLower(name)]; ok {
+		return p, nil
+	}
+	return Provider{}, fmt.Errorf("unknown provider %q", name)
 }
 
 func (c Config) ProfileNames() []string {

@@ -29,7 +29,7 @@ type repl struct {
 	commands   []agent.Command
 	hooks      *agent.Hooks
 	runner     *agent.SubagentRunner
-	configPath string
+	opts       options
 
 	mu         sync.Mutex
 	turnCancel context.CancelFunc
@@ -285,7 +285,7 @@ func (r *repl) stopIdle() {
 }
 
 func (r *repl) switchProfile(name string) error {
-	cfg, err := config.Load(r.configPath, name)
+	cfg, err := config.Resolve(r.opts.configPath, name, "", "", r.opts.effort)
 	if err != nil {
 		return err
 	}
@@ -293,13 +293,13 @@ func (r *repl) switchProfile(name string) error {
 }
 
 func (r *repl) switchModel(name string) error {
-	cfg, err := config.Load(r.configPath, r.agent.Cfg.Profile)
+	cfg, err := config.Resolve(r.opts.configPath, r.agent.Cfg.Profile, r.opts.provider, "", r.opts.effort)
 	if err != nil {
 		return err
 	}
 	menus := [][]config.SubagentModel{cfg.SubagentModels}
 	for _, p := range cfg.ProfileNames() {
-		if pc, err := config.Load(r.configPath, p); err == nil {
+		if pc, err := config.Load(r.opts.configPath, p); err == nil {
 			menus = append(menus, withProvider(pc.SubagentModels, pc.Provider))
 		}
 	}
@@ -338,6 +338,7 @@ func (r *repl) apply(cfg config.Config) error {
 		return err
 	}
 	r.agent.Reconfigure(cfg, newProvider(cfg, key))
+	r.agent.Env.Allow, r.agent.Env.BashTimeout = cfg.ReadOnlyAllow, cfg.BashTimeout
 	if r.runner != nil {
 		r.runner.Profile, r.runner.Provider = cfg.Profile, cfg.Provider
 		r.agent.Registry.Replace(tools.Subagent(cfg.Model, cfg.SubagentModels, cfg.SubagentEfforts))

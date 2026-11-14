@@ -110,3 +110,18 @@ func TestUseProviderBuiltinsResetConnection(t *testing.T) {
 		t.Error("unknown provider accepted")
 	}
 }
+
+func TestRuntimeBuiltinSwitchDropsOldKey(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("AICODE_CONFIG_DIR", dir)
+	path := filepath.Join(dir, "c.yml")
+	os.WriteFile(path, []byte("api: anthropic\napi_key: sk-ant\n"), 0o600)
+	c, err := Resolve(path, "", "openai", "", "")
+	if err != nil || c.API != "openai" || c.APIKey != "" || c.Model != "gpt-6-luna" {
+		t.Errorf("openai override kept anthropic settings: %+v %v", c, err)
+	}
+	c, err = Resolve(path, "", "claude", "", "high")
+	if err != nil || c.API != "anthropic" || c.Model != "claude-sonnet-5-5" || c.ReasoningEffort != "high" {
+		t.Errorf("claude override: %+v %v", c, err)
+	}
+}

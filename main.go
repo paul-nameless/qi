@@ -56,20 +56,9 @@ func main() {
 }
 
 func run(o options) error {
-	cfg, err := config.Load(o.configPath, o.profile)
+	cfg, err := config.Resolve(o.configPath, o.profile, o.provider, o.model, o.effort)
 	if err != nil {
 		return err
-	}
-	if o.provider != "" {
-		if err := cfg.UseProvider(o.provider); err != nil {
-			return err
-		}
-	}
-	if o.model != "" {
-		cfg.Model = o.model
-	}
-	if o.effort != "" {
-		cfg.ReasoningEffort = o.effort
 	}
 	key, err := cfg.ResolveAPIKey()
 	if err != nil {
@@ -161,7 +150,7 @@ func run(o options) error {
 		}
 		return runHeadless(a, display, hooks, prompt)
 	}
-	r := &repl{agent: a, display: display, skills: skills, commands: agent.LoadCommands(roots), hooks: hooks, runner: runner, configPath: o.configPath}
+	r := &repl{agent: a, display: display, skills: skills, commands: agent.LoadCommands(roots), hooks: hooks, runner: runner, opts: o}
 	return r.run()
 }
 
