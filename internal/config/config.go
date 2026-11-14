@@ -268,9 +268,6 @@ func (c *Config) applyDefaults() {
 	if c.Picker == "" {
 		c.Picker = DefaultPicker
 	}
-	if c.CacheTTL == "" {
-		c.CacheTTL = "1h"
-	}
 	if c.BashTimeout == 0 {
 		c.BashTimeout = 120
 	}
@@ -322,4 +319,14 @@ func (c Config) ResolveAPIKey() (string, error) {
 		}
 	}
 	return "", fmt.Errorf("no API key: set api_key_shell in %s or %s", filepath.Join(Dir(), "config.yml"), strings.Join(envs, "/"))
+}
+
+func (c *Config) DefaultCacheTTL(headless bool) {
+	switch {
+	case c.CacheTTL != "":
+	case headless:
+		c.CacheTTL = "5m"
+	default:
+		c.CacheTTL = "1h"
+	}
 }

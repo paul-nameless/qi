@@ -84,6 +84,7 @@ func run(o options) error {
 	if headless && cfg.MaxRounds == 0 {
 		cfg.MaxRounds = 200
 	}
+	cfg.DefaultCacheTTL(headless)
 	a, runner, toolset := buildAgent(cfg, o, cwd, newProvider(cfg, key), display, headless, isSub)
 	env := a.Env
 	if len(cfg.MCP) > 0 {

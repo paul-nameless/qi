@@ -385,6 +385,7 @@ func withProvider(menu []config.SubagentModel, provider string) []config.Subagen
 }
 
 func (r *repl) apply(cfg config.Config, baseProvider string) error {
+	cfg.DefaultCacheTTL(false)
 	key, err := cfg.ResolveAPIKey()
 	if err != nil {
 		return err

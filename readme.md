@@ -50,7 +50,7 @@ profiles:
 
 # shared settings (a profile can override any of them)
 subagent_efforts: [low, medium, high]
-# cache_ttl: 1h             # prompt cache TTL; idle compaction runs 5 min before it expires
+# cache_ttl: 1h             # Anthropic prompt cache TTL (default 1h interactive, 5m with -q); idle compaction runs 5 min before it expires
 # compact_at: 150000        # compact when context passes this many tokens
 # read_only_allow: [make lint, go test]
 # mcp:

@@ -125,3 +125,17 @@ func TestRuntimeBuiltinSwitchDropsOldKey(t *testing.T) {
 		t.Errorf("claude override: %+v %v", c, err)
 	}
 }
+
+func TestDefaultCacheTTL(t *testing.T) {
+	for _, c := range []struct {
+		set      string
+		headless bool
+		want     string
+	}{{"", true, "5m"}, {"", false, "1h"}, {"1h", true, "1h"}, {"5m", false, "5m"}} {
+		cfg := Config{CacheTTL: c.set}
+		cfg.DefaultCacheTTL(c.headless)
+		if cfg.CacheTTL != c.want {
+			t.Errorf("set %q headless %v: got %q, want %q", c.set, c.headless, cfg.CacheTTL, c.want)
+		}
+	}
+}
