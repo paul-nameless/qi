@@ -42,6 +42,10 @@ func TestReadOnlyWiring(t *testing.T) {
 	if !a2.Env.ReadOnly() {
 		t.Error("-read-only flag not applied")
 	}
+	a3, _, _ := buildAgent(config.Config{Model: "m", ReadOnly: true}, options{}, t.TempDir(), nopProvider{}, display, true, false)
+	if !a3.Env.ReadOnly() {
+		t.Error("read_only: true in config not applied")
+	}
 }
 
 func TestToggleModeStopsSubagents(t *testing.T) {

@@ -55,6 +55,9 @@ func TestSelectHookFilesAndRoots(t *testing.T) {
 	if !skipped || len(files) != 0 || asked {
 		t.Errorf("untrusted headless: %v %v asked=%v", files, skipped, asked)
 	}
+	if files, skipped := SelectHookFiles(roots, []string{".claude/settings.json"}, true, never); !skipped || len(files) != 0 {
+		t.Errorf("declined interactive: %v %v", files, skipped)
+	}
 	files, skipped = SelectHookFiles(roots, []string{".claude/settings.json"}, true, func(string, []string) bool { return true })
 	if skipped || len(files) != 2 {
 		t.Errorf("approved interactive: %v %v", files, skipped)
@@ -81,5 +84,13 @@ func TestSubagentArgsAndStopAll(t *testing.T) {
 	r.StopAll()
 	if context.Cause(ctx) != ErrModeChanged {
 		t.Errorf("cause %v", context.Cause(ctx))
+	}
+}
+
+func TestTrustAnswer(t *testing.T) {
+	for answer, want := range map[string]bool{"y\n": true, "Y": true, " y ": true, "": false, "\n": false, "n": false, "yes": false} {
+		if got := approved(answer); got != want {
+			t.Errorf("approved(%q) = %v", answer, got)
+		}
 	}
 }

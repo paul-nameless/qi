@@ -90,7 +90,7 @@ func AskTrust(dir string, commands []string) bool {
 	}
 	os.Stdout.WriteString("Trust " + dir + " and run its hooks? [y/N] ")
 	line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
-	if strings.ToLower(strings.TrimSpace(line)) != "y" {
+	if !approved(line) {
 		return false
 	}
 	return Trust(dir) == nil
@@ -103,4 +103,8 @@ func SelectHookFiles(roots, configured []string, interactive bool, ask func(dir 
 		return append(user, project...), false
 	}
 	return user, true
+}
+
+func approved(answer string) bool {
+	return strings.ToLower(strings.TrimSpace(answer)) == "y"
 }

@@ -111,6 +111,10 @@ func TestCheckReadOnly(t *testing.T) {
 		"tree -o/tmp/x",
 		"tree -ao out",
 		"tree -R -L 1",
+		"rm>/dev/null ls",
+		"touch>/dev/null ls",
+		"ls >& out",
+		"ls >&  out",
 		"tree -RH. -L1",
 		"fd -xrm",
 		"fd -Hx rm",
@@ -176,14 +180,22 @@ func TestReadOnlySandboxBlocksWrites(t *testing.T) {
 		t.Errorf("write to the allowed dir failed: %v", err)
 	}
 	if runtime.GOOS == "darwin" {
-		bin := filepath.Join(allowed, "e")
-		data, _ := os.ReadFile("/bin/echo")
-		os.WriteFile(bin, data, 0o700)
-		if out, err := sandboxCmd(context.Background(), bin+" hi", allowed).CombinedOutput(); err == nil {
-			t.Errorf("binary in TMP ran under the sandbox: %s", out)
+		script := filepath.Join(allowed, "s.sh")
+		os.WriteFile(script, []byte("#!/bin/sh\necho ran\n"), 0o700)
+		if out, _ := exec.Command(script).CombinedOutput(); !strings.Contains(string(out), "ran") {
+			t.Fatalf("probe script does not run outside the sandbox: %s", out)
 		}
-		if out, err := sandboxCmd(context.Background(), "/usr/bin/open -h", allowed).CombinedOutput(); err == nil {
-			t.Errorf("open ran under the sandbox: %s", out)
+		if out, _ := sandboxCmd(context.Background(), script, allowed).CombinedOutput(); strings.Contains(string(out), "ran") {
+			t.Errorf("script in TMP ran under the sandbox: %s", out)
+		}
+		for _, bin := range []string{"/usr/bin/osascript", "/usr/bin/open", "/bin/launchctl", "/usr/bin/defaults", "/usr/bin/security", "/usr/bin/sudo", "/usr/bin/shortcuts"} {
+			if _, err := os.Stat(bin); err != nil {
+				continue
+			}
+			out, _ := sandboxCmd(context.Background(), bin+" -h", allowed).CombinedOutput()
+			if !strings.Contains(string(out), "Operation not permitted") {
+				t.Errorf("%s was not denied by the sandbox: %s", bin, out)
+			}
 		}
 	}
 }
