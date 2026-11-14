@@ -23,6 +23,8 @@ type Editor struct {
 	P         *Printer
 	Interrupt chan struct{}
 	OnToggle  func() string
+	IsImage   func(text string) []string
+	images    []string
 	histPath  string
 	history   []string
 }
@@ -185,7 +187,7 @@ func (e *Editor) apply(st *lineState, k Key, histIdx *int, draft *string) {
 	case KeyRune:
 		st.insert([]rune{k.Rune})
 	case KeyPaste:
-		st.insert([]rune(k.Text))
+		st.insert([]rune(e.pasteText(k.Text)))
 	case KeyNewline:
 		st.insert([]rune{'\n'})
 	case KeyBackspace:
@@ -236,6 +238,33 @@ func (e *Editor) apply(st *lineState, k Key, histIdx *int, draft *string) {
 	case KeyEsc:
 		st.buf, st.pos = nil, 0
 	}
+}
+
+func (e *Editor) pasteText(text string) string {
+	if e.IsImage == nil {
+		return text
+	}
+	paths := e.IsImage(text)
+	if len(paths) == 0 {
+		return text
+	}
+	var b strings.Builder
+	for _, p := range paths {
+		e.images = append(e.images, p)
+		fmt.Fprintf(&b, "[image %d] ", len(e.images))
+	}
+	return b.String()
+}
+
+func (e *Editor) TakeImages(line string) []string {
+	var used []string
+	for i, p := range e.images {
+		if strings.Contains(line, fmt.Sprintf("[image %d]", i+1)) {
+			used = append(used, p)
+		}
+	}
+	e.images = nil
+	return used
 }
 
 func (st *lineState) insert(rs []rune) {
@@ -297,7 +326,7 @@ func (e *Editor) Collect(ctx context.Context, initial string, s Steer) string {
 			case KeyRune:
 				buf = append(buf, k.Rune)
 			case KeyPaste:
-				buf = append(buf, []rune(k.Text)...)
+				buf = append(buf, []rune(e.pasteText(k.Text))...)
 			case KeyNewline:
 				buf = append(buf, '\n')
 			case KeyBackspace:

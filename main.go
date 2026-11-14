@@ -31,6 +31,7 @@ type options struct {
 	provider   string
 	effort     string
 	readOnly   bool
+	sessionID  string
 }
 
 func main() {
@@ -43,6 +44,7 @@ func main() {
 	flag.StringVar(&o.model, "model", "", "model override")
 	flag.StringVar(&o.effort, "effort", "", "reasoning effort override")
 	flag.BoolVar(&o.readOnly, "read-only", false, "start in read-only mode")
+	flag.StringVar(&o.sessionID, "session-id", "", "use this session id: continues it if it exists, creates it otherwise")
 	showVersion := flag.Bool("version", false, "print version")
 	flag.Parse()
 	if *showVersion {
@@ -95,11 +97,24 @@ func run(o options) error {
 	skills := agent.LoadSkills(agent.ExpandPaths(roots, cfg.SkillDirs))
 	a.System = agent.BuildSystemPrompt(cwd, agent.ExpandPaths(roots, cfg.InstructionFile), skills)
 
-	if o.cont {
+	if o.sessionID != "" && !session.ValidID(o.sessionID) {
+		return fmt.Errorf("invalid session id %q", o.sessionID)
+	}
+	resume := ""
+	switch {
+	case o.sessionID != "":
+		if _, err := os.Stat(session.PathFor(cwd, o.sessionID)); err == nil {
+			resume = session.PathFor(cwd, o.sessionID)
+		}
+	case o.cont:
 		path, err := session.Latest(cwd, !headless)
 		if err != nil {
 			return err
 		}
+		resume = path
+	}
+	if resume != "" {
+		path := resume
 		s, ld, err := session.Open(path)
 		if err != nil {
 			return err
@@ -113,7 +128,7 @@ func run(o options) error {
 		if headless {
 			kind = "headless"
 		}
-		s, err := session.Create(cwd, cfg.Model, kind, isSub)
+		s, err := session.Create(cwd, o.sessionID, cfg.Model, kind, isSub)
 		if err != nil {
 			return err
 		}
@@ -162,12 +177,19 @@ func hookFiles(roots, configured []string, headless bool, display *ui.Printer) [
 	return files
 }
 
-func submitPrompt(ctx context.Context, a *agent.Agent, hooks *agent.Hooks, prompt string) ([]llm.Block, error) {
+func submitPrompt(ctx context.Context, a *agent.Agent, hooks *agent.Hooks, prompt string, images ...string) ([]llm.Block, error) {
 	blocked, reason, extra := hooks.UserPromptSubmit(ctx, prompt)
 	if blocked {
 		return nil, fmt.Errorf("prompt blocked by hook: %s", reason)
 	}
 	blocks := userBlocks(a.Cwd, prompt)
+	for _, p := range images {
+		if img, err := tools.LoadImage(p); err == nil {
+			blocks = append(blocks, img)
+		} else {
+			a.UI.Error("image " + p + ": " + err.Error())
+		}
+	}
 	for _, b := range blocks[1:] {
 		if b.Type == llm.BlockImage {
 			a.UI.Info("attached image (" + b.MediaType + ")")

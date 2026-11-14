@@ -85,6 +85,7 @@ func (r *repl) run() error {
 		r.toggleMode()
 		return r.prompt()
 	}
+	r.editor.IsImage = func(text string) []string { return imagePaths(r.agent.Cwd, text) }
 	r.handleSignals()
 	r.banner()
 
@@ -107,13 +108,14 @@ func (r *repl) run() error {
 		if line == "" {
 			continue
 		}
+		images := r.editor.TakeImages(line)
 		text, quit := r.handleInput(line)
 		if quit {
 			return nil
 		}
 		if text != "" {
 			draft = r.turn(func(ctx context.Context) ([]llm.Block, error) {
-				return submitPrompt(ctx, r.agent, r.hooks, text)
+				return submitPrompt(ctx, r.agent, r.hooks, text, images...)
 			}, draft)
 		}
 		for q := r.agent.DrainQueue(); len(q) > 0 && !r.lastCancelled; q = r.agent.DrainQueue() {
@@ -127,10 +129,10 @@ func (r *repl) run() error {
 }
 
 func (r *repl) banner() {
-	where := filepath.Base(r.agent.Session.Path)
+	where := r.agent.Session.ID
 	r.display.Line(r.display.Color(ui.Bold, "aicode") + r.display.Color(ui.Dim, fmt.Sprintf(" %s · %s · %s · session %s", version, r.agent.Model(), r.modeName(), where)))
 	if n := len(r.agent.Messages); n > 0 {
-		r.display.Info(fmt.Sprintf("resumed %d messages", n))
+		r.printHistory()
 	}
 	r.display.Info("/help for commands · shift+tab toggles read-only · ctrl+g opens $EDITOR")
 }
@@ -382,6 +384,41 @@ func (r *repl) modelList() string {
 	return b.String()
 }
 
+const historyShown = 40
+
+func (r *repl) printHistory() {
+	msgs := r.agent.Messages
+	if len(msgs) > historyShown {
+		r.display.Info(fmt.Sprintf("… %d earlier messages", len(msgs)-historyShown))
+		msgs = msgs[len(msgs)-historyShown:]
+	}
+	for _, m := range msgs {
+		for _, b := range m.Blocks {
+			switch {
+			case b.Type == llm.BlockText && m.Role == "user":
+				if t := strings.TrimSpace(b.Text); t != "" && !strings.HasPrefix(t, "<") && !strings.HasPrefix(t, "The user sent this") {
+					r.display.Line(r.display.Color(ui.Cyan, "❯ ") + firstLines(t, 6))
+				}
+			case b.Type == llm.BlockText:
+				r.display.Line(strings.TrimSpace(b.Text))
+			case b.Type == llm.BlockToolUse:
+				r.display.Info("· " + b.Name + " " + tools.OneLine(string(b.Input), 90))
+			case b.Type == llm.BlockImage:
+				r.display.Info("[image]")
+			}
+		}
+	}
+	r.display.Info(fmt.Sprintf("resumed %d messages", len(r.agent.Messages)))
+}
+
+func firstLines(s string, n int) string {
+	lines := strings.Split(s, "\n")
+	if len(lines) <= n {
+		return s
+	}
+	return strings.Join(lines[:n], "\n") + fmt.Sprintf("\n… %d more lines", len(lines)-n)
+}
+
 func queuedText(blocks []llm.Block) string {
 	var parts []string
 	for _, b := range blocks {
@@ -394,7 +431,7 @@ func queuedText(blocks []llm.Block) string {
 
 func (r *repl) newSession() error {
 	r.stopIdle()
-	s, err := session.Create(r.agent.Cwd, r.agent.Model(), "interactive", false)
+	s, err := session.Create(r.agent.Cwd, "", r.agent.Model(), "interactive", false)
 	if err != nil {
 		return err
 	}

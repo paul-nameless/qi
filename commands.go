@@ -48,7 +48,7 @@ func (r *repl) handleInput(line string) (string, bool) {
 		if err := r.newSession(); err != nil {
 			r.display.Error(err.Error())
 		} else {
-			r.display.Info("new session " + filepath.Base(r.agent.Session.Path))
+			r.display.Info("new session " + r.agent.Session.ID)
 		}
 	case "compact":
 		err := r.cancellable(r.agent.Compact)
@@ -162,6 +162,26 @@ func userBlocks(cwd, text string) []llm.Block {
 		}
 	}
 	return blocks
+}
+
+func imagePaths(cwd, text string) []string {
+	toks := pathTokens(strings.TrimSpace(text))
+	if len(toks) == 0 {
+		return nil
+	}
+	var out []string
+	for _, tok := range toks {
+		p := tok
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(cwd, p)
+		}
+		st, err := os.Stat(p)
+		if tools.ImageType(p) == "" || err != nil || !st.Mode().IsRegular() {
+			return nil
+		}
+		out = append(out, p)
+	}
+	return out
 }
 
 func pathTokens(s string) []string {

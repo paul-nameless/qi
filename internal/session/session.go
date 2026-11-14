@@ -47,11 +47,40 @@ func Dir(cwd string) string {
 	if base == "" {
 		base = filepath.Join(config.Home(), ".local", "share", "aicode", "sessions")
 	}
-	name := strings.Trim(strings.NewReplacer("/", "-", "\\", "-", ":", "").Replace(cwd), "-")
-	if name == "" {
-		name = "root"
+	name := strings.NewReplacer("/", "-", "\\", "-", ":", "", ".", "-").Replace(cwd)
+	dir := filepath.Join(base, name)
+	old := filepath.Join(base, strings.Trim(strings.NewReplacer("/", "-", "\\", "-", ":", "").Replace(cwd), "-"))
+	if _, err := os.Stat(dir); err != nil {
+		if _, err := os.Stat(old); err == nil && old != dir {
+			_ = os.Rename(old, dir)
+		}
 	}
-	return filepath.Join(base, name)
+	return dir
+}
+
+func NewID() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	b[6] = b[6]&0x0f | 0x40
+	b[8] = b[8]&0x3f | 0x80
+	h := strings.ToUpper(hex.EncodeToString(b))
+	return h[0:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:]
+}
+
+func ValidID(id string) bool {
+	if id == "" || len(id) > 64 {
+		return false
+	}
+	for _, r := range id {
+		if !(r == '-' || r == '_' || r >= '0' && r <= '9' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z') {
+			return false
+		}
+	}
+	return true
+}
+
+func PathFor(cwd, id string) string {
+	return filepath.Join(Dir(cwd), id+".jsonl")
 }
 
 func newID() string {
@@ -60,7 +89,7 @@ func newID() string {
 	return hex.EncodeToString(b)
 }
 
-func Create(cwd, model, kind string, subagent bool) (*Session, error) {
+func Create(cwd, id, model, kind string, subagent bool) (*Session, error) {
 	dir := Dir(cwd)
 	if subagent {
 		dir = filepath.Join(dir, "subagents")
@@ -68,7 +97,9 @@ func Create(cwd, model, kind string, subagent bool) (*Session, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("create session dir: %w", err)
 	}
-	id := time.Now().Format("20060102-150405") + "-" + newID()[:4]
+	if id == "" {
+		id = NewID()
+	}
 	path := filepath.Join(dir, id+".jsonl")
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
@@ -88,20 +119,23 @@ func Latest(cwd string, interactive bool) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("no sessions for %s", cwd)
 	}
-	var names []string
+	type file struct {
+		path string
+		mod  time.Time
+	}
+	var files []file
 	for _, e := range entries {
-		if strings.HasSuffix(e.Name(), ".jsonl") {
-			names = append(names, e.Name())
+		if !strings.HasSuffix(e.Name(), ".jsonl") {
+			continue
+		}
+		if info, err := e.Info(); err == nil {
+			files = append(files, file{filepath.Join(dir, e.Name()), info.ModTime()})
 		}
 	}
-	if len(names) == 0 {
-		return "", fmt.Errorf("no sessions for %s", cwd)
-	}
-	sort.Strings(names)
-	for i := len(names) - 1; i >= 0; i-- {
-		path := filepath.Join(dir, names[i])
-		if hasMessages(path, interactive) {
-			return path, nil
+	sort.Slice(files, func(i, j int) bool { return files[i].mod.After(files[j].mod) })
+	for _, f := range files {
+		if hasMessages(f.path, interactive) {
+			return f.path, nil
 		}
 	}
 	return "", fmt.Errorf("no sessions with messages for %s", cwd)
