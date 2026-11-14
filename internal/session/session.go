@@ -97,7 +97,29 @@ func Latest(cwd string) (string, error) {
 		return "", fmt.Errorf("no sessions for %s", cwd)
 	}
 	sort.Strings(names)
-	return filepath.Join(dir, names[len(names)-1]), nil
+	for i := len(names) - 1; i >= 0; i-- {
+		path := filepath.Join(dir, names[i])
+		if hasMessages(path) {
+			return path, nil
+		}
+	}
+	return "", fmt.Errorf("no sessions with messages for %s", cwd)
+}
+
+func hasMessages(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 64<<10), 256<<20)
+	for sc.Scan() {
+		if strings.Contains(sc.Text(), `"type":"message"`) || strings.Contains(sc.Text(), `"type":"compaction"`) {
+			return true
+		}
+	}
+	return false
 }
 
 type Loaded struct {

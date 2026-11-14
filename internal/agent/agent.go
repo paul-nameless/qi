@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/paul-nameless/aicode/internal/config"
 	"github.com/paul-nameless/aicode/internal/llm"
@@ -112,6 +113,21 @@ func (a *Agent) DrainQueue() []llm.Block {
 	return q
 }
 
+func (a *Agent) RestoreMode() {
+	for i := len(a.Messages) - 1; i >= 0; i-- {
+		for _, b := range a.Messages[i].Blocks {
+			switch b.Text {
+			case readOnlyNote:
+				a.announced = true
+				return
+			case yoloNote:
+				a.announced = false
+				return
+			}
+		}
+	}
+}
+
 func (a *Agent) modeBlock() (llm.Block, bool) {
 	ro := a.ReadOnly()
 	if ro == a.announced {
@@ -200,13 +216,15 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 	}
 	a.appendMsg(llm.Message{Role: "user", Blocks: blocks}, nil)
 	stopActive := false
+	compactFailed := false
 	for {
-		if a.ContextTokens() > a.Cfg.CompactAt {
+		if !compactFailed && a.ContextTokens() > a.Cfg.CompactAt {
 			if err := a.compact(ctx, true); err != nil {
+				compactFailed = true
 				a.UI.Error("compaction failed: " + err.Error())
 			}
 		}
-		msg, usage, err := a.Provider.Stream(ctx, a.request(a.Messages), a.onDelta)
+		msg, usage, err := a.stream(ctx)
 		a.UI.EndBlock()
 		if err != nil {
 			if ctx.Err() != nil {
@@ -238,6 +256,9 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 			if a.OnStop != nil {
 				if cont, reason := a.OnStop(ctx, msg.Text(), stopActive); cont {
 					stopActive = true
+					if strings.TrimSpace(reason) == "" {
+						reason = "A Stop hook asked you to continue working."
+					}
 					a.UI.Info("stop hook: " + tools.OneLine(reason, 120))
 					next = append(next, llm.Block{Type: llm.BlockText, Text: reason})
 				}
@@ -270,6 +291,52 @@ func (a *Agent) estimateTokens() int {
 	return n / 4
 }
 
+const maxCompactToolResult = 8000
+
+func shrinkToolResults(msgs []llm.Message) []llm.Message {
+	out := make([]llm.Message, len(msgs))
+	for i, m := range msgs {
+		blocks := make([]llm.Block, len(m.Blocks))
+		for j, b := range m.Blocks {
+			if b.Type == llm.BlockToolResult && len(b.Text) > maxCompactToolResult {
+				b.Text = b.Text[:maxCompactToolResult/2] + "\n… [shortened for compaction] …\n" + b.Text[len(b.Text)-maxCompactToolResult/2:]
+				b.Images = nil
+			}
+			blocks[j] = b
+		}
+		out[i] = llm.Message{Role: m.Role, Blocks: blocks}
+	}
+	return out
+}
+
+func (a *Agent) stream(ctx context.Context) (llm.Message, llm.Usage, error) {
+	for attempt := 0; ; attempt++ {
+		emitted := false
+		msg, usage, err := a.Provider.Stream(ctx, a.request(a.Messages), func(d llm.Delta) {
+			emitted = true
+			a.onDelta(d)
+		})
+		if err == nil || emitted || attempt == 2 || ctx.Err() != nil || !retryableStream(err) {
+			return msg, usage, err
+		}
+		a.UI.Info("retrying: " + tools.OneLine(err.Error(), 100))
+		select {
+		case <-ctx.Done():
+			return msg, usage, ctx.Err()
+		case <-time.After(time.Duration(2<<attempt) * time.Second):
+		}
+	}
+}
+
+func retryableStream(err error) bool {
+	var apiErr *llm.APIError
+	if errors.As(err, &apiErr) {
+		return false
+	}
+	s := err.Error()
+	return errors.Is(err, llm.ErrStalled) || strings.Contains(s, "overloaded") || strings.Contains(s, "api_error") || strings.Contains(s, "stream ended") || strings.Contains(s, "unexpected EOF") || strings.Contains(s, "connection reset")
+}
+
 func (a *Agent) Compact(ctx context.Context) error {
 	if !a.busy.TryLock() {
 		return errors.New("busy")
@@ -295,10 +362,14 @@ func (a *Agent) compact(ctx context.Context, midTurn bool) error {
 	}
 	before := a.ContextTokens()
 	a.UI.ToolStart("compact", fmt.Sprintf("compacting %s tokens", fmtTokens(before)))
-	msgs := append(append([]llm.Message{}, a.Messages...), llm.UserText(compactAsk))
+	msgs := append(shrinkToolResults(a.Messages), llm.UserText(compactAsk))
 	msg, usage, err := a.Provider.Stream(ctx, a.request(msgs), func(llm.Delta) {})
 	summary := strings.TrimSpace(msg.Text())
-	if err == nil && summary == "" {
+	switch {
+	case err != nil:
+	case len(msg.ToolUses()) > 0:
+		err = errors.New("model called tools instead of summarizing")
+	case summary == "":
 		err = errors.New("model returned no summary")
 	}
 	if err != nil {

@@ -283,7 +283,7 @@ func (a *Anthropic) Stream(ctx context.Context, req Request, onDelta func(Delta)
 		CacheWrite: usage.CacheCreationTokens,
 	}
 	if err != nil && err != errStreamDone {
-		return Message{}, u, err
+		return Message{}, u, streamErr(resp.Body, err)
 	}
 	if !done {
 		return Message{}, u, errors.New("stream ended before the response was complete")

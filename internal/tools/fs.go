@@ -22,6 +22,7 @@ const (
 	maxLineLen       = 2000
 	maxImageBytes    = 5 << 20
 	maxReadBytes     = 20 << 20
+	maxReadOutput    = 60 << 10
 )
 
 var imageTypes = map[string]string{
@@ -117,9 +118,13 @@ func readPath(path string, offset, limit int) Result {
 	end := min(offset-1+limit, len(lines))
 	var b strings.Builder
 	for i := offset - 1; i < end; i++ {
+		if b.Len() >= maxReadOutput {
+			end = i
+			break
+		}
 		line := strings.TrimSuffix(lines[i], "\r")
 		if len(line) > maxLineLen {
-			line = line[:maxLineLen] + "…"
+			line = cutStart(line, maxLineLen) + "…"
 		}
 		fmt.Fprintf(&b, "%d\t%s\n", i+1, line)
 	}

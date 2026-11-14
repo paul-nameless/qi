@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/paul-nameless/aicode/internal/llm"
 )
@@ -88,5 +89,19 @@ func TestRoundTrip(t *testing.T) {
 	}
 	if last := ld2.Messages[len(ld2.Messages)-1]; last.Text() != "third" {
 		t.Fatalf("entry after torn line was lost: %+v", ld2.Messages)
+	}
+}
+
+func TestLatestSkipsEmptySessions(t *testing.T) {
+	t.Setenv("AICODE_SESSION_DIR", t.TempDir())
+	s1, _ := Create("/p", "m", false)
+	s1.Message(llm.UserText("real work"), "m", nil)
+	s1.Close()
+	time.Sleep(1100 * time.Millisecond)
+	s2, _ := Create("/p", "m", false)
+	s2.Close()
+	got, err := Latest("/p")
+	if err != nil || got != s1.Path {
+		t.Errorf("latest %q, want %q (%v)", got, s1.Path, err)
 	}
 }

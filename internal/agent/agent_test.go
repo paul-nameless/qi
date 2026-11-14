@@ -185,3 +185,53 @@ func TestStopHookContinuesOnceWithActiveFlag(t *testing.T) {
 		t.Errorf("continuation message %q", txt)
 	}
 }
+
+func TestCompactRejectsToolCallsAndTriesOncePerTurn(t *testing.T) {
+	summaryWithTool := llm.Message{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: "Let me check first."}, {Type: llm.BlockToolUse, ID: "x", Name: "bash", Input: json.RawMessage(`{"command":"ls"}`)}}}
+	p := &fakeProvider{replies: []llm.Message{summaryWithTool, toolCall("c1", "echo a"), toolCall("c2", "echo b")}}
+	a := newAgent(t, p)
+	a.Cfg.CompactAt = 10
+	a.Messages = []llm.Message{llm.UserText("old")}
+	a.SetContextTokens(500)
+	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "go"}}); err != nil {
+		t.Fatal(err)
+	}
+	if a.Messages[0].Text() != "old" {
+		t.Errorf("history replaced by a tool-calling reply: %q", a.Messages[0].Text())
+	}
+	compactions := 0
+	for _, req := range p.requests {
+		if strings.Contains(lastText(req[len(req)-1]), "Summarize this conversation") {
+			compactions++
+		}
+	}
+	if compactions > 2 {
+		t.Errorf("compaction attempted %d times", compactions)
+	}
+}
+
+func TestStopHookEmptyReason(t *testing.T) {
+	p := &fakeProvider{}
+	a := newAgent(t, p)
+	n := 0
+	a.OnStop = func(context.Context, string, bool) (bool, string) {
+		n++
+		return n == 1, ""
+	}
+	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "go"}}); err != nil {
+		t.Fatal(err)
+	}
+	last := p.requests[1][len(p.requests[1])-1]
+	if last.Role != "user" || lastText(last) == "" {
+		t.Errorf("continuation message empty: %+v", last)
+	}
+}
+
+func TestRestoreMode(t *testing.T) {
+	a := newAgent(t, &fakeProvider{})
+	a.Messages = []llm.Message{{Role: "user", Blocks: []llm.Block{{Type: llm.BlockText, Text: "x"}, {Type: llm.BlockText, Text: readOnlyNote}}}}
+	a.RestoreMode()
+	if mb, ok := a.modeBlock(); !ok || mb.Text != yoloNote {
+		t.Errorf("resumed yolo session after read-only should announce yolo: %v %v", mb, ok)
+	}
+}

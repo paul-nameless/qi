@@ -216,3 +216,14 @@ func TestBashTimeoutUnits(t *testing.T) {
 		}
 	}
 }
+
+func TestReadCapsOutputBytes(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "big.jsonl")
+	line := strings.Repeat("x", 1999) + "\n"
+	os.WriteFile(p, []byte(strings.Repeat(line, 2000)), 0o600)
+	res := readPath(p, 0, 0)
+	if len(res.Text) > maxReadOutput+5000 || !strings.Contains(res.Text, "of 2000)") {
+		t.Errorf("read returned %d bytes", len(res.Text))
+	}
+}

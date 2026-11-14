@@ -72,6 +72,12 @@ func (r *repl) run() error {
 	}
 	r.term = t
 	defer t.Restore()
+	defer func() {
+		if p := recover(); p != nil {
+			t.Restore()
+			panic(p)
+		}
+	}()
 	hist := filepath.Join(config.Home(), ".local", "share", "aicode", "history")
 	r.editor = ui.NewEditor(t, r.display, hist)
 	r.editor.OnToggle = func() string {
@@ -127,7 +133,7 @@ func (r *repl) banner() {
 
 func (r *repl) handleSignals() {
 	ch := make(chan os.Signal, 4)
-	signal.Notify(ch, os.Interrupt, syscall.SIGTSTP, syscall.SIGTERM, syscall.SIGHUP)
+	signal.Notify(ch, os.Interrupt, syscall.SIGTSTP, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT)
 	go func() {
 		for s := range ch {
 			switch s {

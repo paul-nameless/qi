@@ -103,6 +103,7 @@ func run(o options) error {
 		}
 		a.Session = s
 		a.Messages = ld.Messages
+		a.RestoreMode()
 		a.SetContextTokens(ld.CtxTokens)
 	} else {
 		s, err := session.Create(cwd, cfg.Model, isSub)
@@ -187,7 +188,8 @@ func readStdin(wait bool) string {
 	} else {
 		select {
 		case head = <-first:
-		case <-time.After(2 * time.Second):
+		case <-time.After(5 * time.Second):
+			fmt.Fprintln(os.Stderr, "aicode: no stdin within 5s, running without it")
 			return ""
 		}
 	}

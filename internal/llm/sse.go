@@ -10,7 +10,9 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -24,10 +26,20 @@ var httpClient = &http.Client{Transport: &http.Transport{
 
 const streamIdleTimeout = 5 * time.Minute
 
+var ErrStalled = errors.New("the API stopped sending data for 5 minutes")
+
 type idleBody struct {
 	io.ReadCloser
-	timer  *time.Timer
-	cancel context.CancelFunc
+	timer   *time.Timer
+	cancel  context.CancelFunc
+	stalled atomic.Bool
+}
+
+func streamErr(body io.ReadCloser, err error) error {
+	if b, ok := body.(*idleBody); ok && b.stalled.Load() {
+		return ErrStalled
+	}
+	return err
 }
 
 func (b *idleBody) Read(p []byte) (int, error) {
@@ -73,7 +85,12 @@ func postStream(parent context.Context, url string, headers map[string]string, b
 		cancel()
 		return nil, err
 	}
-	resp.Body = &idleBody{ReadCloser: resp.Body, timer: time.AfterFunc(streamIdleTimeout, cancel), cancel: cancel}
+	ib := &idleBody{ReadCloser: resp.Body, cancel: cancel}
+	ib.timer = time.AfterFunc(streamIdleTimeout, func() {
+		ib.stalled.Store(true)
+		cancel()
+	})
+	resp.Body = ib
 	return resp, nil
 }
 
@@ -116,6 +133,13 @@ func postStreamCtx(ctx context.Context, url string, headers map[string]string, b
 		lastErr = &APIError{Status: resp.StatusCode, Body: string(data)}
 		if !retryable(lastErr) {
 			return nil, lastErr
+		}
+		if secs, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil && secs > 0 && secs <= 120 {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(time.Duration(secs) * time.Second):
+			}
 		}
 	}
 	return nil, lastErr

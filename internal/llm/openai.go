@@ -296,7 +296,7 @@ func (o *OpenAI) Stream(ctx context.Context, req Request, onDelta func(Delta)) (
 		return nil
 	})
 	if err != nil && err != errStreamDone {
-		return Message{}, usage, err
+		return Message{}, usage, streamErr(resp.Body, err)
 	}
 	if !done && finish == "" {
 		return Message{}, usage, errors.New("stream ended before the response was complete")
