@@ -79,6 +79,8 @@ func (r *SubagentRunner) args(prompt, model, provider, effort string) []string {
 func (r *SubagentRunner) Run(parent context.Context, prompt, model, provider, effort string, progress func(string)) (string, error) {
 	ctx, done := r.Track(parent)
 	defer done()
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
+	defer cancel()
 	exe, err := os.Executable()
 	if err != nil {
 		return "", err
@@ -86,7 +88,7 @@ func (r *SubagentRunner) Run(parent context.Context, prompt, model, provider, ef
 	cmd := exec.CommandContext(ctx, exe, r.args(prompt, model, provider, effort)...)
 	cmd.Dir = r.Cwd
 	cmd.Env = append(os.Environ(), "AICODE_SUBAGENT=1")
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	cmd.Cancel = func() error { return syscall.Kill(cmd.Process.Pid, syscall.SIGTERM) }
 	cmd.WaitDelay = 5 * time.Second
 	var stdout bytes.Buffer

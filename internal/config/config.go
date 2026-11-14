@@ -47,6 +47,7 @@ type Config struct {
 	CacheTTL        string               `yaml:"cache_ttl"`
 	CompactAt       int                  `yaml:"compact_at"`
 	CompactIdleAt   int                  `yaml:"compact_idle_at"`
+	MaxRounds       int                  `yaml:"max_rounds"`
 	ShowReasoning   *bool                `yaml:"show_reasoning"`
 	ReadOnly        bool                 `yaml:"read_only"`
 	ReadOnlyAllow   []string             `yaml:"read_only_allow"`
@@ -226,6 +227,10 @@ func mergeFile(c *Config, path string, required bool) error {
 	if err := yaml.Unmarshal(data, c); err != nil {
 		return fmt.Errorf("parse config %s: %w", path, err)
 	}
+	var strict Config
+	if err := yaml.UnmarshalWithOptions(data, &strict, yaml.Strict()); err != nil {
+		fmt.Fprintf(os.Stderr, "aicode: %s: %s (ignored)\n", path, strings.SplitN(err.Error(), "\n", 2)[0])
+	}
 	return nil
 }
 
@@ -255,7 +260,7 @@ func (c *Config) applyDefaults() {
 		c.CompactAt = 150000
 	}
 	if c.CompactIdleAt == 0 {
-		c.CompactIdleAt = 40000
+		c.CompactIdleAt = 100000
 	}
 	if c.CacheTTL == "" {
 		c.CacheTTL = "1h"

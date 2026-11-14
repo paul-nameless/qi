@@ -158,7 +158,7 @@ func runBash(ctx context.Context, env *Env, in json.RawMessage, progress func(st
 	if env.readOnly() {
 		cmd.Env = append(cmd.Env, readOnlyEnv()...)
 	}
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
 	cmd.WaitDelay = 2 * time.Second
 	out := &progressWriter{progress: progress}

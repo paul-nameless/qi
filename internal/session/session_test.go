@@ -53,7 +53,7 @@ func TestRepair(t *testing.T) {
 
 func TestRoundTrip(t *testing.T) {
 	t.Setenv("AICODE_SESSION_DIR", t.TempDir())
-	s, err := Create("/tmp/proj", "m", false)
+	s, err := Create("/tmp/proj", "m", "interactive", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,14 +94,36 @@ func TestRoundTrip(t *testing.T) {
 
 func TestLatestSkipsEmptySessions(t *testing.T) {
 	t.Setenv("AICODE_SESSION_DIR", t.TempDir())
-	s1, _ := Create("/p", "m", false)
+	s1, _ := Create("/p", "m", "interactive", false)
 	s1.Message(llm.UserText("real work"), "m", nil)
+	s1.Message(llm.Message{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: "done"}}}, "m", nil)
 	s1.Close()
 	time.Sleep(1100 * time.Millisecond)
-	s2, _ := Create("/p", "m", false)
+	s2, _ := Create("/p", "m", "interactive", false)
+	s2.Message(llm.UserText("asked but never answered"), "m", nil)
 	s2.Close()
-	got, err := Latest("/p")
-	if err != nil || got != s1.Path {
-		t.Errorf("latest %q, want %q (%v)", got, s1.Path, err)
+	time.Sleep(1100 * time.Millisecond)
+	s3, _ := Create("/p", "m", "headless", false)
+	s3.Message(llm.UserText("one-shot"), "m", nil)
+	s3.Message(llm.Message{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: "ok"}}}, "m", nil)
+	s3.Close()
+	if got, err := Latest("/p", true); err != nil || got != s1.Path {
+		t.Errorf("interactive latest %q, want %q (%v)", got, s1.Path, err)
+	}
+	if got, _ := Latest("/p", false); got != s3.Path {
+		t.Errorf("headless latest %q, want %q", got, s3.Path)
+	}
+}
+
+func TestDropEntry(t *testing.T) {
+	t.Setenv("AICODE_SESSION_DIR", t.TempDir())
+	s, _ := Create("/p", "m", "interactive", false)
+	s.Message(llm.UserText("keep"), "m", nil)
+	s.Message(llm.UserText("bad image prompt"), "m", nil)
+	s.Drop()
+	s.Close()
+	_, ld, err := Open(s.Path)
+	if err != nil || len(ld.Messages) != 1 || ld.Messages[0].Text() != "keep" {
+		t.Errorf("drop not honored: %+v %v", ld.Messages, err)
 	}
 }

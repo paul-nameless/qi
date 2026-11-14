@@ -27,6 +27,7 @@ type Entry struct {
 	Time    string       `json:"time"`
 	Version int          `json:"version,omitempty"`
 	Cwd     string       `json:"cwd,omitempty"`
+	Kind    string       `json:"kind,omitempty"`
 	Model   string       `json:"model,omitempty"`
 	Message *llm.Message `json:"message,omitempty"`
 	Usage   *llm.Usage   `json:"usage,omitempty"`
@@ -59,7 +60,7 @@ func newID() string {
 	return hex.EncodeToString(b)
 }
 
-func Create(cwd, model string, subagent bool) (*Session, error) {
+func Create(cwd, model, kind string, subagent bool) (*Session, error) {
 	dir := Dir(cwd)
 	if subagent {
 		dir = filepath.Join(dir, "subagents")
@@ -74,14 +75,14 @@ func Create(cwd, model string, subagent bool) (*Session, error) {
 		return nil, fmt.Errorf("create session file: %w", err)
 	}
 	s := &Session{Path: path, ID: id, f: f}
-	if err := s.write(Entry{Type: "meta", Version: Version, Cwd: cwd, Model: model}); err != nil {
+	if err := s.write(Entry{Type: "meta", Version: Version, Cwd: cwd, Model: model, Kind: kind}); err != nil {
 		f.Close()
 		return nil, err
 	}
 	return s, nil
 }
 
-func Latest(cwd string) (string, error) {
+func Latest(cwd string, interactive bool) (string, error) {
 	dir := Dir(cwd)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -99,14 +100,14 @@ func Latest(cwd string) (string, error) {
 	sort.Strings(names)
 	for i := len(names) - 1; i >= 0; i-- {
 		path := filepath.Join(dir, names[i])
-		if hasMessages(path) {
+		if hasMessages(path, interactive) {
 			return path, nil
 		}
 	}
 	return "", fmt.Errorf("no sessions with messages for %s", cwd)
 }
 
-func hasMessages(path string) bool {
+func hasMessages(path string, interactive bool) bool {
 	f, err := os.Open(path)
 	if err != nil {
 		return false
@@ -115,7 +116,11 @@ func hasMessages(path string) bool {
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 64<<10), 256<<20)
 	for sc.Scan() {
-		if strings.Contains(sc.Text(), `"type":"message"`) || strings.Contains(sc.Text(), `"type":"compaction"`) {
+		line := sc.Text()
+		if interactive && strings.Contains(line, `"type":"meta"`) && strings.Contains(line, `"kind":"headless"`) {
+			return false
+		}
+		if strings.Contains(line, `"role":"assistant"`) || strings.Contains(line, `"type":"compaction"`) {
 			return true
 		}
 	}
@@ -149,6 +154,10 @@ func Open(path string) (*Session, Loaded, error) {
 			}
 			if e.Usage != nil {
 				ld.CtxTokens = e.Usage.Input + e.Usage.Output
+			}
+		case "drop":
+			if n := len(ld.Messages); n > 0 {
+				ld.Messages = ld.Messages[:n-1]
 			}
 		case "compaction":
 			ld.Messages = []llm.Message{llm.UserText(e.Summary)}
@@ -250,6 +259,10 @@ func (s *Session) write(e Entry) error {
 
 func (s *Session) Message(m llm.Message, model string, u *llm.Usage) error {
 	return s.write(Entry{Type: "message", Message: &m, Model: model, Usage: u})
+}
+
+func (s *Session) Drop() error {
+	return s.write(Entry{Type: "drop"})
 }
 
 func (s *Session) Compaction(summary, model string) error {

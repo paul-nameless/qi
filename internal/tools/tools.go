@@ -130,12 +130,21 @@ func (r *Registry) Execute(ctx context.Context, env *Env, calls []llm.Block, ui 
 	results := make([]llm.Block, len(calls))
 	groups := map[string][]int{}
 	var order []string
+	writes := false
+	for _, c := range calls {
+		if c.Name == "write" || c.Name == "edit" {
+			writes = true
+		}
+	}
 	for i, c := range calls {
 		key := fmt.Sprintf("#%d", i)
 		if t, ok := r.byKey[c.Name]; ok && t.Path != nil {
 			if p := t.Path(env, c.Input); p != "" {
 				key = "path:" + p
 			}
+		}
+		if writes && c.Name != "read" && c.Name != "tool_search" && c.Name != "subagent" {
+			key = "serial"
 		}
 		if _, seen := groups[key]; !seen {
 			order = append(order, key)

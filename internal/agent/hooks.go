@@ -157,7 +157,7 @@ func (h *Hooks) exec(ctx context.Context, c hookCmd, input []byte) hookOutcome {
 	cmd.Dir = h.Cwd
 	cmd.Env = append(os.Environ(), "CLAUDE_PROJECT_DIR="+h.Cwd, "AICODE=1")
 	cmd.Stdin = bytes.NewReader(input)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
 	cmd.WaitDelay = time.Second
 	var stdout, stderr bytes.Buffer

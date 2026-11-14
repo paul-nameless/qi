@@ -150,7 +150,7 @@ func (t *Terminal) decodeLoop() {
 		if len(pending) > 0 && pending[0] == 0x1b && !inPaste {
 			select {
 			case chunk, ok = <-t.raw:
-			case <-time.After(40 * time.Millisecond):
+			case <-time.After(80 * time.Millisecond):
 				if len(pending) == 1 {
 					t.Keys <- Key{Kind: KeyEsc}
 				}

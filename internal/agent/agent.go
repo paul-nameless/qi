@@ -217,7 +217,10 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 	a.appendMsg(llm.Message{Role: "user", Blocks: blocks}, nil)
 	stopActive := false
 	compactFailed := false
-	for {
+	for round := 0; ; round++ {
+		if a.Cfg.MaxRounds > 0 && round >= a.Cfg.MaxRounds {
+			return "", stats, fmt.Errorf("stopped after %d model requests (max_rounds)", a.Cfg.MaxRounds)
+		}
 		if !compactFailed && a.ContextTokens() > a.Cfg.CompactAt {
 			if err := a.compact(ctx, true); err != nil {
 				compactFailed = true
@@ -227,6 +230,9 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 		msg, usage, err := a.stream(ctx)
 		a.UI.EndBlock()
 		if err != nil {
+			if round == 0 && (ctx.Err() != nil || rejected(err)) {
+				a.dropLast()
+			}
 			if ctx.Err() != nil {
 				return "", stats, context.Canceled
 			}
@@ -275,6 +281,35 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 			next = append(next, mb)
 		}
 		a.appendMsg(llm.Message{Role: "user", Blocks: next}, nil)
+		a.SetContextTokens(a.ContextTokens() + blockChars(next)/4)
+	}
+}
+
+func blockChars(blocks []llm.Block) int {
+	n := 0
+	for _, b := range blocks {
+		n += len(b.Text) + len(b.Data)
+		for _, img := range b.Images {
+			n += len(img.Data)
+		}
+	}
+	return n
+}
+
+func rejected(err error) bool {
+	var apiErr *llm.APIError
+	return errors.As(err, &apiErr) && apiErr.Status >= 400 && apiErr.Status < 500 && apiErr.Status != 429
+}
+
+func (a *Agent) dropLast() {
+	if len(a.Messages) == 0 {
+		return
+	}
+	a.Messages = a.Messages[:len(a.Messages)-1]
+	if a.Session != nil {
+		if err := a.Session.Drop(); err != nil {
+			a.UI.Error("session: " + err.Error())
+		}
 	}
 }
 

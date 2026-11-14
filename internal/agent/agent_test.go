@@ -235,3 +235,31 @@ func TestRestoreMode(t *testing.T) {
 		t.Errorf("resumed yolo session after read-only should announce yolo: %v %v", mb, ok)
 	}
 }
+
+type rejectProvider struct{ calls int }
+
+func (r *rejectProvider) Stream(ctx context.Context, req llm.Request, onDelta func(llm.Delta)) (llm.Message, llm.Usage, error) {
+	r.calls++
+	return llm.Message{}, llm.Usage{}, &llm.APIError{Status: 400, Body: "image not supported"}
+}
+
+func TestRejectedPromptIsRolledBack(t *testing.T) {
+	a := newAgent(t, &fakeProvider{})
+	a.Provider = &rejectProvider{}
+	a.Messages = []llm.Message{llm.UserText("earlier")}
+	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "bad"}}); err == nil {
+		t.Fatal("expected error")
+	}
+	if len(a.Messages) != 1 || a.Messages[0].Text() != "earlier" {
+		t.Errorf("rejected prompt kept in history: %+v", a.Messages)
+	}
+}
+
+func TestMaxRounds(t *testing.T) {
+	p := &fakeProvider{replies: []llm.Message{toolCall("1", "true"), toolCall("2", "true"), toolCall("3", "true")}}
+	a := newAgent(t, p)
+	a.Cfg.MaxRounds = 2
+	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "go"}}); err == nil || !strings.Contains(err.Error(), "max_rounds") {
+		t.Errorf("expected max_rounds error, got %v", err)
+	}
+}

@@ -31,13 +31,14 @@ type repl struct {
 	runner   *agent.SubagentRunner
 	opts     options
 
-	mu         sync.Mutex
-	turnCancel context.CancelFunc
-	turnDone   chan struct{}
-	idle       *time.Timer
-	idleCancel context.CancelFunc
-	idleGen    int
-	lastIntr   time.Time
+	mu            sync.Mutex
+	turnCancel    context.CancelFunc
+	turnDone      chan struct{}
+	idle          *time.Timer
+	idleCancel    context.CancelFunc
+	idleGen       int
+	lastIntr      time.Time
+	lastCancelled bool
 }
 
 func (r *repl) prompt() string {
@@ -115,8 +116,11 @@ func (r *repl) run() error {
 				return submitPrompt(ctx, r.agent, r.hooks, text)
 			}, draft)
 		}
-		for q := r.agent.DrainQueue(); len(q) > 0; q = r.agent.DrainQueue() {
+		for q := r.agent.DrainQueue(); len(q) > 0 && !r.lastCancelled; q = r.agent.DrainQueue() {
 			draft = r.turn(func(context.Context) ([]llm.Block, error) { return q, nil }, draft)
+		}
+		if q := r.agent.DrainQueue(); len(q) > 0 {
+			draft = strings.TrimSpace(draft + " " + queuedText(q))
 		}
 		r.armIdle()
 	}
@@ -236,6 +240,7 @@ func (r *repl) turn(prepare func(context.Context) ([]llm.Block, error), draft st
 		return err
 	})
 	r.display.EndBlock()
+	r.lastCancelled = errors.Is(err, context.Canceled)
 	switch {
 	case errors.Is(err, context.Canceled):
 		r.display.Line(r.display.Color(ui.Yellow, "interrupted"))
@@ -377,9 +382,19 @@ func (r *repl) modelList() string {
 	return b.String()
 }
 
+func queuedText(blocks []llm.Block) string {
+	var parts []string
+	for _, b := range blocks {
+		if b.Type == llm.BlockText && !strings.HasPrefix(b.Text, "<hook-context>") {
+			parts = append(parts, b.Text)
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
 func (r *repl) newSession() error {
 	r.stopIdle()
-	s, err := session.Create(r.agent.Cwd, r.agent.Model(), false)
+	s, err := session.Create(r.agent.Cwd, r.agent.Model(), "interactive", false)
 	if err != nil {
 		return err
 	}

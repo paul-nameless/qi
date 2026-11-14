@@ -227,3 +227,23 @@ func TestReadCapsOutputBytes(t *testing.T) {
 		t.Errorf("read returned %d bytes", len(res.Text))
 	}
 }
+
+func TestEditsSerializeDependentBash(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "f.txt"), []byte("old\n"), 0o600)
+	res := NewRegistry(Edit(), Bash()).Execute(context.Background(), &Env{Cwd: dir, SpillDir: t.TempDir()}, []llm.Block{
+		{ID: "1", Name: "edit", Input: json.RawMessage(`{"file_path":"f.txt","old_string":"old","new_string":"new"}`)},
+		{ID: "2", Name: "bash", Input: json.RawMessage(`{"command":"cat f.txt"}`)},
+	}, nopUI{})
+	if !strings.Contains(res[1].Text, "new") {
+		t.Errorf("bash ran before the edit: %q", res[1].Text)
+	}
+}
+
+func TestBashTTYReadFailsFast(t *testing.T) {
+	start := time.Now()
+	runBash(context.Background(), &Env{Cwd: t.TempDir(), SpillDir: t.TempDir()}, json.RawMessage(`{"command":"head -1 </dev/tty; echo done","timeout":20}`), nil)
+	if time.Since(start) > 5*time.Second {
+		t.Error("reading /dev/tty blocked instead of failing")
+	}
+}

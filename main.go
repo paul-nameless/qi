@@ -79,6 +79,9 @@ func run(o options) error {
 		display = ui.NewPrinter(os.Stdout)
 	}
 
+	if headless && cfg.MaxRounds == 0 {
+		cfg.MaxRounds = 200
+	}
 	a, runner, toolset := buildAgent(cfg, o, cwd, newProvider(cfg, key), display, headless, isSub)
 	env := a.Env
 	if len(cfg.MCP) > 0 {
@@ -93,7 +96,7 @@ func run(o options) error {
 	a.System = agent.BuildSystemPrompt(cwd, agent.ExpandPaths(roots, cfg.InstructionFile), skills)
 
 	if o.cont {
-		path, err := session.Latest(cwd)
+		path, err := session.Latest(cwd, !headless)
 		if err != nil {
 			return err
 		}
@@ -106,7 +109,11 @@ func run(o options) error {
 		a.RestoreMode()
 		a.SetContextTokens(ld.CtxTokens)
 	} else {
-		s, err := session.Create(cwd, cfg.Model, isSub)
+		kind := "interactive"
+		if headless {
+			kind = "headless"
+		}
+		s, err := session.Create(cwd, cfg.Model, kind, isSub)
 		if err != nil {
 			return err
 		}
@@ -161,6 +168,11 @@ func submitPrompt(ctx context.Context, a *agent.Agent, hooks *agent.Hooks, promp
 		return nil, fmt.Errorf("prompt blocked by hook: %s", reason)
 	}
 	blocks := userBlocks(a.Cwd, prompt)
+	for _, b := range blocks[1:] {
+		if b.Type == llm.BlockImage {
+			a.UI.Info("attached image (" + b.MediaType + ")")
+		}
+	}
 	if extra != "" {
 		blocks = append(blocks, llm.Block{Type: llm.BlockText, Text: "<hook-context>\n" + extra + "\n</hook-context>"})
 	}
