@@ -1,6 +1,11 @@
 package main
 
-import "testing"
+import (
+	"os"
+	"strings"
+	"testing"
+	"time"
+)
 
 func TestPick(t *testing.T) {
 	items := []pickItem{{"alpha", "first one"}, {"beta", "second\tone"}}
@@ -13,17 +18,74 @@ func TestPick(t *testing.T) {
 		{"cat >/dev/null", "x", "", false},
 		{`printf '%s\tdesc\n' {prompt}`, "it's $HOME", "it's $HOME", true},
 		{`printf '%s\n' "$AICODE_PICK_PROMPT"`, "model ", "model ", true},
+		{"{picker} | head -1", "x", "alpha", true},
+		{"sed -n 2p > {file}", "x", "beta", true},
 	}
 	for _, c := range cases {
-		got, ok := pick(c.command, c.prompt, items)
+		got, ok := pick(runPlain, c.command, "cat", c.prompt, items)
 		if got != c.want || ok != c.ok {
 			t.Errorf("pick(%q) = %q, %v; want %q, %v", c.command, got, ok, c.want, c.ok)
 		}
 	}
-	if _, ok := pick("cat", "x", nil); ok {
+	if _, ok := pick(runPlain, "cat", "cat", "x", nil); ok {
 		t.Error("empty list should not run the picker")
 	}
-	if pickerAvailable("") || pickerAvailable("no-such-picker-xyz --x") || !pickerAvailable("sh -c true") {
-		t.Error("pickerAvailable")
+}
+
+func TestToolAvailable(t *testing.T) {
+	cases := []struct {
+		command, picker string
+		want            bool
+	}{
+		{"", "", false},
+		{"off", "sh", false},
+		{"no-such-tool-xyz --x", "", false},
+		{"sh -c true", "", true},
+		{"FOO=1 sh -c true", "", true},
+		{"(git ls-files || find .) | {picker}", "sh", true},
+		{"(sh -c true) | {picker}", "no-such-picker-xyz", false},
+		{"{picker} --preview x", "sh", true},
 	}
+	for _, c := range cases {
+		if got := toolAvailable(c.command, c.picker); got != c.want {
+			t.Errorf("toolAvailable(%q, %q) = %v", c.command, c.picker, got)
+		}
+	}
+}
+
+func TestExpandTool(t *testing.T) {
+	got := expandTool("{picker} --preview 'x {1}' -t {title} {msg}", "fzf --prompt={prompt}", map[string]string{"prompt": "a b", "title": "it's", "msg": "{prompt}"})
+	want := `fzf --prompt='a b' --preview 'x {1}' -t 'it'\''s' '{prompt}'`
+	if got != want {
+		t.Errorf("got  %s\nwant %s", got, want)
+	}
+}
+
+func TestRunQuiet(t *testing.T) {
+	out, err := runQuiet("tr a-z A-Z", "hello")
+	if err != nil || out != "HELLO" {
+		t.Errorf("runQuiet = %q, %v", out, err)
+	}
+	if _, err := runQuiet("echo boom >&2; exit 3", ""); err == nil || err.Error() != "boom" {
+		t.Errorf("error = %v, want boom", err)
+	}
+	old := quietTimeout
+	quietTimeout = 200 * time.Millisecond
+	defer func() { quietTimeout = old }()
+	start := time.Now()
+	_, err = runQuiet("sleep 5 & sleep 5", "")
+	if err == nil || !strings.Contains(err.Error(), "timed out") || time.Since(start) > 3*time.Second {
+		t.Errorf("timeout: %v after %s", err, time.Since(start))
+	}
+	if out, _ := runQuiet(`printf %s "$AICODE_BIN"`, ""); out != mustExecutable(t) {
+		t.Errorf("AICODE_BIN = %q", out)
+	}
+}
+
+func mustExecutable(t *testing.T) string {
+	p, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
 }

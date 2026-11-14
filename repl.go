@@ -83,7 +83,7 @@ func (r *repl) run() error {
 		return r.prompt()
 	}
 	r.editor.IsImage = func(text string) []string { return imagePaths(r.agent.Cwd, text) }
-	if pickerAvailable(r.agent.Cfg.Picker) {
+	if r.toolOn(r.agent.Cfg.Picker) {
 		r.editor.OnSlash = r.slashPicker
 	}
 	r.handleSignals()

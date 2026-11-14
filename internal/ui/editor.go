@@ -150,11 +150,7 @@ func (e *Editor) ReadLine(prompt, initial string) (string, error) {
 				empty = len(e.T.Keys) == 0
 			}
 			if empty {
-				e.P.Raw("\r\x1b[K")
-				e.T.Suspend()
 				text, submit := e.OnSlash()
-				e.T.Resume()
-				drain(e.Interrupt)
 				e.P.Locked(func() {
 					st.buf = []rune(text)
 					st.pos = len(st.buf)
@@ -195,7 +191,6 @@ func (e *Editor) ReadLine(prompt, initial string) (string, error) {
 			var cur string
 			e.P.Locked(func() { cur = string(st.buf) })
 			text, err := e.external(cur)
-			drain(e.Interrupt)
 			if err == nil {
 				e.P.Locked(func() {
 					st.buf = []rune(text)
@@ -328,20 +323,31 @@ func (e *Editor) external(text string) (string, error) {
 	if editor == "" {
 		editor = "vi"
 	}
-	e.P.Raw("\r\x1b[K")
-	e.T.Suspend()
-	cmd := exec.Command("sh", "-c", editor+` "$1"`, "sh", f.Name())
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	runErr := cmd.Run()
-	e.T.Resume()
-	if runErr != nil {
-		return "", runErr
+	if err := e.RunTTY(exec.Command("sh", "-c", editor+` "$1"`, "sh", f.Name())); err != nil {
+		return "", err
 	}
 	data, err := os.ReadFile(f.Name())
 	if err != nil {
 		return "", err
 	}
 	return strings.TrimRight(string(data), "\n"), nil
+}
+
+func (e *Editor) RunTTY(cmd *exec.Cmd) error {
+	if cmd.Stdin == nil {
+		cmd.Stdin = os.Stdin
+	}
+	if cmd.Stdout == nil {
+		cmd.Stdout = os.Stdout
+	}
+	cmd.Stderr = os.Stderr
+	e.P.Raw("\r\x1b[K")
+	e.T.Suspend()
+	err := cmd.Run()
+	e.T.Resume()
+	drain(e.Interrupt)
+	e.P.RenderPrompt()
+	return err
 }
 
 type Steer struct {

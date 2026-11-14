@@ -3,7 +3,7 @@
 Minimal Go coding agent for the terminal (v2 rewrite). Plan: `docs/plans/aicode-v2.md` (docs/ is gitignored, local only).
 
 ## Layout
-- `main.go` flags and wiring, `repl.go` interactive loop, `commands.go` slash commands and image attachment, `picker.go` the `/` picker (runs the `picker` config command, fzf by default)
+- `main.go` flags and wiring, `repl.go` interactive loop, `commands.go` slash commands and image attachment, `picker.go` the `/` picker (runs the `picker` config command, fzf by default), `external.go` the shared contract for external UI tools (`toolAvailable`, `expandTool` placeholders, `choose`, `runQuiet`, `runTTY` via `Editor.RunTTY`)
 - `internal/llm` canonical message types, SSE, provider adapters (`openai.go` chat completions incl. OpenRouter, `anthropic.go`)
 - `internal/agent` turn loop, compaction (`compact.go`: unchanged-history summary request, verbatim tail without reasoning between turns, summary-only mid-turn, overflow retry, thrash pause), steering queue, `images.go` evicts the oldest images past 100 or 24 MB (never on a normal request), system prompt (`prompt.go` records named sections for `/context`, `context.go` the breakdown), skills, subagent runner, hooks, project trust
 - `internal/config` YAML config with providers and profiles; `limits.go` parses `compact_at`/`compact_idle_at` (tokens or %) and resolves them against `context_window` or a small model table

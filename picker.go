@@ -2,8 +2,6 @@ package main
 
 import (
 	"bytes"
-	"os"
-	"os/exec"
 	"sort"
 	"strings"
 )
@@ -13,20 +11,7 @@ type pickItem struct {
 	desc string
 }
 
-func pickerAvailable(command string) bool {
-	f := strings.Fields(command)
-	if len(f) == 0 {
-		return false
-	}
-	_, err := exec.LookPath(f[0])
-	return err == nil
-}
-
-func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
-}
-
-func pick(command, prompt string, items []pickItem) (string, bool) {
+func pick(run runner, command, picker, prompt string, items []pickItem) (string, bool) {
 	if len(items) == 0 {
 		return "", false
 	}
@@ -34,21 +19,20 @@ func pick(command, prompt string, items []pickItem) (string, bool) {
 	for _, it := range items {
 		in.WriteString(it.name + "\t" + strings.Join(strings.Fields(it.desc), " ") + "\n")
 	}
-	cmd := exec.Command("sh", "-c", strings.ReplaceAll(command, "{prompt}", shellQuote(prompt)))
-	cmd.Env = append(os.Environ(), "FZF_DEFAULT_OPTS=", "FZF_DEFAULT_OPTS_FILE=", "AICODE_PICK_PROMPT="+prompt)
-	cmd.Stdin = &in
-	cmd.Stderr = os.Stderr
-	out, err := cmd.Output()
-	if err != nil {
+	lines, ok := choose(run, command, picker, prompt, &in)
+	if !ok {
 		return "", false
 	}
-	lines := strings.Split(strings.TrimRight(string(out), "\n"), "\n")
 	name, _, _ := strings.Cut(lines[len(lines)-1], "\t")
 	return name, name != ""
 }
 
 func (r *repl) pick(prompt string, items []pickItem) (string, bool) {
-	return pick(r.agent.Cfg.Picker, prompt, items)
+	return r.pickWith(r.agent.Cfg.Picker, prompt, items)
+}
+
+func (r *repl) pickWith(command, prompt string, items []pickItem) (string, bool) {
+	return pick(r.runTTY, command, r.agent.Cfg.Picker, prompt, items)
 }
 
 var builtinCommands = []pickItem{

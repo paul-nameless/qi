@@ -48,7 +48,7 @@ func (r *repl) handleInput(line string) (string, bool) {
 	case "exit", "quit":
 		return "", true
 	case "help":
-		r.display.Info(helpText)
+		r.display.Info(helpText + "\n" + r.toolsHelp())
 	case "clear":
 		if err := r.newSession(); err != nil {
 			r.display.Error(err.Error())
