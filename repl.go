@@ -18,6 +18,7 @@ import (
 	"github.com/paul-nameless/aicode/internal/session"
 	"github.com/paul-nameless/aicode/internal/tools"
 	"github.com/paul-nameless/aicode/internal/ui"
+	"golang.org/x/sys/unix"
 )
 
 type repl struct {
@@ -171,7 +172,19 @@ func (r *repl) handleSignals() {
 	}()
 }
 
+func jobControl() bool {
+	self, err := unix.Getsid(0)
+	if err != nil {
+		return false
+	}
+	parent, err := unix.Getsid(os.Getppid())
+	return err == nil && parent == self
+}
+
 func (r *repl) stop() {
+	if !jobControl() {
+		return
+	}
 	child := r.term.ChildRunning()
 	if !child {
 		r.display.ClearFooter()

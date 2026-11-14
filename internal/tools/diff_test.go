@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -19,6 +20,9 @@ type doneUI struct {
 func (u doneUI) ToolDone(id string, _ bool, _ string) { *u.events = append(*u.events, "done "+id) }
 
 func TestEditWriteReportDiffs(t *testing.T) {
+	if _, err := exec.LookPath("diff"); err != nil {
+		t.Skip("no diff")
+	}
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "f.txt"), []byte("a\nold\nc\n"), 0o600)
 	os.WriteFile(filepath.Join(dir, "h.txt"), []byte("one\ntwo\n"), 0o600)
