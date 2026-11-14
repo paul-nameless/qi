@@ -270,8 +270,11 @@ func TestStaleFileGuard(t *testing.T) {
 	}
 	future := time.Now().Add(time.Hour)
 	os.Chtimes(p, future, future)
-	if res := run("edit", `{"file_path":"f.txt","old_string":"one","new_string":"ONE"}`); !res.IsError || !strings.Contains(res.Text, "changed on disk") {
-		t.Errorf("stale edit: %+v", res)
+	if res := run("write", `{"file_path":"f.txt","content":"x\n"}`); !res.IsError || !strings.Contains(res.Text, "changed on disk") {
+		t.Errorf("stale write: %+v", res)
+	}
+	if res := run("edit", `{"file_path":"f.txt","old_string":"one","new_string":"ONE"}`); res.IsError {
+		t.Errorf("edit after an outside change should apply: %+v", res)
 	}
 	run("read", `{"file_path":"f.txt"}`)
 	if res := run("write", `{"file_path":"f.txt","content":"new\n"}`); res.IsError {

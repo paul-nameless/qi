@@ -296,9 +296,6 @@ func Edit() *Tool {
 			} else if !st.Mode().IsRegular() || st.Size() > maxReadBytes {
 				return errResult("%s is not a regular file under %d MB", path, maxReadBytes>>20)
 			}
-			if err := env.files.check(path); err != nil {
-				return errResult("%v", err)
-			}
 			data, err := os.ReadFile(path)
 			if err != nil {
 				return errResult("%v", err)
