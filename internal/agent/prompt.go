@@ -162,7 +162,7 @@ func LoadCommands(roots []string) []Command {
 	dirs = append(dirs, config.ExpandHome("~/.claude/commands"), filepath.Join(config.Dir(), "commands"))
 	for _, root := range dirs {
 		_ = filepath.WalkDir(root, func(path string, e os.DirEntry, err error) error {
-			if err != nil || e.IsDir() || !strings.HasSuffix(path, ".md") {
+			if err != nil || e.IsDir() || !strings.HasSuffix(path, ".md") || strings.HasPrefix(e.Name(), ".") {
 				return nil
 			}
 			rel, _ := filepath.Rel(root, path)
