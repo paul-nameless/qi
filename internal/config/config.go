@@ -47,8 +47,9 @@ type Config struct {
 	MaxTokens       int                  `yaml:"max_tokens"`
 	CacheControl    *bool                `yaml:"cache_control"`
 	CacheTTL        string               `yaml:"cache_ttl"`
-	CompactAt       int                  `yaml:"compact_at"`
-	CompactIdleAt   int                  `yaml:"compact_idle_at"`
+	CompactAt       Threshold            `yaml:"compact_at"`
+	CompactIdleAt   Threshold            `yaml:"compact_idle_at"`
+	ContextWindow   Tokens               `yaml:"context_window"`
 	MaxRounds       int                  `yaml:"max_rounds"`
 	ShowReasoning   *bool                `yaml:"show_reasoning"`
 	ReadOnly        bool                 `yaml:"read_only"`
@@ -259,11 +260,11 @@ func (c *Config) applyDefaults() {
 	if c.MaxTokens == 0 {
 		c.MaxTokens = 32000
 	}
-	if c.CompactAt == 0 {
-		c.CompactAt = 150000
+	if c.CompactAt == (Threshold{}) {
+		c.CompactAt = Threshold{Tokens: 150000}
 	}
-	if c.CompactIdleAt == 0 {
-		c.CompactIdleAt = 100000
+	if c.CompactIdleAt == (Threshold{}) {
+		c.CompactIdleAt = Threshold{Tokens: 100000}
 	}
 	if c.Picker == "" {
 		c.Picker = DefaultPicker

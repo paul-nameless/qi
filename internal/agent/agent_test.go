@@ -57,7 +57,7 @@ func toolCall(id, cmd string) llm.Message {
 }
 
 func newAgent(t *testing.T, p *fakeProvider) *Agent {
-	a := &Agent{Cfg: config.Config{CompactAt: 1 << 30, Model: "m"}, Cwd: t.TempDir(), Provider: p, UI: nopDisplay{}}
+	a := &Agent{Cfg: config.Config{CompactAt: config.Threshold{Tokens: 1 << 30}, Model: "m"}, Cwd: t.TempDir(), Provider: p, UI: nopDisplay{}}
 	a.Env = &tools.Env{Cwd: a.Cwd, ReadOnly: a.ReadOnly, SpillDir: t.TempDir()}
 	a.Registry = tools.NewRegistry(tools.Bash())
 	return a
@@ -139,7 +139,7 @@ func TestCancelDuringToolsKeepsLogValid(t *testing.T) {
 func TestCompactBeforeNewPrompt(t *testing.T) {
 	p := &fakeProvider{replies: []llm.Message{{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: "SUMMARY"}}}}}
 	a := newAgent(t, p)
-	a.Cfg.CompactAt = 100
+	a.Cfg.CompactAt = config.Threshold{Tokens: 100}
 	a.Messages = []llm.Message{llm.UserText("old"), {Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: "old answer"}}}}
 	a.SetContextTokens(500)
 	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "new request"}}); err != nil {
@@ -192,7 +192,7 @@ func TestCompactRejectsToolCallsAndTriesOncePerTurn(t *testing.T) {
 	summaryWithTool := llm.Message{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: "Let me check first."}, {Type: llm.BlockToolUse, ID: "x", Name: "bash", Input: json.RawMessage(`{"command":"ls"}`)}}}
 	p := &fakeProvider{replies: []llm.Message{summaryWithTool, toolCall("c1", "echo a"), toolCall("c2", "echo b")}}
 	a := newAgent(t, p)
-	a.Cfg.CompactAt = 10
+	a.Cfg.CompactAt = config.Threshold{Tokens: 10}
 	a.Messages = []llm.Message{llm.UserText("old")}
 	a.SetContextTokens(500)
 	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "go"}}); err != nil {

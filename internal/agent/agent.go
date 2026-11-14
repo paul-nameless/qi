@@ -216,7 +216,7 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 	a.busy.Lock()
 	defer a.busy.Unlock()
 	var stats TurnStats
-	if a.ContextTokens() > a.Cfg.CompactAt {
+	if a.ContextTokens() > a.Cfg.CompactTokens() {
 		if err := a.compact(ctx, false); err != nil {
 			a.UI.Error("compaction failed: " + err.Error())
 		}
@@ -231,7 +231,7 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 		if a.Cfg.MaxRounds > 0 && round >= a.Cfg.MaxRounds {
 			return "", stats, fmt.Errorf("stopped after %d model requests (max_rounds)", a.Cfg.MaxRounds)
 		}
-		if !compactFailed && a.ContextTokens() > a.Cfg.CompactAt {
+		if !compactFailed && a.ContextTokens() > a.Cfg.CompactTokens() {
 			if err := a.compact(ctx, true); err != nil {
 				compactFailed = true
 				a.UI.Error("compaction failed: " + err.Error())
@@ -398,7 +398,7 @@ func (a *Agent) TryCompactIdle(ctx context.Context) error {
 		return nil
 	}
 	defer a.busy.Unlock()
-	if a.ContextTokens() < a.Cfg.CompactIdleAt {
+	if a.ContextTokens() < a.Cfg.CompactIdleTokens() {
 		return nil
 	}
 	return a.compact(ctx, false)
