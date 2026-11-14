@@ -3,11 +3,11 @@
 Minimal Go coding agent for the terminal (v2 rewrite). Plan: `docs/plans/aicode-v2.md` (docs/ is gitignored, local only).
 
 ## Layout
-- `main.go` flags and wiring, `repl.go` interactive loop, `commands.go` slash commands and image attachment
+- `main.go` flags and wiring, `repl.go` interactive loop, `commands.go` slash commands and image attachment, `picker.go` the `/` picker (runs the `picker` config command, fzf by default)
 - `internal/llm` canonical message types, SSE, provider adapters (`openai.go` chat completions incl. OpenRouter, `anthropic.go`)
 - `internal/agent` turn loop, compaction, steering queue, system prompt, skills, subagent runner, hooks, project trust
 - `internal/config` YAML config with providers and profiles
-- `internal/tools` registry with parallel execution, read/write/edit/bash/subagent, read-only allowlist
+- `internal/tools` registry with parallel execution, read/write/edit/bash/subagent, read-only allowlist, `files.go` tracks file mtimes so edit/write refuse files changed since the model read them
 - `internal/ui` termios, key decoder, line editor, printer with status line
 - `internal/session` append-only JSONL sessions
 - `internal/mcp` stdio MCP client (lazy start, tool search); exposed as `tool_search`/`mcp_call` in `internal/tools/mcp.go`
@@ -17,6 +17,8 @@ Minimal Go coding agent for the terminal (v2 rewrite). Plan: `docs/plans/aicode-
 - Test: `go test ./...`
 - Format, vet, lint, test: `task ch` (lint runs golangci-lint v2.15.0 via `go run`, same as CI)
 - Headless smoke test: `./aicode -q "prompt" </dev/null` (uses `~/.config/aicode/config.yml`)
+- Opus/Anthropic: `./aicode -p opus` (native API, key from `pass`); prefer luna for routine checks, it is much cheaper
+- Replaying real tasks against Claude Code sessions: `~/Documents/code/pro/aicode-bench/replay.sh` (isolated repo copies, see its readme)
 - UI testing: run in tmux (`tmux new-session -d -s ai -x 120 -y 40 './aicode'`, then `send-keys`/`capture-pane`); shift+tab is `$'\e[Z'`, bracketed paste via `tmux paste-buffer -p`
 
 ## Rules
@@ -26,3 +28,5 @@ Minimal Go coding agent for the terminal (v2 rewrite). Plan: `docs/plans/aicode-
 - Never `MakeRaw` the terminal: it clears OPOST and output staircases; `ui.Terminal` keeps ISIG so ctrl+c is SIGINT
 - No code comments
 - Small, focused functions; check errors and return meaningful messages
+- External UI tools (picker, pager, notifier, ...) are shell-string config keys with `{placeholders}`, never hard dependencies; plan in `docs/plans/external-tools.md`
+- Only the user's input and the model's answer print in normal color; tool lines, reasoning and info are dim

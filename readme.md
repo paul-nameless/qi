@@ -74,4 +74,4 @@ aicode -read-only               # start in read-only mode
 
 Keys: shift+tab toggles read-only, ctrl+g edits the prompt in `$EDITOR`, alt+enter or ctrl+j inserts a newline, ctrl+c or esc cancels a turn. Text typed while the agent works is queued and delivered after the next tool results.
 
-Commands: `/help`, `/clear`, `/compact`, `/model`, `/profile`, `/skills`, `/exit`, and `/<skill-or-command> [args]`.
+Commands: `/help`, `/clear`, `/compact`, `/model`, `/profile`, `/effort`, `/skills`, `/exit`, and `/<skill-or-command> [args]`. Typing `/` on an empty line opens a picker (fzf by default; set `picker:` in the config to use another command that reads `name<TAB>description` lines and prints the chosen one).
