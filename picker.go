@@ -1,0 +1,139 @@
+package main
+
+import (
+	"bytes"
+	"os"
+	"os/exec"
+	"sort"
+	"strings"
+)
+
+type pickItem struct {
+	name string
+	desc string
+}
+
+func fzf(prompt string, items []pickItem) (string, string, bool) {
+	if len(items) == 0 {
+		return "", "", false
+	}
+	var in bytes.Buffer
+	for _, it := range items {
+		in.WriteString(it.name + "\t" + strings.Join(strings.Fields(it.desc), " ") + "\n")
+	}
+	cmd := exec.Command("fzf", "--height=40%", "--reverse", "--prompt="+prompt, "--delimiter=\t", "--nth=1", "--tabstop=24", "--no-multi", "--print-query", "--bind=ctrl-z:ignore")
+	cmd.Env = append(os.Environ(), "FZF_DEFAULT_OPTS=", "FZF_DEFAULT_OPTS_FILE=")
+	cmd.Stdin = &in
+	cmd.Stderr = os.Stderr
+	out, _ := cmd.Output()
+	lines := strings.Split(strings.TrimRight(string(out), "\n"), "\n")
+	query := lines[0]
+	if len(lines) < 2 {
+		return "", query, false
+	}
+	name, _, _ := strings.Cut(lines[len(lines)-1], "\t")
+	return name, query, name != ""
+}
+
+var builtinCommands = []pickItem{
+	{"help", "show commands and keys"},
+	{"clear", "start a new session"},
+	{"compact", "summarize the conversation to free context"},
+	{"model", "switch the model"},
+	{"profile", "switch the profile"},
+	{"skills", "pick a skill"},
+	{"exit", "quit"},
+}
+
+func (r *repl) slashPicker() (string, bool) {
+	name, query, ok := fzf("/", builtinCommands)
+	if !ok {
+		return "/" + query, false
+	}
+	switch name {
+	case "model":
+		return r.pickArg("model", r.modelItems())
+	case "profile":
+		items := r.profileItems()
+		if len(items) == 0 {
+			r.display.Info("no profiles: add a profiles: section to " + r.configFile() + " (see readme)")
+			return "", false
+		}
+		return r.pickArg("profile", items)
+	case "skills":
+		items := r.skillItems()
+		if len(items) == 0 {
+			r.display.Info("no skills found in ~/.claude/skills or .claude/skills")
+			return "", false
+		}
+		if s, _, ok := fzf("skill ", items); ok {
+			return "/" + s + " ", false
+		}
+		return "/", false
+	}
+	return "/" + name, true
+}
+
+func (r *repl) pickArg(cmd string, items []pickItem) (string, bool) {
+	if v, _, ok := fzf(cmd+" ", items); ok {
+		return "/" + cmd + " " + v, true
+	}
+	return "/" + cmd + " ", false
+}
+
+func (r *repl) configFile() string {
+	if r.opts.configPath != "" {
+		return r.opts.configPath
+	}
+	return "~/.config/aicode/config.yml"
+}
+
+func (r *repl) skillItems() []pickItem {
+	var items []pickItem
+	for _, s := range r.skills {
+		items = append(items, pickItem{s.Name, s.Description})
+	}
+	for _, c := range r.commands {
+		items = append(items, pickItem{c.Name, "command"})
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].name < items[j].name })
+	return items
+}
+
+func (r *repl) modelItems() []pickItem {
+	cfg := r.agent.Cfg
+	items := []pickItem{{cfg.Model, "current"}}
+	seen := map[string]bool{cfg.Model: true}
+	add := func(name, desc string) {
+		if !seen[name] {
+			seen[name] = true
+			items = append(items, pickItem{name, desc})
+		}
+	}
+	for _, m := range cfg.SubagentModels {
+		add(m.Name, m.Model+" · "+m.UseFor)
+	}
+	for _, p := range cfg.ProfileNames() {
+		if pc, err := r.resolve(p); err == nil {
+			for _, m := range pc.SubagentModels {
+				add(m.Name, m.Model+" · "+m.UseFor)
+			}
+		}
+	}
+	return items
+}
+
+func (r *repl) profileItems() []pickItem {
+	var items []pickItem
+	for _, p := range r.agent.Cfg.ProfileNames() {
+		desc := ""
+		if pc, err := r.resolve(p); err == nil {
+			desc = pc.Model + " via " + pc.Provider
+		}
+		if p == r.agent.Cfg.Profile {
+			desc += " (current)"
+		}
+		items = append(items, pickItem{p, desc})
+	}
+	return items
+}

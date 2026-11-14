@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode"
 )
 
@@ -24,6 +25,7 @@ type Editor struct {
 	Interrupt chan struct{}
 	OnToggle  func() string
 	IsImage   func(text string) []string
+	OnSlash   func() (text string, submit bool)
 	images    []string
 	histPath  string
 	history   []string
@@ -140,6 +142,32 @@ func (e *Editor) ReadLine(prompt, initial string) (string, error) {
 			return "", ErrInterrupt
 		case k = <-e.T.Keys:
 		}
+		if k.Kind == KeyRune && k.Rune == '/' && e.OnSlash != nil {
+			empty := false
+			e.P.Locked(func() { empty = len(st.buf) == 0 })
+			if empty {
+				time.Sleep(20 * time.Millisecond)
+				empty = len(e.T.Keys) == 0
+			}
+			if empty {
+				e.P.Raw("\r\x1b[K")
+				e.T.Suspend()
+				text, submit := e.OnSlash()
+				e.T.Resume()
+				drain(e.Interrupt)
+				e.P.Locked(func() {
+					st.buf = []rune(text)
+					st.pos = len(st.buf)
+				})
+				if submit {
+					e.P.FinishPrompt()
+					e.addHistory(text)
+					return text, nil
+				}
+				e.P.RenderPrompt()
+				continue
+			}
+		}
 		switch k.Kind {
 		case KeyEnter:
 			var line string
@@ -150,6 +178,10 @@ func (e *Editor) ReadLine(prompt, initial string) (string, error) {
 		case KeyEOF:
 			empty := false
 			e.P.Locked(func() { empty = len(st.buf) == 0 })
+			if empty {
+				time.Sleep(20 * time.Millisecond)
+				empty = len(e.T.Keys) == 0
+			}
 			if empty {
 				e.P.FinishPrompt()
 				return "", ErrEOF
