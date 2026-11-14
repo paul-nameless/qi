@@ -46,14 +46,6 @@ type Env struct {
 	files       fileTimes
 }
 
-func (e *Env) diff(path, old, new string) string {
-	if e.OnDiff == nil {
-		return ""
-	}
-	rel := e.rel(path)
-	return "--- a/" + rel + "\n+++ b/" + rel + "\n" + unifiedDiff(old, new)
-}
-
 func (e *Env) readOnly() bool {
 	return e.ReadOnly != nil && e.ReadOnly()
 }

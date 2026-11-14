@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -56,32 +57,45 @@ func TestToolAvailable(t *testing.T) {
 }
 
 func TestExpandTool(t *testing.T) {
-	got := expandTool("{picker} --preview 'x {1}' -t {title} {msg}", "fzf --prompt={prompt}", map[string]string{"prompt": "a b", "title": "it's", "msg": "{prompt}"})
-	want := `fzf --prompt='a b' --preview 'x {1}' -t 'it'\''s' '{prompt}'`
+	got, env := expandTool(`{picker} --preview 'x {1} {title}' -t {title} "text={msg} \"q\"" \'{msg}`, "fzf --prompt={prompt}", map[string]string{"prompt": "a b", "title": "it's", "msg": "{prompt}"})
+	want := `fzf --prompt="${AICODE_PROMPT}" --preview 'x {1} '"${AICODE_TITLE}"'' -t "${AICODE_TITLE}" "text=${AICODE_MSG} \"q\"" \'"${AICODE_MSG}"`
 	if got != want {
 		t.Errorf("got  %s\nwant %s", got, want)
+	}
+	sort.Strings(env)
+	if strings.Join(env, "|") != "AICODE_MSG={prompt}|AICODE_PROMPT=a b|AICODE_TITLE=it's" {
+		t.Errorf("env %q", env)
+	}
+	evil := "`touch x` $(touch x) \" ' done"
+	out, err := runQuiet(`printf '%s|' {msg} "q={msg}" 'osa "{msg}"'`, "", map[string]string{"msg": evil}, "")
+	if err != nil || out != evil+"|q="+evil+"|osa \""+evil+"\"|" {
+		t.Errorf("model text was not passed literally: %q %v", out, err)
 	}
 }
 
 func TestRunQuiet(t *testing.T) {
-	out, err := runQuiet("tr a-z A-Z", "hello")
+	out, err := runQuiet("tr a-z A-Z", "", nil, "hello")
 	if err != nil || out != "HELLO" {
 		t.Errorf("runQuiet = %q, %v", out, err)
 	}
-	if _, err := runQuiet("echo boom >&2; exit 3", ""); err == nil || err.Error() != "boom" {
+	if _, err := runQuiet("echo boom >&2; exit 3", "", nil, ""); err == nil || err.Error() != "boom" {
 		t.Errorf("error = %v, want boom", err)
 	}
 	old := quietTimeout
 	quietTimeout = 200 * time.Millisecond
 	defer func() { quietTimeout = old }()
 	start := time.Now()
-	_, err = runQuiet("sleep 5 & sleep 5", "")
+	_, err = runQuiet("sleep 5 & sleep 5", "", nil, "")
 	if err == nil || !strings.Contains(err.Error(), "timed out") || time.Since(start) > 3*time.Second {
 		t.Errorf("timeout: %v after %s", err, time.Since(start))
 	}
-	if out, _ := runQuiet(`printf %s "$AICODE_BIN"`, ""); out != mustExecutable(t) {
+	if out, _ := runQuiet(`printf %s "$AICODE_BIN"`, "", nil, ""); out != mustExecutable(t) {
 		t.Errorf("AICODE_BIN = %q", out)
 	}
+}
+
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 func mustExecutable(t *testing.T) string {

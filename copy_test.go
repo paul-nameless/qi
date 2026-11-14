@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/paul-nameless/aicode/internal/config"
@@ -33,11 +34,38 @@ func TestCopy(t *testing.T) {
 		}
 	}
 	r.agent.Messages = append(r.agent.Messages, answer("no code here"))
-	r.copyAnswer("code")
+	os.Remove(out)
+	if err := r.copyAnswer("code"); err != nil {
+		t.Fatal(err)
+	}
 	if data, _ := os.ReadFile(out); string(data) != "last ``` inside" {
 		t.Errorf("code from an earlier answer: %q", data)
 	}
 	if err := r.copyAnswer("bogus"); err == nil {
 		t.Error("bad argument accepted")
+	}
+	r.agent.Cfg.CopyCmd = "no-such-tool-xyz"
+	if err := r.copyAnswer(""); err == nil || !strings.Contains(err.Error(), "copy_cmd is off") {
+		t.Errorf("missing tool: %v", err)
+	}
+	r.agent.Cfg.CopyCmd = "echo nope >&2; false"
+	if err := r.copyAnswer(""); err == nil || err.Error() != "copy_cmd: nope" {
+		t.Errorf("failing tool: %v", err)
+	}
+}
+
+func TestLastFence(t *testing.T) {
+	cases := []struct {
+		in, want string
+		ok       bool
+	}{
+		{"```a\nx\n```\n```\nopen", "x", true},
+		{"````md\n```go\ninner\n```\n````", "```go\ninner\n```", true},
+		{"no fence", "", false},
+	}
+	for _, c := range cases {
+		if got, ok := lastFence(c.in); got != c.want || ok != c.ok {
+			t.Errorf("%q: got %q, %v", c.in, got, ok)
+		}
 	}
 }

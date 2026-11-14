@@ -33,7 +33,7 @@ func pasteImage(command, picker, dir string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	out, err := runQuiet(expandTool(command, picker, map[string]string{"file": path}), "")
+	out, err := runQuiet(command, picker, map[string]string{"file": path}, "")
 	if err == nil && !strings.Contains(command, "{file}") {
 		err = os.WriteFile(path, []byte(out), 0o600)
 	}

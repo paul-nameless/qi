@@ -382,7 +382,9 @@ func (e *Editor) RunTTY(cmd *exec.Cmd) error {
 	cmd.Stderr = os.Stderr
 	e.P.Raw("\r\x1b[K")
 	e.T.Suspend()
+	e.T.child.Store(true)
 	err := cmd.Run()
+	e.T.child.Store(false)
 	e.T.Resume()
 	drain(e.Interrupt)
 	e.P.RenderPrompt()

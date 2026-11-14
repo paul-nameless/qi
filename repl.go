@@ -163,19 +163,25 @@ func (r *repl) handleSignals() {
 					}
 				}
 			case syscall.SIGTSTP:
-				r.display.ClearFooter()
-				r.term.Suspend()
-				signal.Reset(syscall.SIGTSTP)
-				_ = syscall.Kill(os.Getpid(), syscall.SIGTSTP)
-				time.Sleep(50 * time.Millisecond)
-				signal.Notify(ch, syscall.SIGTSTP)
-				r.term.Resume()
-				r.display.RenderPrompt()
+				r.stop()
 			default:
 				r.shutdown()
 			}
 		}
 	}()
+}
+
+func (r *repl) stop() {
+	child := r.term.ChildRunning()
+	if !child {
+		r.display.ClearFooter()
+		r.term.Suspend()
+	}
+	_ = syscall.Kill(os.Getpid(), syscall.SIGSTOP)
+	if !child {
+		r.term.Resume()
+		r.display.RenderPrompt()
+	}
 }
 
 func (r *repl) cancelTurn() bool {

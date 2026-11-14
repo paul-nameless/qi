@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -21,26 +20,14 @@ type Info struct {
 }
 
 func List(cwd string, interactive bool) []Info {
-	dir := Dir(cwd)
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil
-	}
+	files, _ := sessionFiles(Dir(cwd))
 	var out []Info
-	for _, e := range entries {
-		if !strings.HasSuffix(e.Name(), ".jsonl") || e.IsDir() {
-			continue
-		}
-		st, err := e.Info()
-		if err != nil {
-			continue
-		}
-		if info, ok := summarize(filepath.Join(dir, e.Name()), interactive); ok {
-			info.Mod = st.ModTime()
+	for _, f := range files {
+		if info, ok := summarize(f.path, interactive); ok {
+			info.Mod = f.mod
 			out = append(out, info)
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Mod.After(out[j].Mod) })
 	return out
 }
 
@@ -57,10 +44,8 @@ func summarize(path string, interactive bool) (Info, bool) {
 	for sc.Scan() {
 		line := sc.Text()
 		switch {
-		case strings.HasPrefix(line, `{"type":"meta"`):
-			if interactive && strings.Contains(line, `"kind":"headless"`) {
-				return info, false
-			}
+		case interactive && headlessMeta(line):
+			return info, false
 		case strings.HasPrefix(line, `{"type":"drop"`):
 			info.Messages = max(info.Messages-1, 0)
 		case strings.HasPrefix(line, `{"type":"compaction"`):

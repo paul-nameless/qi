@@ -16,9 +16,9 @@ func notifyAsync(cfg config.Config, cwd, msg string, ui infoer) {
 	if !toolAvailable(cfg.NotifyCmd, cfg.Picker) {
 		return
 	}
-	command := expandTool(cfg.NotifyCmd, cfg.Picker, map[string]string{"title": "aicode · " + filepath.Base(cwd), "msg": msg})
+	vars := map[string]string{"title": "aicode · " + filepath.Base(cwd), "msg": msg}
 	go func() {
-		if _, err := runQuiet(command, ""); err != nil {
+		if _, err := runQuiet(cfg.NotifyCmd, cfg.Picker, vars, ""); err != nil {
 			ui.Info("notify_cmd: " + err.Error())
 		}
 	}()
@@ -43,8 +43,12 @@ func turnMessage(final string, err error, took time.Duration) string {
 	return fmt.Sprintf("done in %s", took)
 }
 
+func shouldNotify(took, after time.Duration, focused bool) bool {
+	return took >= after && !focused
+}
+
 func (r *repl) notifyTurn(final string, err error, took time.Duration) {
-	if took < notifyAfter(r.agent.Cfg) || (r.term != nil && r.term.Focused()) {
+	if !shouldNotify(took, notifyAfter(r.agent.Cfg), r.term != nil && r.term.Focused()) {
 		return
 	}
 	notifyAsync(r.agent.Cfg, r.agent.Cwd, turnMessage(final, err, took), r.display)

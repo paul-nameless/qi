@@ -58,6 +58,9 @@ func sessionItems(cwd, current string) []pickItem {
 }
 
 func pickSession(run runner, cfg config.Config, cwd, current string) (string, error) {
+	if !toolAvailable(cfg.SessionPicker, cfg.Picker) {
+		return "", fmt.Errorf("session_picker is off (%s not found); pass a session id: /resume <id>, ids are in %s", firstWord(cfg.SessionPicker), session.Dir(cwd))
+	}
 	items := sessionItems(cwd, current)
 	if len(items) == 0 {
 		return "", errors.New("no sessions with messages in " + cwd)
@@ -93,9 +96,6 @@ func (r *repl) resume(ref string) error {
 func (r *repl) resumeTarget(ref string) (string, error) {
 	if ref != "" {
 		return sessionPath(r.agent.Cwd, ref)
-	}
-	if !r.toolOn(r.agent.Cfg.SessionPicker) {
-		return "", errors.New("session_picker is off; use /resume <id> (ids: ls " + session.Dir(r.agent.Cwd) + ")")
 	}
 	return pickSession(r.runTTY, r.agent.Cfg, r.agent.Cwd, r.agent.Session.ID)
 }

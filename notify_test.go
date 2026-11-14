@@ -11,6 +11,7 @@ import (
 	"github.com/paul-nameless/aicode/internal/agent"
 	"github.com/paul-nameless/aicode/internal/config"
 	"github.com/paul-nameless/aicode/internal/tools"
+	"github.com/paul-nameless/aicode/internal/ui"
 )
 
 func waitFile(t *testing.T, path string) string {
@@ -34,6 +35,32 @@ func TestNotifyTurn(t *testing.T) {
 	want := "aicode · " + filepath.Base(r.agent.Cwd) + "|done in 2s: it's done second line\n"
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestShouldNotify(t *testing.T) {
+	if !shouldNotify(30*time.Second, 20*time.Second, false) || shouldNotify(30*time.Second, 20*time.Second, true) || shouldNotify(time.Second, 20*time.Second, false) {
+		t.Error("shouldNotify")
+	}
+}
+
+func TestNotifyErrors(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "out")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	display := ui.NewPrinter(f)
+	notifyAsync(config.Config{NotifyCmd: "echo nope >&2; false"}, "/x", "m", display)
+	if got := waitFile(t, f.Name()); got != "notify_cmd: nope\n" {
+		t.Errorf("got %q", got)
+	}
+	out := filepath.Join(t.TempDir(), "n")
+	notifyAsync(config.Config{NotifyCmd: "off", Picker: "touch " + out}, "/x", "m", display)
+	notifyAsync(config.Config{NotifyCmd: "no-such-notifier-xyz " + out}, "/x", "m", display)
+	time.Sleep(100 * time.Millisecond)
+	if _, err := os.Stat(out); err == nil {
+		t.Error("disabled notifier ran")
 	}
 }
 

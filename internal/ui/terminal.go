@@ -61,6 +61,7 @@ type Terminal struct {
 	raw      chan []byte
 	closed   atomic.Bool
 	focus    atomic.Int32
+	child    atomic.Bool
 	once     sync.Once
 }
 
@@ -223,6 +224,10 @@ func (t *Terminal) trackFocus(k KeyKind) bool {
 		return false
 	}
 	return true
+}
+
+func (t *Terminal) ChildRunning() bool {
+	return t.child.Load()
 }
 
 func (t *Terminal) Focused() bool {

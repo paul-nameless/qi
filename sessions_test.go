@@ -77,3 +77,32 @@ func TestResume(t *testing.T) {
 	}
 	a.Session.Close()
 }
+
+func TestSessionErrors(t *testing.T) {
+	t.Setenv("AICODE_SESSION_DIR", t.TempDir())
+	a := newTestAgent(t, config.Config{SessionPicker: "cat"})
+	if _, err := pickSession(runPlain, a.Cfg, a.Cwd, ""); err == nil || !strings.Contains(err.Error(), "no sessions") {
+		t.Errorf("empty dir: %v", err)
+	}
+	a.Cfg.SessionPicker = "no-such-picker-xyz"
+	if _, err := pickSession(runPlain, a.Cfg, a.Cwd, ""); err == nil || !strings.Contains(err.Error(), "/resume <id>") {
+		t.Errorf("picker off: %v", err)
+	}
+	if _, err := sessionPath(a.Cwd, "ABC-123"); err == nil {
+		t.Error("missing session accepted")
+	}
+	if p, err := sessionPath(a.Cwd, "/x/y.jsonl"); err != nil || p != "/x/y.jsonl" {
+		t.Errorf("path passthrough: %q %v", p, err)
+	}
+	s := writeSession(t, a.Cwd, "only")
+	cur, _, err := session.Open(s.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cur.Close()
+	a.Session = cur
+	r := &repl{agent: a, display: devNullPrinter(t), hooks: &agent.Hooks{}}
+	if err := r.resume(s.ID); err != nil || a.Session != cur {
+		t.Errorf("resuming the current session should be a no-op: %v", err)
+	}
+}

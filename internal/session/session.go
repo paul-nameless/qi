@@ -114,19 +114,19 @@ func Create(cwd, id, model, kind string, subagent bool) (*Session, error) {
 	return s, nil
 }
 
-func Latest(cwd string, interactive bool) (string, error) {
-	dir := Dir(cwd)
+type file struct {
+	path string
+	mod  time.Time
+}
+
+func sessionFiles(dir string) ([]file, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return "", fmt.Errorf("no sessions for %s", cwd)
-	}
-	type file struct {
-		path string
-		mod  time.Time
+		return nil, err
 	}
 	var files []file
 	for _, e := range entries {
-		if !strings.HasSuffix(e.Name(), ".jsonl") {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
 			continue
 		}
 		if info, err := e.Info(); err == nil {
@@ -134,12 +134,24 @@ func Latest(cwd string, interactive bool) (string, error) {
 		}
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].mod.After(files[j].mod) })
+	return files, nil
+}
+
+func Latest(cwd string, interactive bool) (string, error) {
+	files, err := sessionFiles(Dir(cwd))
+	if err != nil {
+		return "", fmt.Errorf("no sessions for %s", cwd)
+	}
 	for _, f := range files {
 		if hasMessages(f.path, interactive) {
 			return f.path, nil
 		}
 	}
 	return "", fmt.Errorf("no sessions with messages for %s", cwd)
+}
+
+func headlessMeta(line string) bool {
+	return strings.HasPrefix(line, `{"type":"meta"`) && strings.Contains(line, `"kind":"headless"`)
 }
 
 func hasMessages(path string, interactive bool) bool {
@@ -152,7 +164,7 @@ func hasMessages(path string, interactive bool) bool {
 	sc.Buffer(make([]byte, 64<<10), 256<<20)
 	for sc.Scan() {
 		line := sc.Text()
-		if interactive && strings.Contains(line, `"type":"meta"`) && strings.Contains(line, `"kind":"headless"`) {
+		if interactive && headlessMeta(line) {
 			return false
 		}
 		if strings.Contains(line, `"role":"assistant"`) || strings.Contains(line, `"type":"compaction"`) {

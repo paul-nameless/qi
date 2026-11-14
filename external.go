@@ -38,38 +38,83 @@ func toolAvailable(command, picker string) bool {
 	return false
 }
 
-func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
-}
-
-func expandTool(command, picker string, vars map[string]string) string {
+func expandTool(command, picker string, vars map[string]string) (string, []string) {
 	command = strings.ReplaceAll(command, "{picker}", picker)
-	var pairs []string
+	var env []string
 	for k, v := range vars {
-		pairs = append(pairs, "{"+k+"}", shellQuote(v))
+		env = append(env, varName(k)+"="+v)
 	}
-	return strings.NewReplacer(pairs...).Replace(command)
+	var b strings.Builder
+	quote := byte(0)
+	for i := 0; i < len(command); i++ {
+		c := command[i]
+		if name := placeholder(command[i:], vars); name != "" {
+			b.WriteString(varRef(varName(name), quote))
+			i += len(name) + 1
+			continue
+		}
+		switch {
+		case c == '\\' && quote != '\'' && i+1 < len(command):
+			b.WriteByte(c)
+			i++
+			c = command[i]
+		case quote == 0 && (c == '\'' || c == '"'):
+			quote = c
+		case quote == c:
+			quote = 0
+		}
+		b.WriteByte(c)
+	}
+	return b.String(), env
 }
 
-func toolEnv() []string {
+func placeholder(s string, vars map[string]string) string {
+	end := strings.IndexByte(s, '}')
+	if !strings.HasPrefix(s, "{") || end < 0 {
+		return ""
+	}
+	if _, ok := vars[s[1:end]]; !ok {
+		return ""
+	}
+	return s[1:end]
+}
+
+func varName(key string) string {
+	return "AICODE_" + strings.ToUpper(key)
+}
+
+func varRef(name string, quote byte) string {
+	ref := "${" + name + "}"
+	switch quote {
+	case '"':
+		return ref
+	case '\'':
+		return `'"` + ref + `"'`
+	}
+	return `"` + ref + `"`
+}
+
+func toolEnv(extra []string) []string {
 	env := os.Environ()
 	if self, err := os.Executable(); err == nil {
 		env = append(env, "AICODE_BIN="+self)
 	}
-	return env
+	return append(env, extra...)
 }
 
-func toolCmd(command string) *exec.Cmd {
-	cmd := exec.Command("sh", "-c", command)
-	cmd.Env = toolEnv()
+func toolCmd(command, picker string, vars map[string]string) *exec.Cmd {
+	line, env := expandTool(command, picker, vars)
+	cmd := exec.Command("sh", "-c", line)
+	cmd.Env = toolEnv(env)
 	return cmd
 }
 
-func runQuiet(command, stdin string) (string, error) {
+func runQuiet(command, picker string, vars map[string]string, stdin string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), quietTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "sh", "-c", command)
-	cmd.Env = toolEnv()
+	line, env := expandTool(command, picker, vars)
+	cmd := exec.CommandContext(ctx, "sh", "-c", line)
+	cmd.Env = toolEnv(env)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
 	cmd.WaitDelay = time.Second
@@ -80,6 +125,8 @@ func runQuiet(command, stdin string) (string, error) {
 	switch {
 	case ctx.Err() != nil:
 		return out.String(), fmt.Errorf("timed out after %s", quietTimeout)
+	case errors.Is(err, exec.ErrWaitDelay):
+		return out.String(), nil
 	case err != nil && strings.TrimSpace(errb.String()) != "":
 		return out.String(), errors.New(firstLine(strings.TrimSpace(errb.String())))
 	}
@@ -91,31 +138,44 @@ func firstLine(s string) string {
 	return line
 }
 
+func tempFile(ext, content string) (string, error) {
+	f, err := os.CreateTemp("", "aicode-*"+ext)
+	if err != nil {
+		return "", err
+	}
+	_, err = f.WriteString(content)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		os.Remove(f.Name())
+		return "", err
+	}
+	return f.Name(), nil
+}
+
 func choose(run runner, command, picker, prompt string, stdin io.Reader) ([]string, bool) {
 	vars := map[string]string{"prompt": prompt}
-	var file string
 	if strings.Contains(command, "{file}") {
-		f, err := os.CreateTemp("", "aicode-choice-*")
+		file, err := tempFile("", "")
 		if err != nil {
 			return nil, false
 		}
-		file = f.Name()
-		f.Close()
 		defer os.Remove(file)
 		vars["file"] = file
 	}
-	cmd := toolCmd(expandTool(command, picker, vars))
+	cmd := toolCmd(command, picker, vars)
 	cmd.Env = append(cmd.Env, "FZF_DEFAULT_OPTS=", "FZF_DEFAULT_OPTS_FILE=", "AICODE_PICK_PROMPT="+prompt)
 	cmd.Stdin = stdin
 	var out bytes.Buffer
-	if file == "" {
+	if vars["file"] == "" {
 		cmd.Stdout = &out
 	}
 	if err := run(cmd); err != nil {
 		return nil, false
 	}
-	if file != "" {
-		data, err := os.ReadFile(file)
+	if vars["file"] != "" {
+		data, err := os.ReadFile(vars["file"])
 		if err != nil {
 			return nil, false
 		}
@@ -155,21 +215,14 @@ func (r *repl) view(key, command, content, ext string) error {
 	vars := map[string]string{}
 	var stdin io.Reader = strings.NewReader(content)
 	if strings.Contains(command, "{file}") {
-		f, err := os.CreateTemp("", "aicode-*"+ext)
+		file, err := tempFile(ext, content)
 		if err != nil {
 			return err
 		}
-		defer os.Remove(f.Name())
-		_, err = f.WriteString(content)
-		if cerr := f.Close(); err == nil {
-			err = cerr
-		}
-		if err != nil {
-			return err
-		}
-		vars["file"], stdin = f.Name(), nil
+		defer os.Remove(file)
+		vars["file"], stdin = file, nil
 	}
-	cmd := toolCmd(expandTool(command, r.agent.Cfg.Picker, vars))
+	cmd := toolCmd(command, r.agent.Cfg.Picker, vars)
 	cmd.Stdin = stdin
 	if err := r.runTTY(cmd); err != nil {
 		return fmt.Errorf("%s: %w", key, err)

@@ -265,7 +265,7 @@ func Write() *Tool {
 			if statErr != nil {
 				verb = "created"
 			}
-			return Result{Text: fmt.Sprintf("%s %s (%d lines)", verb, env.rel(path), n), Summary: fmt.Sprintf("%s, %d lines", verb, n), Diff: env.diff(path, string(before), a.Content)}
+			return Result{Text: fmt.Sprintf("%s %s (%d lines)", verb, env.rel(path), n), Summary: fmt.Sprintf("%s, %d lines", verb, n), Diff: env.diff(path, string(before))}
 		},
 	}
 }
@@ -318,7 +318,7 @@ func Edit() *Tool {
 				summary += fmt.Sprintf(" (%d places)", count)
 			}
 			text := fmt.Sprintf("edited %s: %s\n%s", env.rel(path), summary, snippet(updated, a.NewString))
-			return Result{Text: text, Summary: summary, Diff: env.diff(path, string(data), updated)}
+			return Result{Text: text, Summary: summary, Diff: env.diff(path, string(data))}
 		},
 	}
 }

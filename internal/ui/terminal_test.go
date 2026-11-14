@@ -19,6 +19,8 @@ func TestDecodeKey(t *testing.T) {
 		{"\x1b[13;2u", KeyNewline, 7},
 		{"\x1b[A", KeyUp, 3},
 		{"\x1b[3~", KeyDelete, 4},
+		{"\x12", KeyHistory, 1},
+		{"\x16", KeyPasteImage, 1},
 		{"\x1bx", -1, 2},
 		{"\x1b[99X", -1, 5},
 		{"é", KeyRune, 2},

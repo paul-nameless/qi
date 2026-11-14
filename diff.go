@@ -10,7 +10,7 @@ import (
 const diffLines = 40
 
 func (r *repl) showDiff(diff string) {
-	out, err := runQuiet(expandTool(r.agent.Cfg.DiffCmd, r.agent.Cfg.Picker, nil), diff)
+	out, err := runQuiet(r.agent.Cfg.DiffCmd, r.agent.Cfg.Picker, nil, diff)
 	if err != nil {
 		r.display.Info("diff_cmd: " + err.Error())
 		return
