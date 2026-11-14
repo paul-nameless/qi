@@ -36,6 +36,7 @@ func TestPick(t *testing.T) {
 }
 
 func TestToolAvailable(t *testing.T) {
+	t.Setenv("AICODE_TEST_SHELL", "/bin/sh")
 	cases := []struct {
 		command, picker string
 		want            bool
@@ -48,17 +49,32 @@ func TestToolAvailable(t *testing.T) {
 		{"(git ls-files || find .) | {picker}", "sh", true},
 		{"(sh -c true) | {picker}", "no-such-picker-xyz", false},
 		{"{picker} --preview x", "sh", true},
+		{"~/no-such-xyz/x {msg}", "", false},
+		{"$NO_SUCH_VAR_XYZ/sh", "", false},
+		{"'sh' -c true", "", true},
+		{"sh|cat", "", true},
+		{"sh; true", "", true},
+		{"exec sh", "", true},
+		{"if true; then :; fi", "", true},
+		{"$AICODE_TEST_SHELL -c true", "", true},
 	}
 	for _, c := range cases {
 		if got := toolAvailable(c.command, c.picker); got != c.want {
 			t.Errorf("toolAvailable(%q, %q) = %v", c.command, c.picker, got)
 		}
 	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	os.Mkdir(home+"/bin", 0o755)
+	os.WriteFile(home+"/bin/notify", []byte("#!/bin/sh\n"), 0o755)
+	if !toolAvailable("~/bin/notify {msg}", "") || !toolAvailable("$HOME/bin/notify", "") {
+		t.Error("home-relative script reported off")
+	}
 }
 
 func TestExpandTool(t *testing.T) {
 	got, env := expandTool(`{picker} --preview 'x {1} {title}' -t {title} "text={msg} \"q\"" \'{msg}`, "fzf --prompt={prompt}", map[string]string{"prompt": "a b", "title": "it's", "msg": "{prompt}"})
-	want := `fzf --prompt="${AICODE_PROMPT}" --preview 'x {1} '"${AICODE_TITLE}"'' -t "${AICODE_TITLE}" "text=${AICODE_MSG} \"q\"" \'"${AICODE_MSG}"`
+	want := `fzf --prompt="${AICODE_PROMPT}" --preview 'x {1} "${AICODE_TITLE}"' -t "${AICODE_TITLE}" "text=${AICODE_MSG} \"q\"" \'"${AICODE_MSG}"`
 	if got != want {
 		t.Errorf("got  %s\nwant %s", got, want)
 	}
@@ -67,8 +83,8 @@ func TestExpandTool(t *testing.T) {
 		t.Errorf("env %q", env)
 	}
 	evil := "`touch x` $(touch x) \" ' done"
-	out, err := runQuiet(`printf '%s|' {msg} "q={msg}" 'osa "{msg}"'`, "", map[string]string{"msg": evil}, "")
-	if err != nil || out != evil+"|q="+evil+"|osa \""+evil+"\"|" {
+	out, err := runQuiet(`printf '%s|' {msg} "q={msg}" "$(printf %s {msg})"; sh -c 'printf "%s|" {msg}'`, "", map[string]string{"msg": evil}, "")
+	if err != nil || out != evil+"|q="+evil+"|"+evil+"|"+evil+"|" {
 		t.Errorf("model text was not passed literally: %q %v", out, err)
 	}
 }

@@ -12,12 +12,15 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/paul-nameless/aicode/internal/config"
 	"github.com/paul-nameless/aicode/internal/tools"
 )
 
 type runner func(*exec.Cmd) error
 
 var quietTimeout = 10 * time.Second
+
+var shellWords = map[string]bool{"if": true, "for": true, "while": true, "until": true, "case": true, "exec": true, "command": true, "eval": true, ".": true, "{": true, "!": true, "[": true}
 
 func toolAvailable(command, picker string) bool {
 	if strings.TrimSpace(command) == "off" {
@@ -26,16 +29,33 @@ func toolAvailable(command, picker string) bool {
 	if strings.Contains(command, "{picker}") && !toolAvailable(picker, "") {
 		return false
 	}
-	command = strings.ReplaceAll(command, "{picker}", picker)
+	name := firstCommand(strings.ReplaceAll(command, "{picker}", picker))
+	if name == "" {
+		return false
+	}
+	if shellWords[name] {
+		return true
+	}
+	_, err := exec.LookPath(name)
+	return err == nil
+}
+
+func firstCommand(command string) string {
 	for _, f := range strings.Fields(command) {
 		f = strings.TrimLeft(f, "(")
-		if f == "" || strings.Contains(f, "=") {
+		if f == "" || (strings.Contains(f, "=") && !strings.ContainsAny(f[:strings.Index(f, "=")], "/'\"")) {
 			continue
 		}
-		_, err := exec.LookPath(f)
-		return err == nil
+		if i := strings.IndexAny(f, "|;&<>)"); i >= 0 {
+			f = f[:i]
+		}
+		f = strings.Trim(f, `'"`)
+		if strings.HasPrefix(f, "~/") {
+			f = config.ExpandHome(f)
+		}
+		return os.ExpandEnv(f)
 	}
-	return false
+	return ""
 }
 
 func expandTool(command, picker string, vars map[string]string) (string, []string) {
@@ -45,9 +65,9 @@ func expandTool(command, picker string, vars map[string]string) (string, []strin
 		env = append(env, varName(k)+"="+v)
 	}
 	var b strings.Builder
-	quote := byte(0)
+	quotes := []byte{0}
 	for i := 0; i < len(command); i++ {
-		c := command[i]
+		c, quote := command[i], quotes[len(quotes)-1]
 		if name := placeholder(command[i:], vars); name != "" {
 			b.WriteString(varRef(varName(name), quote))
 			i += len(name) + 1
@@ -58,10 +78,17 @@ func expandTool(command, picker string, vars map[string]string) (string, []strin
 			b.WriteByte(c)
 			i++
 			c = command[i]
-		case quote == 0 && (c == '\'' || c == '"'):
-			quote = c
-		case quote == c:
-			quote = 0
+		case c == '$' && quote != '\'' && i+1 < len(command) && command[i+1] == '(':
+			b.WriteByte(c)
+			i++
+			c = command[i]
+			quotes = append(quotes, '(')
+		case c == ')' && quote == '(':
+			quotes = quotes[:len(quotes)-1]
+		case (quote == 0 || quote == '(') && (c == '\'' || c == '"'):
+			quotes = append(quotes, c)
+		case quote == c && quote != '(':
+			quotes = quotes[:len(quotes)-1]
 		}
 		b.WriteByte(c)
 	}
@@ -84,14 +111,10 @@ func varName(key string) string {
 }
 
 func varRef(name string, quote byte) string {
-	ref := "${" + name + "}"
-	switch quote {
-	case '"':
-		return ref
-	case '\'':
-		return `'"` + ref + `"'`
+	if quote == '"' {
+		return "${" + name + "}"
 	}
-	return `"` + ref + `"`
+	return `"${` + name + `}"`
 }
 
 func toolEnv(extra []string) []string {

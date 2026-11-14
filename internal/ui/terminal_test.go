@@ -67,6 +67,20 @@ func TestSanitize(t *testing.T) {
 	}
 }
 
+func TestFocusSupportReply(t *testing.T) {
+	tm := &Terminal{raw: make(chan []byte, 8), Keys: make(chan Key, 64)}
+	go tm.decodeLoop()
+	tm.raw <- []byte("\x1b[?1004;0$yb\x1b[?1004;1$ya")
+	for _, want := range "ba" {
+		if k := <-tm.Keys; k.Rune != want {
+			t.Fatalf("got %+v", k)
+		}
+	}
+	if !tm.Focused() {
+		t.Error("terminal that supports focus reporting should start focused")
+	}
+}
+
 func TestFocusEvents(t *testing.T) {
 	tm := &Terminal{raw: make(chan []byte, 8), Keys: make(chan Key, 64)}
 	go tm.decodeLoop()
@@ -84,6 +98,11 @@ func TestFocusEvents(t *testing.T) {
 	}
 	if tm.Focused() {
 		t.Error("still focused after focus-out")
+	}
+	tm.raw <- []byte("\x1b[?1004;2$y")
+	time.Sleep(20 * time.Millisecond)
+	if tm.Focused() {
+		t.Error("support reply overrode a real focus-out")
 	}
 	tm.raw <- []byte("\x1b[I")
 	for !tm.Focused() && time.Now().Before(deadline) {

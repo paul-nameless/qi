@@ -39,6 +39,7 @@ const (
 	KeyPasteImage
 	keyFocusIn
 	keyFocusOut
+	keyFocusSupported
 )
 
 const (
@@ -80,7 +81,7 @@ func OpenTerminal() (*Terminal, error) {
 	if err := t.applyMode(); err != nil {
 		return nil, err
 	}
-	os.Stdout.WriteString(modesOn)
+	os.Stdout.WriteString(modesOn + "\x1b[?1004$p")
 	go t.readLoop()
 	go t.decodeLoop()
 	return t, nil
@@ -220,6 +221,8 @@ func (t *Terminal) trackFocus(k KeyKind) bool {
 		t.focus.Store(1)
 	case keyFocusOut:
 		t.focus.Store(2)
+	case keyFocusSupported:
+		t.focus.CompareAndSwap(0, 1)
 	default:
 		return false
 	}
@@ -393,6 +396,8 @@ func csiKey(seq string) Key {
 		return Key{Kind: keyFocusIn}
 	case "O":
 		return Key{Kind: keyFocusOut}
+	case "?1004;1$y", "?1004;2$y":
+		return Key{Kind: keyFocusSupported}
 	}
 	return Key{Kind: -1}
 }
