@@ -14,7 +14,9 @@ const (
 	compactLead     = "This session was compacted to save context. Summary of the conversation so far:\n\n"
 	compactContinue = "\n\nContinue the task from where it stopped."
 	compactUpdate   = "The conversation above starts with a summary of earlier work. Merge it with everything after it into one updated summary: newer messages win, keep earlier details that still matter, move finished work to done, and drop what is resolved.\n\n"
-	compactAsk      = `Write a summary of the conversation above for another agent that will continue this work in a fresh context; only your summary and the most recent messages will remain. Do not call tools and do not continue the task: reply with the summary only, as text, using these sections (write "(none)" for an empty one):
+	compactWithTail = "only your summary and the most recent messages will remain."
+	compactNoTail   = "only your summary will remain, so record the current request in the user's words, the latest tool results that matter and the exact step in progress."
+	compactAsk      = `Write a summary of the conversation above for another agent that will continue this work in a fresh context; %s Do not call tools and do not continue the task: reply with the summary only, as text, using these sections (write "(none)" for an empty one):
 
 ## Objective
 What the user is trying to accomplish, in one or two sentences.
@@ -46,15 +48,26 @@ type compactOpts struct {
 	threshold int
 }
 
-func compactPrompt(msgs []llm.Message, focus string) string {
-	p := compactAsk
-	if len(msgs) > 0 && strings.HasPrefix(msgs[0].Text(), compactLead) {
+func compactPrompt(msgs []llm.Message, focus string, keepsTail bool) string {
+	p := fmt.Sprintf(compactAsk, compactNoTail)
+	if keepsTail {
+		p = fmt.Sprintf(compactAsk, compactWithTail)
+	}
+	if isSummary(msgs) {
 		p = compactUpdate + p
 	}
 	if focus = strings.TrimSpace(focus); focus != "" {
 		p += "\n\nFocus on: " + focus
 	}
 	return p
+}
+
+func isSummary(msgs []llm.Message) bool {
+	return len(msgs) > 0 && strings.HasPrefix(msgs[0].Text(), compactLead)
+}
+
+func endsWithToolResults(msgs []llm.Message) bool {
+	return len(msgs) > 0 && !cuttable(msgs[len(msgs)-1])
 }
 
 func summaryRequest(msgs []llm.Message, prompt string, clip bool) []llm.Message {
@@ -90,6 +103,10 @@ func clipBlock(b llm.Block) llm.Block {
 func clipHistory(msgs []llm.Message) []llm.Message {
 	out := make([]llm.Message, len(msgs))
 	for i, m := range msgs {
+		if i == 0 && isSummary(msgs) {
+			out[i] = m
+			continue
+		}
 		blocks := make([]llm.Block, len(m.Blocks))
 		for j, b := range m.Blocks {
 			blocks[j] = clipBlock(b)
@@ -181,8 +198,8 @@ var overflowMessages = []string{
 	"context window exceeds limit", "exceed context limit", "exceeded model token limit", "reduce the length of the messages",
 }
 
-func (a *Agent) summarize(ctx context.Context, opts compactOpts) (string, llm.Usage, error) {
-	prompt := compactPrompt(a.Messages, opts.focus)
+func (a *Agent) summarize(ctx context.Context, opts compactOpts, keepsTail bool) (string, llm.Usage, error) {
+	prompt := compactPrompt(a.Messages, opts.focus, keepsTail)
 	msg, usage, err := a.Provider.Stream(ctx, a.request(summaryRequest(a.Messages, prompt, opts.overflow)), func(llm.Delta) {})
 	if err != nil && !opts.overflow && contextTooLong(err) {
 		msg, usage, err = a.Provider.Stream(ctx, a.request(summaryRequest(a.Messages, prompt, true)), func(llm.Delta) {})
@@ -211,17 +228,18 @@ func (a *Agent) compact(ctx context.Context, opts compactOpts) error {
 		threshold = a.Cfg.CompactTokens()
 	}
 	a.UI.ToolStart("compact", fmt.Sprintf("compacting %s tokens", fmtTokens(before)))
-	summary, usage, err := a.summarize(ctx, opts)
+	var tail []llm.Message
+	if !opts.midTurn && !endsWithToolResults(a.Messages) {
+		tail = keepTail(a.Messages, min(keepTokens, threshold/4))
+	}
+	summary, usage, err := a.summarize(ctx, opts, len(tail) > 0)
 	if err != nil {
 		a.UI.ToolDone("compact", false, "compaction failed")
 		return err
 	}
-	var tail []llm.Message
 	text := compactLead + summary
 	if opts.midTurn {
 		text += compactContinue
-	} else {
-		tail = keepTail(a.Messages, min(keepTokens, threshold/4))
 	}
 	_, hadNote := lastModeNote(a.Messages)
 	a.Messages = append([]llm.Message{llm.UserText(text)}, tail...)

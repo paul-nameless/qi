@@ -66,6 +66,10 @@ func history() []llm.Message {
 	}
 }
 
+func closedHistory() []llm.Message {
+	return append(history(), assistantText("all read"))
+}
+
 func TestKeepTail(t *testing.T) {
 	msgs := history()
 	tail := keepTail(msgs, 1000)
@@ -97,8 +101,8 @@ func TestSummaryRequestKeepsHistoryUnchanged(t *testing.T) {
 	p := &scriptedProvider{steps: []func(llm.Request) (llm.Message, error){reply(assistantText("SUMMARY"))}}
 	a := newAgent(t, &fakeProvider{})
 	a.Provider = p
-	a.Messages = history()
-	orig := history()
+	a.Messages = closedHistory()
+	orig := closedHistory()
 	if err := a.Compact(context.Background(), "the auth bug"); err != nil {
 		t.Fatal(err)
 	}
@@ -106,10 +110,10 @@ func TestSummaryRequestKeepsHistoryUnchanged(t *testing.T) {
 	if !reflect.DeepEqual(sent[:len(orig)], orig) || len(sent) != len(orig)+1 {
 		t.Fatal("summary request must be the unchanged history plus one message")
 	}
-	if ask := sent[len(sent)-1].Text(); !strings.Contains(ask, "## Next steps") || !strings.HasSuffix(ask, "Focus on: the auth bug") || strings.Contains(ask, "earlier work") {
+	if ask := sent[len(sent)-1].Text(); !strings.Contains(ask, "## Next steps") || !strings.Contains(ask, compactWithTail) || !strings.HasSuffix(ask, "Focus on: the auth bug") || strings.Contains(ask, "earlier work") {
 		t.Errorf("prompt: %q", ask)
 	}
-	if !strings.HasPrefix(a.Messages[0].Text(), compactLead+"SUMMARY") || a.Messages[len(a.Messages)-1].Blocks[0].ToolUseID != "c2" {
+	if !strings.HasPrefix(a.Messages[0].Text(), compactLead+"SUMMARY") || a.Messages[len(a.Messages)-1].Text() != "all read" {
 		t.Errorf("new history: %+v", a.Messages)
 	}
 	a.Messages = append(a.Messages, assistantText("more"))
@@ -371,12 +375,29 @@ func TestMidTurnCompactionKeepsNoTail(t *testing.T) {
 	if len(a.Messages) != 1 || !strings.HasSuffix(a.Messages[0].Text(), compactContinue) {
 		t.Errorf("mid-turn compaction leaves an open tool round; it must keep no tail: %+v", a.Messages)
 	}
+	p := &scriptedProvider{}
+	a.Provider = p
 	a.Messages = history()
+	if err := a.Compact(context.Background(), ""); err != nil {
+		t.Fatal(err)
+	}
+	if len(a.Messages) != 1 || strings.HasSuffix(a.Messages[0].Text(), compactContinue) || !strings.Contains(p.requests[0].Messages[len(history())].Text(), compactNoTail) {
+		t.Errorf("history ending in unanswered tool results (a cancelled turn) keeps no tail and asks for the current state: %+v", a.Messages)
+	}
+	a.Messages = closedHistory()
 	if err := a.compact(context.Background(), compactOpts{}); err != nil {
 		t.Fatal(err)
 	}
 	if len(a.Messages) == 1 || strings.HasSuffix(a.Messages[0].Text(), compactContinue) {
 		t.Errorf("between turns the tail is kept: %+v", a.Messages)
+	}
+}
+
+func TestClipKeepsPreviousSummary(t *testing.T) {
+	prev := llm.UserText(compactLead + strings.Repeat("s", 3*clipText))
+	out := clipHistory(append([]llm.Message{prev}, history()...))
+	if out[0].Text() != prev.Text() {
+		t.Error("the previous summary must not be clipped")
 	}
 }
 
