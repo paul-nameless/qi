@@ -51,7 +51,9 @@ profiles:
 # shared settings (a profile can override any of them)
 subagent_efforts: [low, medium, high]
 # cache_ttl: 1h             # Anthropic prompt cache TTL (default 1h interactive, 5m with -q); idle compaction runs 5 min before it expires
-# compact_at: 150000        # compact when context passes this many tokens
+# compact_at: 150k          # compact when context passes this: tokens (150000, 150k) or a share of the window (80%)
+# compact_idle_at: 100k     # idle compaction threshold, same syntax
+# context_window: 1m        # the model's window, for % thresholds; known for Claude, GPT-6 and Gemini, else 200k is assumed
 # read_only_allow: [make lint, go test]
 # mcp:
 #   github:
@@ -72,6 +74,8 @@ git diff | aicode -q "review this"
 aicode -read-only               # start in read-only mode
 ```
 
+Compaction summarizes the conversation into a structured handoff (updated on later compactions) and keeps the newest ~20k tokens verbatim. The summary request resends the history unchanged, so it reads the prompt cache. A "context too long" error triggers one compaction and a retry.
+
 Keys: shift+tab toggles read-only, ctrl+g edits the prompt in `$EDITOR`, alt+enter or ctrl+j inserts a newline, ctrl+c or esc cancels a turn. Text typed while the agent works is queued and delivered after the next tool results.
 
-Commands: `/help`, `/clear`, `/compact`, `/model`, `/profile`, `/effort`, `/skills`, `/exit`, and `/<skill-or-command> [args]`. Typing `/` on an empty line opens a picker (fzf by default; set `picker:` in the config to use another command that reads `name<TAB>description` lines and prints the chosen one).
+Commands: `/help`, `/clear`, `/compact [focus]`, `/model`, `/profile`, `/effort`, `/skills`, `/exit`, and `/<skill-or-command> [args]`. Typing `/` on an empty line opens a picker (fzf by default; set `picker:` in the config to use another command that reads `name<TAB>description` lines and prints the chosen one).
