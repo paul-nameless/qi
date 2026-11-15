@@ -450,6 +450,12 @@ func (a *Agent) EstimateTokens() int {
 	return n
 }
 
+const streamAttempts = 3
+
+func streamBackoff(attempt int) time.Duration {
+	return time.Duration(2<<attempt) * time.Second
+}
+
 func (a *Agent) stream(ctx context.Context) (llm.Message, llm.Usage, error) {
 	for attempt := 0; ; attempt++ {
 		emitted := false
@@ -457,23 +463,12 @@ func (a *Agent) stream(ctx context.Context) (llm.Message, llm.Usage, error) {
 			emitted = true
 			a.onDelta(d)
 		})
-		if err == nil || emitted || attempt == 2 || ctx.Err() != nil || !retryableStream(err) {
+		if err == nil || emitted || attempt == streamAttempts-1 || ctx.Err() != nil || !llm.Retryable(err) {
 			return msg, usage, err
 		}
 		a.UI.Info("retrying: " + tools.OneLine(err.Error(), 100))
-		select {
-		case <-ctx.Done():
-			return msg, usage, ctx.Err()
-		case <-time.After(time.Duration(2<<attempt) * time.Second):
+		if err := llm.Sleep(ctx, streamBackoff(attempt)); err != nil {
+			return msg, usage, err
 		}
 	}
-}
-
-func retryableStream(err error) bool {
-	var apiErr *llm.APIError
-	if errors.As(err, &apiErr) {
-		return false
-	}
-	s := err.Error()
-	return errors.Is(err, llm.ErrStalled) || strings.Contains(s, "overloaded") || strings.Contains(s, "api_error") || strings.Contains(s, "stream ended") || strings.Contains(s, "unexpected EOF") || strings.Contains(s, "connection reset")
 }

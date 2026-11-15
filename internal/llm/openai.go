@@ -211,6 +211,13 @@ type oaChunk struct {
 	} `json:"error"`
 }
 
+func errorCode(code any) string {
+	if code == nil {
+		return ""
+	}
+	return fmt.Sprint(code)
+}
+
 type callSlot struct {
 	index int
 	id    string
@@ -248,7 +255,7 @@ func (o *OpenAI) Stream(ctx context.Context, req Request, onDelta func(Delta)) (
 			return fmt.Errorf("decode stream chunk: %w", err)
 		}
 		if ch.Error != nil {
-			return fmt.Errorf("stream error: %s", ch.Error.Message)
+			return &StreamError{Code: errorCode(ch.Error.Code), Message: ch.Error.Message}
 		}
 		if ch.Usage != nil {
 			usage = Usage{
@@ -303,7 +310,7 @@ func (o *OpenAI) Stream(ctx context.Context, req Request, onDelta func(Delta)) (
 		return Message{}, usage, streamErr(resp.Body, err)
 	}
 	if !done && finish == "" {
-		return Message{}, usage, errors.New("stream ended before the response was complete")
+		return Message{}, usage, ErrIncomplete
 	}
 	msg := Message{Role: "assistant"}
 	for _, raw := range details.result() {

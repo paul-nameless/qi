@@ -277,9 +277,9 @@ func (a *Anthropic) Stream(ctx context.Context, req Request, onDelta func(Delta)
 			return errStreamDone
 		case "error":
 			if e.Error != nil {
-				return fmt.Errorf("stream error: %s: %s", e.Error.Type, e.Error.Message)
+				return &StreamError{Type: e.Error.Type, Message: e.Error.Message}
 			}
-			return errors.New("stream error")
+			return &StreamError{}
 		}
 		return nil
 	})
@@ -293,7 +293,7 @@ func (a *Anthropic) Stream(ctx context.Context, req Request, onDelta func(Delta)
 		return Message{}, u, streamErr(resp.Body, err)
 	}
 	if !done {
-		return Message{}, u, errors.New("stream ended before the response was complete")
+		return Message{}, u, ErrIncomplete
 	}
 	if stop == "refusal" {
 		return Message{}, u, errors.New("the model declined to answer (stop_reason: refusal)")

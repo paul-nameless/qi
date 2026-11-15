@@ -8,9 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math/rand"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -58,8 +56,9 @@ func (b *idleBody) Close() error {
 }
 
 type APIError struct {
-	Status int
-	Body   string
+	Status     int
+	Body       string
+	retryAfter time.Duration
 }
 
 func (e *APIError) Error() string {
@@ -68,14 +67,6 @@ func (e *APIError) Error() string {
 		body = body[:600] + "…"
 	}
 	return fmt.Sprintf("api error %d: %s", e.Status, body)
-}
-
-func retryable(err error) bool {
-	var apiErr *APIError
-	if errors.As(err, &apiErr) {
-		return apiErr.Status == 429 || apiErr.Status >= 500
-	}
-	return !errors.Is(err, context.Canceled)
 }
 
 func postStream(parent context.Context, url string, headers map[string]string, body any) (*http.Response, error) {
@@ -95,54 +86,56 @@ func postStream(parent context.Context, url string, headers map[string]string, b
 }
 
 func postStreamCtx(ctx context.Context, url string, headers map[string]string, body any) (*http.Response, error) {
+	if err := checkURL(url); err != nil {
+		return nil, err
+	}
 	payload, err := json.Marshal(body)
 	if err != nil {
 		return nil, fmt.Errorf("encode request: %w", err)
 	}
 	var lastErr error
-	for attempt := 0; attempt < 4; attempt++ {
+	var wait time.Duration
+	for attempt := 0; attempt < requestAttempts; attempt++ {
 		if attempt > 0 {
-			delay := time.Duration(1<<attempt)*time.Second + time.Duration(rand.Intn(500))*time.Millisecond
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(delay):
-			}
-		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
-		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("Content-Type", "application/json")
-		for k, v := range headers {
-			req.Header.Set(k, v)
-		}
-		resp, err := httpClient.Do(req)
-		if err != nil {
-			lastErr = err
-			if ctx.Err() != nil || !retryable(err) {
+			if err := Sleep(ctx, max(wait, requestBackoff(attempt))); err != nil {
 				return nil, err
 			}
-			continue
 		}
-		if resp.StatusCode == http.StatusOK {
+		resp, err := sendRequest(ctx, url, headers, payload)
+		if err == nil {
 			return resp, nil
 		}
-		data, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
-		resp.Body.Close()
-		lastErr = &APIError{Status: resp.StatusCode, Body: string(data)}
-		if !retryable(lastErr) {
-			return nil, lastErr
+		lastErr, wait = err, 0
+		var apiErr *APIError
+		if errors.As(err, &apiErr) {
+			wait = apiErr.retryAfter
 		}
-		if secs, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil && secs > 0 && secs <= 120 {
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(time.Duration(secs) * time.Second):
-			}
+		if ctx.Err() != nil || !Retryable(err) {
+			return nil, err
 		}
 	}
-	return nil, lastErr
+	return nil, &exhaustedError{err: lastErr}
+}
+
+func sendRequest(ctx context.Context, url string, headers map[string]string, payload []byte) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode == http.StatusOK {
+		return resp, nil
+	}
+	data, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	resp.Body.Close()
+	return nil, &APIError{Status: resp.StatusCode, Body: string(data), retryAfter: retryAfter(resp.Header)}
 }
 
 type sseEvent struct {

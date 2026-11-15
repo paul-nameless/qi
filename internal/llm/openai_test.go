@@ -217,24 +217,6 @@ func TestReadSSE(t *testing.T) {
 	}
 }
 
-func TestRetryable(t *testing.T) {
-	cases := []struct {
-		err  error
-		want bool
-	}{
-		{&APIError{Status: 400}, false},
-		{&APIError{Status: 429}, true},
-		{&APIError{Status: 503}, true},
-		{context.Canceled, false},
-		{fmt.Errorf("dial: %w", errors.New("refused")), true},
-	}
-	for _, c := range cases {
-		if got := retryable(c.err); got != c.want {
-			t.Errorf("%v: got %v", c.err, got)
-		}
-	}
-}
-
 func TestSystemSplitIntoCachedParts(t *testing.T) {
 	req := Request{Model: "m", System: "static part\n\n<env>dir</env>", StaticSystem: len("static part"), Messages: []Message{UserText("hi")}, MaxTokens: 10}
 	parts := req.SystemParts()
