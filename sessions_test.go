@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/paul-nameless/aicode/internal/agent"
-	"github.com/paul-nameless/aicode/internal/config"
-	"github.com/paul-nameless/aicode/internal/llm"
-	"github.com/paul-nameless/aicode/internal/session"
+	"github.com/paul-nameless/qi/internal/agent"
+	"github.com/paul-nameless/qi/internal/config"
+	"github.com/paul-nameless/qi/internal/llm"
+	"github.com/paul-nameless/qi/internal/session"
 )
 
 func writeSession(t *testing.T, cwd, prompt string) *session.Session {
@@ -30,7 +30,7 @@ func writeSession(t *testing.T, cwd, prompt string) *session.Session {
 }
 
 func TestShowSession(t *testing.T) {
-	t.Setenv("AICODE_SESSION_DIR", t.TempDir())
+	t.Setenv("QI_SESSION_DIR", t.TempDir())
 	cwd, _ := os.Getwd()
 	s := writeSession(t, cwd, "first prompt")
 	var out bytes.Buffer
@@ -47,7 +47,7 @@ func TestShowSession(t *testing.T) {
 }
 
 func TestResume(t *testing.T) {
-	t.Setenv("AICODE_SESSION_DIR", t.TempDir())
+	t.Setenv("QI_SESSION_DIR", t.TempDir())
 	a := newTestAgent(t, config.Config{})
 	first := writeSession(t, a.Cwd, "first")
 	second := writeSession(t, a.Cwd, "second")
@@ -79,7 +79,7 @@ func TestResume(t *testing.T) {
 }
 
 func TestSessionErrors(t *testing.T) {
-	t.Setenv("AICODE_SESSION_DIR", t.TempDir())
+	t.Setenv("QI_SESSION_DIR", t.TempDir())
 	a := newTestAgent(t, config.Config{SessionPicker: "cat"})
 	if _, err := pickSession(runPlain, a.Cfg, a.Cwd, ""); err == nil || !strings.Contains(err.Error(), "no sessions") {
 		t.Errorf("empty dir: %v", err)

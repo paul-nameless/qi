@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/paul-nameless/aicode/internal/config"
+	"github.com/paul-nameless/qi/internal/config"
 )
 
-//go:embed builtin/aicode-config/SKILL.md
+//go:embed builtin/qi-config/SKILL.md
 var configSkill []byte
 
 func BuiltinSkillDir() (string, error) {
@@ -19,7 +19,7 @@ func BuiltinSkillDir() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(base, "aicode", "skills"), nil
+	return filepath.Join(base, "qi", "skills"), nil
 }
 
 func BuiltinSkills() []Skill {
@@ -27,10 +27,10 @@ func BuiltinSkills() []Skill {
 	if err != nil {
 		return nil
 	}
-	dir := filepath.Join(base, "aicode-config")
+	dir := filepath.Join(base, "qi-config")
 	files := map[string][]byte{"SKILL.md": configSkill, "schema.json": config.Schema}
 	if err := writeFiles(dir, files); err != nil {
-		fmt.Fprintf(os.Stderr, "aicode: built-in skill aicode-config: %v\n", err)
+		fmt.Fprintf(os.Stderr, "qi: built-in skill qi-config: %v\n", err)
 		return nil
 	}
 	meta, _ := ParseFrontmatter(string(configSkill))

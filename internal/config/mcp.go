@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-const MCPEnv = "AICODE_MCP"
+const MCPEnv = "QI_MCP"
 
 const slashStandIn = "\x00"
 

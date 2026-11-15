@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "aicode config",
-  "description": "aicode settings: ~/.config/aicode/config.json (or -config path.json), and profile files ~/.config/aicode/<name>.json. A profile has the same keys as the top level; every key it sets replaces the top-level value as a whole (objects and arrays included), except mcp, which is merged by server name.",
+  "title": "qi config",
+  "description": "qi settings: ~/.config/qi/config.json (or -config path.json), and profile files ~/.config/qi/<name>.json. A profile has the same keys as the top level; every key it sets replaces the top-level value as a whole (objects and arrays included), except mcp, which is merged by server name.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
     "$schema": {
-      "description": "Optional URL or path of this schema, for editors. aicode ignores it.",
+      "description": "Optional URL or path of this schema, for editors. qi ignores it.",
       "type": "string"
     },
     "model": {
@@ -107,17 +107,17 @@
       "items": { "type": "string" }
     },
     "skill_dirs": {
-      "description": "Directories searched for */SKILL.md. Relative paths are looked up in the git root and the working directory. Default: [\"~/.claude/skills\", \".claude/skills\", \"~/.config/aicode/skills\"].",
+      "description": "Directories searched for */SKILL.md. Relative paths are looked up in the git root and the working directory. Default: [\"~/.claude/skills\", \".claude/skills\", \"~/.config/qi/skills\"].",
       "type": "array",
       "items": { "type": "string" }
     },
     "hook_files": {
-      "description": "Claude Code settings files whose hooks run. Project files run only after the project is trusted. Default: [\"~/.claude/settings.json\", \".claude/settings.json\", \".claude/settings.local.json\", \"~/.config/aicode/settings.json\"].",
+      "description": "Claude Code settings files whose hooks run. Project files run only after the project is trusted. Default: [\"~/.claude/settings.json\", \".claude/settings.json\", \".claude/settings.local.json\", \"~/.config/qi/settings.json\"].",
       "type": "array",
       "items": { "type": "string" }
     },
     "mcp": {
-      "description": "MCP servers over stdio, by name. They start on first use; the agent finds their tools with tool_search and calls them with mcp_call. Top-level servers are global: every profile gets them. Unlike other keys, a profile's mcp is merged by server name: a new name adds a server for that profile, an existing name replaces that server's whole entry, and null (only in a profile) removes a global server. \"mcp\": null in a profile removes all servers. A replacing entry inherits nothing from the global one. MCP servers come from the profile aicode started with; /profile doesn't change them, restart instead. /mcp shows the servers in use.",
+      "description": "MCP servers over stdio, by name. They start on first use; the agent finds their tools with tool_search and calls them with mcp_call. Top-level servers are global: every profile gets them. Unlike other keys, a profile's mcp is merged by server name: a new name adds a server for that profile, an existing name replaces that server's whole entry, and null (only in a profile) removes a global server. \"mcp\": null in a profile removes all servers. A replacing entry inherits nothing from the global one. MCP servers come from the profile qi started with; /profile doesn't change them, restart instead. /mcp shows the servers in use.",
       "type": ["object", "null"],
       "additionalProperties": { "anyOf": [{ "$ref": "#/$defs/mcp_server" }, { "type": "null" }] }
     },
@@ -150,7 +150,7 @@
       "type": "string"
     },
     "builtin_skills": {
-      "description": "List aicode's built-in skills (aicode-config, for reading and changing these settings) in the system prompt. Default: true.",
+      "description": "List qi's built-in skills (qi-config, for reading and changing these settings) in the system prompt. Default: true.",
       "type": "boolean"
     },
     "providers": {
@@ -159,7 +159,7 @@
       "additionalProperties": { "$ref": "#/$defs/provider" }
     },
     "profiles": {
-      "description": "Named profiles, selected with default_profile, -p name or /profile name. Each takes the same keys as the top level and replaces the top-level value of every key it sets, except mcp, which is merged by server name. -p name also accepts a file ~/.config/aicode/<name>.json or a path.",
+      "description": "Named profiles, selected with default_profile, -p name or /profile name. Each takes the same keys as the top level and replaces the top-level value of every key it sets, except mcp, which is merged by server name. -p name also accepts a file ~/.config/qi/<name>.json or a path.",
       "type": "object",
       "additionalProperties": { "$ref": "#/$defs/profile" }
     },

@@ -10,7 +10,7 @@ import (
 func TestTrustAndSplit(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("AICODE_CONFIG_DIR", filepath.Join(home, ".config", "aicode"))
+	t.Setenv("QI_CONFIG_DIR", filepath.Join(home, ".config", "qi"))
 	user := filepath.Join(home, ".claude", "settings.json")
 	plugin := filepath.Join(home, ".claude", "plugins", "x", ".claude", "settings.json")
 	proj := "/work/repo/.claude/settings.json"
@@ -38,7 +38,7 @@ func TestTrustAndSplit(t *testing.T) {
 func TestSelectHookFilesAndRoots(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("AICODE_CONFIG_DIR", filepath.Join(home, ".config", "aicode"))
+	t.Setenv("QI_CONFIG_DIR", filepath.Join(home, ".config", "qi"))
 	repo := t.TempDir()
 	os.MkdirAll(filepath.Join(repo, ".git"), 0o700)
 	os.MkdirAll(filepath.Join(repo, "sub", ".claude"), 0o700)

@@ -14,8 +14,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/paul-nameless/aicode/internal/llm"
-	"github.com/paul-nameless/aicode/internal/tools"
+	"github.com/paul-nameless/qi/internal/llm"
+	"github.com/paul-nameless/qi/internal/tools"
 )
 
 type hookCmd struct {
@@ -155,7 +155,7 @@ func (h *Hooks) exec(ctx context.Context, c hookCmd, input []byte) hookOutcome {
 	defer cancel()
 	cmd := exec.CommandContext(tctx, "sh", "-c", c.Command)
 	cmd.Dir = h.Cwd
-	cmd.Env = append(os.Environ(), "CLAUDE_PROJECT_DIR="+h.Cwd, "AICODE=1")
+	cmd.Env = append(os.Environ(), "CLAUDE_PROJECT_DIR="+h.Cwd, "QI=1")
 	cmd.Stdin = bytes.NewReader(input)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
@@ -225,7 +225,7 @@ func (h *Hooks) PreToolUse(ctx context.Context, call llm.Block) (bool, string, j
 		case "deny":
 			return true, str(j, "hookSpecificOutput", "permissionDecisionReason"), nil
 		case "ask":
-			return true, "a hook asked for confirmation, which aicode cannot prompt for: " + str(j, "hookSpecificOutput", "permissionDecisionReason"), nil
+			return true, "a hook asked for confirmation, which qi cannot prompt for: " + str(j, "hookSpecificOutput", "permissionDecisionReason"), nil
 		}
 		if str(j, "decision") == "block" {
 			return true, str(j, "reason"), nil

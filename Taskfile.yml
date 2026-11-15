@@ -4,10 +4,10 @@ version: "3"
 
 tasks:
   default:
-    - go build -o aicode . && ./aicode {{.CLI_ARGS}}
+    - go build -o qi . && ./qi {{.CLI_ARGS}}
 
   build:
-    - go build -o aicode .
+    - go build -o qi .
 
   test:
     - go test ./...

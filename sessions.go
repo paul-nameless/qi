@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/paul-nameless/aicode/internal/config"
-	"github.com/paul-nameless/aicode/internal/session"
+	"github.com/paul-nameless/qi/internal/config"
+	"github.com/paul-nameless/qi/internal/session"
 )
 
 const previewResultLines = 6

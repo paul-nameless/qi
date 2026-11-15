@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/paul-nameless/aicode/internal/config"
-	"github.com/paul-nameless/aicode/internal/llm"
+	"github.com/paul-nameless/qi/internal/config"
+	"github.com/paul-nameless/qi/internal/llm"
 )
 
 type subagentArgs struct {

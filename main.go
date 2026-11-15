@@ -12,13 +12,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/paul-nameless/aicode/internal/agent"
-	"github.com/paul-nameless/aicode/internal/config"
-	"github.com/paul-nameless/aicode/internal/llm"
-	"github.com/paul-nameless/aicode/internal/mcp"
-	"github.com/paul-nameless/aicode/internal/session"
-	"github.com/paul-nameless/aicode/internal/tools"
-	"github.com/paul-nameless/aicode/internal/ui"
+	"github.com/paul-nameless/qi/internal/agent"
+	"github.com/paul-nameless/qi/internal/config"
+	"github.com/paul-nameless/qi/internal/llm"
+	"github.com/paul-nameless/qi/internal/mcp"
+	"github.com/paul-nameless/qi/internal/session"
+	"github.com/paul-nameless/qi/internal/tools"
+	"github.com/paul-nameless/qi/internal/ui"
 )
 
 var version = "dev"
@@ -40,9 +40,9 @@ func main() {
 	var o options
 	flag.StringVar(&o.query, "q", "", "run one prompt without the interactive UI and print the answer")
 	flag.BoolVar(&o.cont, "c", false, "continue the last session in this directory")
-	flag.StringVar(&o.profile, "p", "", "profile from \"profiles\" in the config, or ~/.config/aicode/<name>.json")
+	flag.StringVar(&o.profile, "p", "", "profile from \"profiles\" in the config, or ~/.config/qi/<name>.json")
 	flag.StringVar(&o.provider, "provider", "", "provider override (from \"providers\" in the config)")
-	flag.StringVar(&o.configPath, "config", "", "JSON config file (default ~/.config/aicode/config.json)")
+	flag.StringVar(&o.configPath, "config", "", "JSON config file (default ~/.config/qi/config.json)")
 	flag.StringVar(&o.model, "model", "", "model override")
 	flag.StringVar(&o.effort, "effort", "", "reasoning effort override")
 	flag.BoolVar(&o.readOnly, "read-only", false, "start in read-only mode")
@@ -53,26 +53,26 @@ func main() {
 	checkConfig := flag.Bool("check-config", false, "load the config and every profile without calling any API, then exit")
 	flag.Parse()
 	if *showVersion {
-		fmt.Println("aicode", version)
+		fmt.Println("qi", version)
 		return
 	}
 	if *show != "" {
 		if err := showSession(os.Stdout, *show); err != nil {
-			fmt.Fprintln(os.Stderr, "aicode:", err)
+			fmt.Fprintln(os.Stderr, "qi:", err)
 			os.Exit(1)
 		}
 		return
 	}
 	if *checkConfig {
 		if err := config.Check(o.configPath, o.profile); err != nil {
-			fmt.Fprintln(os.Stderr, "aicode:", err)
+			fmt.Fprintln(os.Stderr, "qi:", err)
 			os.Exit(1)
 		}
 		fmt.Println("config ok")
 		return
 	}
 	if err := run(o); err != nil {
-		fmt.Fprintln(os.Stderr, "aicode:", err)
+		fmt.Fprintln(os.Stderr, "qi:", err)
 		os.Exit(1)
 	}
 }
@@ -92,7 +92,7 @@ func run(o options) error {
 	}
 	stdinPiped := stdinHasData()
 	headless := o.query != "" || stdinPiped || !ui.IsTerminal(os.Stdin)
-	isSub := os.Getenv("AICODE_SUBAGENT") != ""
+	isSub := os.Getenv("QI_SUBAGENT") != ""
 
 	var display *ui.Printer
 	if headless {
@@ -205,7 +205,7 @@ func resolveConfig(o options) (config.Config, error) {
 	if err != nil {
 		return cfg, err
 	}
-	if fromParent && os.Getenv("AICODE_SUBAGENT") != "" {
+	if fromParent && os.Getenv("QI_SUBAGENT") != "" {
 		cfg.MCP = parentMCP
 	}
 	return cfg, nil
@@ -213,8 +213,8 @@ func resolveConfig(o options) (config.Config, error) {
 
 func hookFiles(roots, configured []string, headless bool, display *ui.Printer) []string {
 	files, skipped := agent.SelectHookFiles(roots, configured, !headless, agent.AskTrust)
-	if skipped && headless && os.Getenv("AICODE_SUBAGENT") == "" {
-		display.Info("skipping untrusted project hooks in " + roots[0] + " (start aicode interactively there once to trust them)")
+	if skipped && headless && os.Getenv("QI_SUBAGENT") == "" {
+		display.Info("skipping untrusted project hooks in " + roots[0] + " (start qi interactively there once to trust them)")
 	}
 	return files
 }
@@ -253,7 +253,7 @@ func readStdin(wait bool) string {
 		select {
 		case head = <-first:
 		case <-time.After(5 * time.Second):
-			fmt.Fprintln(os.Stderr, "aicode: no stdin within 5s, running without it")
+			fmt.Fprintln(os.Stderr, "qi: no stdin within 5s, running without it")
 			return ""
 		}
 	}

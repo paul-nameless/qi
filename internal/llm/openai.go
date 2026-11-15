@@ -221,7 +221,7 @@ type callSlot struct {
 func (o *OpenAI) Stream(ctx context.Context, req Request, onDelta func(Delta)) (Message, Usage, error) {
 	headers := map[string]string{"Authorization": "Bearer " + o.APIKey}
 	if o.OpenRouter {
-		headers["X-Title"] = "aicode"
+		headers["X-Title"] = "qi"
 		if req.SessionID != "" {
 			headers["x-session-id"] = req.SessionID
 		}

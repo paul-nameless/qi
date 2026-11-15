@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/paul-nameless/aicode/internal/llm"
+	"github.com/paul-nameless/qi/internal/llm"
 )
 
 func TestCheckReadOnly(t *testing.T) {

@@ -35,7 +35,7 @@ func wantErr(t *testing.T, err error, parts ...string) {
 
 func TestUnknownKeysAreErrors(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("AICODE_CONFIG_DIR", dir)
+	t.Setenv("QI_CONFIG_DIR", dir)
 	path := writeConfig(t, dir, "config.json", "{\n  \"model\": \"m\",\n  \"modle\": \"x\"\n}\n")
 	_, err := Load(path, "")
 	wantErr(t, err, path, `unknown key "modle"`)
@@ -56,7 +56,7 @@ func TestUnknownKeysAreErrors(t *testing.T) {
 
 func TestJSONSyntaxAndTypeErrors(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("AICODE_CONFIG_DIR", dir)
+	t.Setenv("QI_CONFIG_DIR", dir)
 	cases := map[string][]string{
 		"{\n  \"model\": \"m\",\n}\n":  {"line 2", "invalid JSON"},
 		`{"max_tokens": "lots"}`:       {`key "max_tokens"`, "expected a whole number, got a string"},
@@ -80,7 +80,7 @@ func TestJSONSyntaxAndTypeErrors(t *testing.T) {
 
 func TestByteOrderMarkIsSkipped(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("AICODE_CONFIG_DIR", dir)
+	t.Setenv("QI_CONFIG_DIR", dir)
 	path := writeConfig(t, dir, "config.json", "\xef\xbb\xbf{\"model\": \"m\"}")
 	if c, err := Load(path, ""); err != nil || c.Model != "m" {
 		t.Errorf("BOM: %q %v", c.Model, err)
@@ -89,7 +89,7 @@ func TestByteOrderMarkIsSkipped(t *testing.T) {
 
 func TestProfileKeysAreCaseSensitive(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("AICODE_CONFIG_DIR", dir)
+	t.Setenv("QI_CONFIG_DIR", dir)
 	path := writeConfig(t, dir, "config.json", `{"providers": {"a": {"base_url": "u"}}, "profiles": {"p": {"Providers": {"b": {"base_url": "v"}}}}}`)
 	_, err := Load(path, "")
 	wantErr(t, err, `profile "p"`, `unknown key "Providers"`)
@@ -97,7 +97,7 @@ func TestProfileKeysAreCaseSensitive(t *testing.T) {
 
 func TestProfilesCannotNestProfiles(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("AICODE_CONFIG_DIR", dir)
+	t.Setenv("QI_CONFIG_DIR", dir)
 	path := writeConfig(t, dir, "config.json", `{"profiles": {"p": {"profiles": {"q": {"modle": 1}}}}}`)
 	_, err := Load(path, "")
 	wantErr(t, err, `profile "p"`, `key "profiles" is not allowed in a profile`)
@@ -109,7 +109,7 @@ func TestProfilesCannotNestProfiles(t *testing.T) {
 
 func TestNullInProfileResetsToDefault(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("AICODE_CONFIG_DIR", dir)
+	t.Setenv("QI_CONFIG_DIR", dir)
 	path := writeConfig(t, dir, "config.json", `{"max_tokens": 1000, "compact_at": "50k", "read_only_allow": ["x"], "profiles": {"p": {"max_tokens": null, "compact_at": null, "read_only_allow": null}}}`)
 	c, err := Load(path, "p")
 	if err != nil || c.MaxTokens != 32000 || c.CompactAt != (Threshold{Tokens: 150000}) || c.ReadOnlyAllow != nil {
@@ -119,7 +119,7 @@ func TestNullInProfileResetsToDefault(t *testing.T) {
 
 func TestValidateMirrorsSchema(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("AICODE_CONFIG_DIR", dir)
+	t.Setenv("QI_CONFIG_DIR", dir)
 	cases := map[string][]string{
 		`{"api": "antropic"}`:                   {`key "api"`, `"antropic" is not one of openai, anthropic`},
 		`{"cache_ttl": "2h"}`:                   {`key "cache_ttl"`},
@@ -152,7 +152,7 @@ func TestValidateMirrorsSchema(t *testing.T) {
 
 func TestSchemaKeyIsAccepted(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("AICODE_CONFIG_DIR", dir)
+	t.Setenv("QI_CONFIG_DIR", dir)
 	path := writeConfig(t, dir, "config.json", `{"$schema": "./schema.json", "model": "m", "profiles": {"p": {"$schema": "x", "model": "n"}}}`)
 	writeConfig(t, dir, "f.json", `{"$schema": "x", "model": "f"}`)
 	for profile, want := range map[string]string{"": "m", "p": "n", "f": "f"} {
@@ -164,7 +164,7 @@ func TestSchemaKeyIsAccepted(t *testing.T) {
 
 func TestProfileKeysReplaceWholeValues(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("AICODE_CONFIG_DIR", dir)
+	t.Setenv("QI_CONFIG_DIR", dir)
 	path := writeConfig(t, dir, "config.json", `{
   "providers": {"a": {"base_url": "http://a", "cache_control": true}, "b": {"base_url": "http://b"}},
   "mcp": {"x": {"command": "x", "args": ["1", "2"], "env": {"K": "v"}}},
@@ -215,14 +215,14 @@ func TestProfileKeysReplaceWholeValues(t *testing.T) {
 
 func TestUnknownProfile(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("AICODE_CONFIG_DIR", dir)
+	t.Setenv("QI_CONFIG_DIR", dir)
 	path := writeConfig(t, dir, "config.json", `{"model": "m"}`)
 	_, err := Load(path, "nope")
 	wantErr(t, err, `unknown profile "nope"`)
 }
 
 func TestMissingDefaultConfigIsFine(t *testing.T) {
-	t.Setenv("AICODE_CONFIG_DIR", t.TempDir())
+	t.Setenv("QI_CONFIG_DIR", t.TempDir())
 	if c, err := Load("", ""); err != nil || c.Model == "" {
 		t.Errorf("no config: %+v %v", c, err)
 	}
@@ -233,7 +233,7 @@ func TestMissingDefaultConfigIsFine(t *testing.T) {
 
 func TestCheckLoadsEveryProfile(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("AICODE_CONFIG_DIR", dir)
+	t.Setenv("QI_CONFIG_DIR", dir)
 	path := writeConfig(t, dir, "config.json", `{"profiles": {"ok": {"model": "m"}, "broken": {"provider": "nope"}}}`)
 	wantErr(t, Check(path, ""), path, `profile "broken": key "provider": unknown provider "nope"`)
 

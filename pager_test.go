@@ -7,14 +7,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/paul-nameless/aicode/internal/config"
-	"github.com/paul-nameless/aicode/internal/llm"
-	"github.com/paul-nameless/aicode/internal/session"
-	"github.com/paul-nameless/aicode/internal/ui"
+	"github.com/paul-nameless/qi/internal/config"
+	"github.com/paul-nameless/qi/internal/llm"
+	"github.com/paul-nameless/qi/internal/session"
+	"github.com/paul-nameless/qi/internal/ui"
 )
 
 func TestPager(t *testing.T) {
-	t.Setenv("AICODE_SESSION_DIR", t.TempDir())
+	t.Setenv("QI_SESSION_DIR", t.TempDir())
 	out := filepath.Join(t.TempDir(), "paged")
 	a := newTestAgent(t, config.Config{Pager: "cat > " + out})
 	s := writeSession(t, a.Cwd, "hello pager")

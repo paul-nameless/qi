@@ -12,12 +12,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/paul-nameless/aicode/internal/config"
-	"github.com/paul-nameless/aicode/internal/llm"
-	"github.com/paul-nameless/aicode/internal/mcp"
-	"github.com/paul-nameless/aicode/internal/session"
-	"github.com/paul-nameless/aicode/internal/tools"
-	"github.com/paul-nameless/aicode/internal/ui"
+	"github.com/paul-nameless/qi/internal/config"
+	"github.com/paul-nameless/qi/internal/llm"
+	"github.com/paul-nameless/qi/internal/mcp"
+	"github.com/paul-nameless/qi/internal/session"
+	"github.com/paul-nameless/qi/internal/tools"
+	"github.com/paul-nameless/qi/internal/ui"
 )
 
 type nopProvider struct{}
@@ -57,7 +57,7 @@ func TestReadOnlyWiring(t *testing.T) {
 
 func TestModelSwitchKeepsSubagentsOnProfileProvider(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("AICODE_CONFIG_DIR", dir)
+	t.Setenv("QI_CONFIG_DIR", dir)
 	path := dir + "/config.json"
 	os.WriteFile(path, []byte(`{
   "providers": {
@@ -135,7 +135,7 @@ func TestReloadRereadsInstructionsAndSkills(t *testing.T) {
 }
 
 func TestPastedTempImagesAreKeptWithTheSession(t *testing.T) {
-	t.Setenv("AICODE_SESSION_DIR", t.TempDir())
+	t.Setenv("QI_SESSION_DIR", t.TempDir())
 	a, _, _ := buildAgent(config.Config{Model: "m"}, options{}, t.TempDir(), nopProvider{}, devNullPrinter(t), true, false)
 	s, err := session.Create(a.Cwd, "", "m", "interactive", false)
 	if err != nil {
@@ -170,7 +170,7 @@ func TestPastedTempImagesAreKeptWithTheSession(t *testing.T) {
 
 func TestSubagentKeepsParentMCPFilters(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("AICODE_CONFIG_DIR", dir)
+	t.Setenv("QI_CONFIG_DIR", dir)
 	path := filepath.Join(dir, "config.json")
 	writeFile := func(data string) {
 		if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
@@ -200,7 +200,7 @@ func TestSubagentKeepsParentMCPFilters(t *testing.T) {
 		}
 	}
 	t.Setenv(config.MCPEnv, fromParent)
-	t.Setenv("AICODE_SUBAGENT", "1")
+	t.Setenv("QI_SUBAGENT", "1")
 	cfg, err := resolveConfig(options{configPath: path, profile: "p"})
 	if err != nil {
 		t.Fatal(err)
@@ -212,7 +212,7 @@ func TestSubagentKeepsParentMCPFilters(t *testing.T) {
 		t.Error(config.MCPEnv + " left for tools and MCP servers")
 	}
 	t.Setenv(config.MCPEnv, fromParent)
-	t.Setenv("AICODE_SUBAGENT", "")
+	t.Setenv("QI_SUBAGENT", "")
 	if cfg, _ := resolveConfig(options{configPath: path, profile: "p"}); !reflect.DeepEqual(sortedNames(cfg.MCP), []string{"extra", "gh2", "notes"}) {
 		t.Errorf("top-level agent took %s: %+v", config.MCPEnv, cfg.MCP)
 	}
@@ -229,7 +229,7 @@ func sortedNames(m map[string]config.MCPServer) []string {
 
 func TestProfileSwitchKeepsMCPSetup(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("AICODE_CONFIG_DIR", dir)
+	t.Setenv("QI_CONFIG_DIR", dir)
 	path := filepath.Join(dir, "config.json")
 	if err := os.WriteFile(path, []byte(`{"api_key": "k", "mcp": {"notes": {"command": "notes", "exclude_tools": ["delete_*"]}}, "profiles": {"none": {"mcp": null}, "more": {"mcp": {"db": {"command": "db"}}}}}`), 0o600); err != nil {
 		t.Fatal(err)

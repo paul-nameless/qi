@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/paul-nameless/aicode/internal/llm"
+	"github.com/paul-nameless/qi/internal/llm"
 )
 
 type Info struct {

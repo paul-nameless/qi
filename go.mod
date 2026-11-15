@@ -1,4 +1,4 @@
-module github.com/paul-nameless/aicode
+module github.com/paul-nameless/qi
 
 go 1.27.4
 

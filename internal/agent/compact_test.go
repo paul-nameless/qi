@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/paul-nameless/aicode/internal/config"
-	"github.com/paul-nameless/aicode/internal/llm"
-	"github.com/paul-nameless/aicode/internal/session"
+	"github.com/paul-nameless/qi/internal/config"
+	"github.com/paul-nameless/qi/internal/llm"
+	"github.com/paul-nameless/qi/internal/session"
 )
 
 type scriptedProvider struct {
@@ -227,7 +227,8 @@ func TestThrashPausesAutoCompaction(t *testing.T) {
 }
 
 func TestCompactionSurvivesResume(t *testing.T) {
-	t.Setenv("AICODE_CONFIG_DIR", t.TempDir())
+	t.Setenv("QI_CONFIG_DIR", t.TempDir())
+	t.Setenv("QI_SESSION_DIR", t.TempDir())
 	p := &scriptedProvider{steps: []func(llm.Request) (llm.Message, error){reply(assistantText("SUMMARY"))}}
 	a := newAgent(t, &fakeProvider{})
 	a.Provider = p

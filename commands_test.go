@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/paul-nameless/aicode/internal/config"
-	"github.com/paul-nameless/aicode/internal/mcp"
+	"github.com/paul-nameless/qi/internal/config"
+	"github.com/paul-nameless/qi/internal/mcp"
 )
 
 func TestExpandArgs(t *testing.T) {

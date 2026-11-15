@@ -14,7 +14,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/paul-nameless/aicode/internal/llm"
+	"github.com/paul-nameless/qi/internal/llm"
 )
 
 type bashArgs struct {
@@ -128,7 +128,7 @@ func HasSandbox() bool {
 func readOnlyEnv() []string {
 	return []string{
 		"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=core.fsmonitor", "GIT_CONFIG_VALUE_0=",
-		"GOCACHE=" + filepath.Join(os.TempDir(), "aicode-readonly-gocache"), "GOFLAGS=-mod=readonly", "GOPROXY=off",
+		"GOCACHE=" + filepath.Join(os.TempDir(), "qi-readonly-gocache"), "GOFLAGS=-mod=readonly", "GOPROXY=off",
 	}
 }
 

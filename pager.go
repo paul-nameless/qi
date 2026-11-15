@@ -1,6 +1,6 @@
 package main
 
-import "github.com/paul-nameless/aicode/internal/session"
+import "github.com/paul-nameless/qi/internal/session"
 
 func (r *repl) showHistory() error {
 	entries, err := session.Entries(r.agent.Session.Path)

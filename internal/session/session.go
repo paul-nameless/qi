@@ -14,8 +14,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/paul-nameless/aicode/internal/config"
-	"github.com/paul-nameless/aicode/internal/llm"
+	"github.com/paul-nameless/qi/internal/config"
+	"github.com/paul-nameless/qi/internal/llm"
 )
 
 const Version = 1
@@ -44,9 +44,9 @@ type Session struct {
 }
 
 func Dir(cwd string) string {
-	base := os.Getenv("AICODE_SESSION_DIR")
+	base := os.Getenv("QI_SESSION_DIR")
 	if base == "" {
-		base = filepath.Join(config.Home(), ".local", "share", "aicode", "sessions")
+		base = filepath.Join(config.Home(), ".local", "share", "qi", "sessions")
 	}
 	name := strings.NewReplacer("/", "-", "\\", "-", ":", "", ".", "-").Replace(cwd)
 	dir := filepath.Join(base, name)
@@ -269,7 +269,7 @@ func Repair(msgs []llm.Message) []llm.Message {
 		var missing []llm.Block
 		for _, c := range calls {
 			if !answered[c.ID] {
-				missing = append(missing, llm.Block{Type: llm.BlockToolResult, ToolUseID: c.ID, Text: "interrupted: aicode stopped before this tool finished", IsError: true})
+				missing = append(missing, llm.Block{Type: llm.BlockToolResult, ToolUseID: c.ID, Text: "interrupted: qi stopped before this tool finished", IsError: true})
 			}
 		}
 		if len(missing) == 0 {

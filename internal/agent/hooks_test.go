@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/paul-nameless/aicode/internal/llm"
-	"github.com/paul-nameless/aicode/internal/tools"
+	"github.com/paul-nameless/qi/internal/llm"
+	"github.com/paul-nameless/qi/internal/tools"
 )
 
 func writeHooks(t *testing.T, hooks string) *Hooks {

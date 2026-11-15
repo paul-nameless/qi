@@ -13,8 +13,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/paul-nameless/aicode/internal/config"
-	"github.com/paul-nameless/aicode/internal/llm"
+	"github.com/paul-nameless/qi/internal/config"
+	"github.com/paul-nameless/qi/internal/llm"
 )
 
 type Result struct {
@@ -279,7 +279,7 @@ func (e *Env) spill(out string) string {
 		if err != nil {
 			base = os.TempDir()
 		}
-		dir = filepath.Join(base, "aicode", "out")
+		dir = filepath.Join(base, "qi", "out")
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "(not saved: " + err.Error() + ")"

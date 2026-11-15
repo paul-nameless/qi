@@ -1,17 +1,17 @@
 ---
-name: aicode-config
-description: Read and change aicode's own settings. Use when the user asks about aicode's config: profiles, providers, models, effort, compaction, MCP servers, hooks, skills or the picker.
+name: qi-config
+description: Read and change qi's own settings. Use when the user asks about qi's config: profiles, providers, models, effort, compaction, MCP servers, hooks, skills or the picker.
 ---
 
-# aicode config
+# qi config
 
-aicode is the agent you are running in. Its settings are JSON files.
+qi is the agent you are running in. Its settings are JSON files.
 
 ## Files
 
-- `~/.config/aicode/config.json`: the main config (the directory is `$AICODE_CONFIG_DIR` when set). `aicode -config path.json` uses another file.
-- Profiles live under `profiles` in the config, or in their own file `~/.config/aicode/<name>.json` (selected with `-p name`; `-p` also takes a path).
-- Related files that are not JSON config: hooks in `~/.config/aicode/settings.json` (Claude Code settings format), skills in `~/.config/aicode/skills/<name>/SKILL.md`, commands in `~/.config/aicode/commands/*.md`.
+- `~/.config/qi/config.json`: the main config (the directory is `$QI_CONFIG_DIR` when set). `qi -config path.json` uses another file.
+- Profiles live under `profiles` in the config, or in their own file `~/.config/qi/<name>.json` (selected with `-p name`; `-p` also takes a path).
+- Related files that are not JSON config: hooks in `~/.config/qi/settings.json` (Claude Code settings format), skills in `~/.config/qi/skills/<name>/SKILL.md`, commands in `~/.config/qi/commands/*.md`.
 - `schema.json` next to this file is the JSON Schema (draft 2020-12) for every key: types, allowed values, defaults and what each key does. Read it before adding a key you are not sure about.
 
 ## Format
@@ -30,12 +30,12 @@ aicode is the agent you are running in. Its settings are JSON files.
 
 ## Check your change
 
-Run `aicode -check-config` (add `-config path.json` when relevant). It loads the config, every inline profile and every profile file without calling any API, checks allowed values, and prints the file and key of the first problem.
+Run `qi -check-config` (add `-config path.json` when relevant). It loads the config, every inline profile and every profile file without calling any API, checks allowed values, and prints the file and key of the first problem.
 
 When a change takes effect in a running session:
 - Most keys: after `/profile <name>`, which re-reads the file.
 - `skill_dirs`, `instruction_files`, `builtin_skills`: `/profile <name>`, then `/reload` to rebuild the system prompt.
-- `mcp`, `hook_files`, `read_only`: only after restarting aicode.
+- `mcp`, `hook_files`, `read_only`: only after restarting qi.
 
 ## MCP servers
 

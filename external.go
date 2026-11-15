@@ -12,8 +12,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/paul-nameless/aicode/internal/config"
-	"github.com/paul-nameless/aicode/internal/tools"
+	"github.com/paul-nameless/qi/internal/config"
+	"github.com/paul-nameless/qi/internal/tools"
 )
 
 type runner func(*exec.Cmd) error
@@ -107,7 +107,7 @@ func placeholder(s string, vars map[string]string) string {
 }
 
 func varName(key string) string {
-	return "AICODE_" + strings.ToUpper(key)
+	return "QI_" + strings.ToUpper(key)
 }
 
 func varRef(name string, quote byte) string {
@@ -120,7 +120,7 @@ func varRef(name string, quote byte) string {
 func toolEnv(extra []string) []string {
 	env := os.Environ()
 	if self, err := os.Executable(); err == nil {
-		env = append(env, "AICODE_BIN="+self)
+		env = append(env, "QI_BIN="+self)
 	}
 	if _, ok := os.LookupEnv("LESS"); !ok {
 		env = append(env, "LESS=-R")
@@ -165,7 +165,7 @@ func firstLine(s string) string {
 }
 
 func tempFile(ext, content string) (string, error) {
-	f, err := os.CreateTemp("", "aicode-*"+ext)
+	f, err := os.CreateTemp("", "qi-*"+ext)
 	if err != nil {
 		return "", err
 	}
@@ -191,7 +191,7 @@ func choose(run runner, command, picker, prompt string, stdin io.Reader) ([]stri
 		vars["file"] = file
 	}
 	cmd := toolCmd(command, picker, vars)
-	cmd.Env = append(cmd.Env, "FZF_DEFAULT_OPTS=", "FZF_DEFAULT_OPTS_FILE=", "AICODE_PICK_PROMPT="+prompt)
+	cmd.Env = append(cmd.Env, "FZF_DEFAULT_OPTS=", "FZF_DEFAULT_OPTS_FILE=", "QI_PICK_PROMPT="+prompt)
 	cmd.Stdin = stdin
 	var out bytes.Buffer
 	if vars["file"] == "" {

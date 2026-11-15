@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/paul-nameless/aicode/internal/config"
+	"github.com/paul-nameless/qi/internal/config"
 )
 
 type SubagentRunner struct {
@@ -28,7 +28,7 @@ func (r *SubagentRunner) Env() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return append(os.Environ(), "AICODE_SUBAGENT=1", config.MCPEnv+"="+servers), nil
+	return append(os.Environ(), "QI_SUBAGENT=1", config.MCPEnv+"="+servers), nil
 }
 
 func (r *SubagentRunner) args(prompt, model, provider, effort string) []string {

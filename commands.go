@@ -11,10 +11,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/paul-nameless/aicode/internal/agent"
-	"github.com/paul-nameless/aicode/internal/llm"
-	"github.com/paul-nameless/aicode/internal/mcp"
-	"github.com/paul-nameless/aicode/internal/tools"
+	"github.com/paul-nameless/qi/internal/agent"
+	"github.com/paul-nameless/qi/internal/llm"
+	"github.com/paul-nameless/qi/internal/mcp"
+	"github.com/paul-nameless/qi/internal/tools"
 )
 
 const helpText = `Commands:
@@ -146,7 +146,7 @@ func (r *repl) showMCP() {
 
 func (r *repl) noMCP() string {
 	if len(r.agent.Cfg.MCP) > 0 {
-		return "aicode started without MCP servers; restart to use the ones in this profile"
+		return "qi started without MCP servers; restart to use the ones in this profile"
 	}
 	return "no MCP servers configured (add \"mcp\" to " + r.configFile() + ")"
 }

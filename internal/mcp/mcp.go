@@ -16,7 +16,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/paul-nameless/aicode/internal/config"
+	"github.com/paul-nameless/qi/internal/config"
 )
 
 const protocolVersion = "2025-06-18"
@@ -101,7 +101,7 @@ func (c *client) readLoop(r io.Reader) {
 			continue
 		}
 		if m.ID != nil && m.Method != "" {
-			_ = c.send(rpcMsg{JSONRPC: "2.0", ID: m.ID, Error: &rpcError{Code: -32601, Message: "method not supported by aicode"}})
+			_ = c.send(rpcMsg{JSONRPC: "2.0", ID: m.ID, Error: &rpcError{Code: -32601, Message: "method not supported by qi"}})
 			continue
 		}
 		if m.ID == nil {
@@ -160,7 +160,7 @@ func (c *client) initialize(ctx context.Context) error {
 	params := map[string]any{
 		"protocolVersion": protocolVersion,
 		"capabilities":    map[string]any{},
-		"clientInfo":      map[string]any{"name": "aicode", "version": "2"},
+		"clientInfo":      map[string]any{"name": "qi", "version": "2"},
 	}
 	if _, err := c.request(ctx, "initialize", params); err != nil {
 		return err

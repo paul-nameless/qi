@@ -3,7 +3,7 @@ package agent
 import (
 	"fmt"
 
-	"github.com/paul-nameless/aicode/internal/llm"
+	"github.com/paul-nameless/qi/internal/llm"
 )
 
 const (

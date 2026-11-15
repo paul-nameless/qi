@@ -12,7 +12,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/paul-nameless/aicode/internal/llm"
+	"github.com/paul-nameless/qi/internal/llm"
 )
 
 const (

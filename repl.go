@@ -12,13 +12,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/paul-nameless/aicode/internal/agent"
-	"github.com/paul-nameless/aicode/internal/config"
-	"github.com/paul-nameless/aicode/internal/llm"
-	"github.com/paul-nameless/aicode/internal/mcp"
-	"github.com/paul-nameless/aicode/internal/session"
-	"github.com/paul-nameless/aicode/internal/tools"
-	"github.com/paul-nameless/aicode/internal/ui"
+	"github.com/paul-nameless/qi/internal/agent"
+	"github.com/paul-nameless/qi/internal/config"
+	"github.com/paul-nameless/qi/internal/llm"
+	"github.com/paul-nameless/qi/internal/mcp"
+	"github.com/paul-nameless/qi/internal/session"
+	"github.com/paul-nameless/qi/internal/tools"
+	"github.com/paul-nameless/qi/internal/ui"
 	"golang.org/x/sys/unix"
 )
 
@@ -79,7 +79,7 @@ func (r *repl) run() error {
 			panic(p)
 		}
 	}()
-	hist := filepath.Join(config.Home(), ".local", "share", "aicode", "history")
+	hist := filepath.Join(config.Home(), ".local", "share", "qi", "history")
 	r.editor = ui.NewEditor(t, r.display, hist)
 	r.editor.OnToggle = func() string {
 		r.toggleMode()
@@ -139,7 +139,7 @@ func (r *repl) run() error {
 
 func (r *repl) banner() {
 	where := r.agent.Session.ID
-	r.display.Line(r.display.Color(ui.Bold, "aicode") + r.display.Color(ui.Dim, fmt.Sprintf(" %s · %s · %s · %s · session %s", version, r.agent.Model(), r.modeName(), r.agent.ContextUsage(), where)))
+	r.display.Line(r.display.Color(ui.Bold, "qi") + r.display.Color(ui.Dim, fmt.Sprintf(" %s · %s · %s · %s · session %s", version, r.agent.Model(), r.modeName(), r.agent.ContextUsage(), where)))
 	if n := len(r.agent.Messages); n > 0 {
 		r.printHistory()
 	}

@@ -337,7 +337,7 @@ func (st *lineState) insert(rs []rune) {
 }
 
 func (e *Editor) external(text string) (string, error) {
-	f, err := os.CreateTemp("", "aicode-*.md")
+	f, err := os.CreateTemp("", "qi-*.md")
 	if err != nil {
 		return "", err
 	}

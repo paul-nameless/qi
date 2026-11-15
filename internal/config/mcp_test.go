@@ -86,7 +86,7 @@ func mcpNames(c Config) []string {
 
 func TestProfileMCPMerge(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("AICODE_CONFIG_DIR", dir)
+	t.Setenv("QI_CONFIG_DIR", dir)
 	path := writeConfig(t, dir, "config.json", mcpProfiles)
 	writeConfig(t, dir, "fileadds.json", `{"mcp": {"db": {"command": "db"}, "notes": null}}`)
 	cases := map[string][]string{
@@ -124,7 +124,7 @@ func TestProfileMCPMerge(t *testing.T) {
 
 func TestProfileMCPErrors(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("AICODE_CONFIG_DIR", dir)
+	t.Setenv("QI_CONFIG_DIR", dir)
 	path := writeConfig(t, dir, "config.json", mcpProfiles)
 	_, err := Load(path, "bad")
 	wantErr(t, err, path, `profile "bad": key "mcp.slack": no global MCP server "slack" to remove`)
@@ -140,7 +140,7 @@ func TestProfileMCPErrors(t *testing.T) {
 
 func TestGlobalMCPErrorsBlameTheConfig(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("AICODE_CONFIG_DIR", dir)
+	t.Setenv("QI_CONFIG_DIR", dir)
 	path := writeConfig(t, dir, "config.json", `{"mcp": {"gh": {"command": "gh", "tools": ["[a"]}}, "default_profile": "p", "profiles": {"p": {"mcp": {"gh": {"command": "gh"}}}}}`)
 	_, err := Load(path, "")
 	wantErr(t, err, "config "+path+`: key "mcp.gh.tools.0"`)

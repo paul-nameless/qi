@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/paul-nameless/aicode/internal/config"
+	"github.com/paul-nameless/qi/internal/config"
 )
 
 func TestPick(t *testing.T) {
@@ -22,7 +22,7 @@ func TestPick(t *testing.T) {
 		{"false", "x", "", false},
 		{"cat >/dev/null", "x", "", false},
 		{`printf '%s\tdesc\n' {prompt}`, "it's $HOME", "it's $HOME", true},
-		{`printf '%s\n' "$AICODE_PICK_PROMPT"`, "model ", "model ", true},
+		{`printf '%s\n' "$QI_PICK_PROMPT"`, "model ", "model ", true},
 		{"{picker} | head -1", "x", "alpha", true},
 		{"sed -n 2p > {file}", "x", "beta", true},
 	}
@@ -38,7 +38,7 @@ func TestPick(t *testing.T) {
 }
 
 func TestToolAvailable(t *testing.T) {
-	t.Setenv("AICODE_TEST_SHELL", "/bin/sh")
+	t.Setenv("QI_TEST_SHELL", "/bin/sh")
 	cases := []struct {
 		command, picker string
 		want            bool
@@ -58,7 +58,7 @@ func TestToolAvailable(t *testing.T) {
 		{"sh; true", "", true},
 		{"exec sh", "", true},
 		{"if true; then :; fi", "", true},
-		{"$AICODE_TEST_SHELL -c true", "", true},
+		{"$QI_TEST_SHELL -c true", "", true},
 	}
 	for _, c := range cases {
 		if got := toolAvailable(c.command, c.picker); got != c.want {
@@ -76,12 +76,12 @@ func TestToolAvailable(t *testing.T) {
 
 func TestExpandTool(t *testing.T) {
 	got, env := expandTool(`{picker} --preview 'x {1} {title}' -t {title} "text={msg} \"q\"" \'{msg}`, "fzf --prompt={prompt}", map[string]string{"prompt": "a b", "title": "it's", "msg": "{prompt}"})
-	want := `fzf --prompt="${AICODE_PROMPT}" --preview 'x {1} "${AICODE_TITLE}"' -t "${AICODE_TITLE}" "text=${AICODE_MSG} \"q\"" \'"${AICODE_MSG}"`
+	want := `fzf --prompt="${QI_PROMPT}" --preview 'x {1} "${QI_TITLE}"' -t "${QI_TITLE}" "text=${QI_MSG} \"q\"" \'"${QI_MSG}"`
 	if got != want {
 		t.Errorf("got  %s\nwant %s", got, want)
 	}
 	sort.Strings(env)
-	if strings.Join(env, "|") != "AICODE_MSG={prompt}|AICODE_PROMPT=a b|AICODE_TITLE=it's" {
+	if strings.Join(env, "|") != "QI_MSG={prompt}|QI_PROMPT=a b|QI_TITLE=it's" {
 		t.Errorf("env %q", env)
 	}
 	evil := "`touch x` $(touch x) \" ' done"
@@ -107,8 +107,8 @@ func TestRunQuiet(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "timed out") || time.Since(start) > 3*time.Second {
 		t.Errorf("timeout: %v after %s", err, time.Since(start))
 	}
-	if out, _ := runQuiet(`printf %s "$AICODE_BIN"`, "", nil, ""); out != mustExecutable(t) {
-		t.Errorf("AICODE_BIN = %q", out)
+	if out, _ := runQuiet(`printf %s "$QI_BIN"`, "", nil, ""); out != mustExecutable(t) {
+		t.Errorf("QI_BIN = %q", out)
 	}
 }
 

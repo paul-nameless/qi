@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/paul-nameless/aicode/internal/agent"
-	"github.com/paul-nameless/aicode/internal/config"
-	"github.com/paul-nameless/aicode/internal/tools"
-	"github.com/paul-nameless/aicode/internal/ui"
+	"github.com/paul-nameless/qi/internal/agent"
+	"github.com/paul-nameless/qi/internal/config"
+	"github.com/paul-nameless/qi/internal/tools"
+	"github.com/paul-nameless/qi/internal/ui"
 )
 
 func waitFile(t *testing.T, path string) string {
@@ -32,7 +32,7 @@ func TestNotifyTurn(t *testing.T) {
 	r.notifyTurn("no terminal", nil, time.Minute)
 	notifyAsync(cfg, r.agent.Cwd, turnMessage("it's done\nsecond line", nil, 2*time.Second), r.display)
 	got := waitFile(t, out)
-	want := "aicode · " + filepath.Base(r.agent.Cwd) + "|done in 2s: it's done second line\n"
+	want := "qi · " + filepath.Base(r.agent.Cwd) + "|done in 2s: it's done second line\n"
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}

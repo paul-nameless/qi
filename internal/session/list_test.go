@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/paul-nameless/aicode/internal/llm"
+	"github.com/paul-nameless/qi/internal/llm"
 )
 
 func answered(t *testing.T, cwd, kind string, prompts ...string) *Session {
@@ -22,7 +22,7 @@ func answered(t *testing.T, cwd, kind string, prompts ...string) *Session {
 }
 
 func TestList(t *testing.T) {
-	t.Setenv("AICODE_SESSION_DIR", t.TempDir())
+	t.Setenv("QI_SESSION_DIR", t.TempDir())
 	cwd := "/tmp/proj"
 	old := answered(t, cwd, "interactive", "<hook-context>x</hook-context>", "first real", "second")
 	newer := answered(t, cwd, "interactive", "newest")
@@ -44,7 +44,7 @@ func TestList(t *testing.T) {
 }
 
 func TestLoadDoesNotWrite(t *testing.T) {
-	t.Setenv("AICODE_SESSION_DIR", t.TempDir())
+	t.Setenv("QI_SESSION_DIR", t.TempDir())
 	s := answered(t, "/tmp/proj", "interactive", "hi")
 	f, _ := os.OpenFile(s.Path, os.O_APPEND|os.O_WRONLY, 0o600)
 	f.WriteString(`{"type":"message"`)

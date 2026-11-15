@@ -10,8 +10,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/paul-nameless/aicode/internal/llm"
-	"github.com/paul-nameless/aicode/internal/mcp"
+	"github.com/paul-nameless/qi/internal/llm"
+	"github.com/paul-nameless/qi/internal/mcp"
 )
 
 type toolSearchArgs struct {

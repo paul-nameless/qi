@@ -1,4 +1,4 @@
-aicode
+/qi
 *.log
 .*
 !.gitignore

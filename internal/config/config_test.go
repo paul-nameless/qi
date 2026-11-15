@@ -32,7 +32,7 @@ const sample = `{
 
 func TestProfiles(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("AICODE_CONFIG_DIR", dir)
+	t.Setenv("QI_CONFIG_DIR", dir)
 	path := filepath.Join(dir, "config.json")
 	os.WriteFile(path, []byte(sample), 0o600)
 	os.WriteFile(filepath.Join(dir, "legacy.json"), []byte(`{"model": "legacy-model", "provider": "claude"}`), 0o600)
@@ -84,7 +84,7 @@ func TestProfiles(t *testing.T) {
 
 func TestUseProviderBuiltinsResetConnection(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("AICODE_CONFIG_DIR", dir)
+	t.Setenv("QI_CONFIG_DIR", dir)
 	path := filepath.Join(dir, "config.json")
 	os.WriteFile(path, []byte(sample), 0o600)
 	c, err := Load(path, "smart")
@@ -104,7 +104,7 @@ func TestUseProviderBuiltinsResetConnection(t *testing.T) {
 
 func TestRuntimeBuiltinSwitchDropsOldKey(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("AICODE_CONFIG_DIR", dir)
+	t.Setenv("QI_CONFIG_DIR", dir)
 	path := filepath.Join(dir, "c.json")
 	os.WriteFile(path, []byte(`{"api": "anthropic", "api_key": "sk-ant"}`), 0o600)
 	c, err := Resolve(path, "", "openai", "", "")

@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/paul-nameless/aicode/internal/config"
-	"github.com/paul-nameless/aicode/internal/mcp/mcptest"
+	"github.com/paul-nameless/qi/internal/config"
+	"github.com/paul-nameless/qi/internal/mcp/mcptest"
 )
 
 func TestMain(m *testing.M) {

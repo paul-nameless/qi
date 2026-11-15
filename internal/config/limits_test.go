@@ -32,7 +32,7 @@ func TestParseThreshold(t *testing.T) {
 
 func TestThresholdJSON(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("AICODE_CONFIG_DIR", dir)
+	t.Setenv("QI_CONFIG_DIR", dir)
 	path := filepath.Join(dir, "config.json")
 	cfg := `{"compact_at": 120000, "compact_idle_at": "60k", "profiles": {"big": {"model": "some-model", "context_window": "2m", "compact_at": "50%"}, "num": {"context_window": 300000}}}`
 	if err := os.WriteFile(path, []byte(cfg), 0o600); err != nil {
@@ -59,7 +59,7 @@ func TestThresholdJSON(t *testing.T) {
 
 func TestThresholdJSONErrors(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("AICODE_CONFIG_DIR", dir)
+	t.Setenv("QI_CONFIG_DIR", dir)
 	path := filepath.Join(dir, "config.json")
 	cases := map[string][]string{
 		`{"compact_at": "lots"}`:                                     {"compact_at", "invalid token count"},

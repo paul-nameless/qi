@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/paul-nameless/aicode/internal/llm"
+	"github.com/paul-nameless/qi/internal/llm"
 )
 
 func call(id string) llm.Message {
@@ -53,7 +53,7 @@ func TestRepair(t *testing.T) {
 }
 
 func TestRoundTrip(t *testing.T) {
-	t.Setenv("AICODE_SESSION_DIR", t.TempDir())
+	t.Setenv("QI_SESSION_DIR", t.TempDir())
 	s, err := Create("/tmp/proj", "", "m", "interactive", false)
 	if err != nil {
 		t.Fatal(err)
@@ -94,7 +94,7 @@ func TestRoundTrip(t *testing.T) {
 }
 
 func TestLatestSkipsEmptySessions(t *testing.T) {
-	t.Setenv("AICODE_SESSION_DIR", t.TempDir())
+	t.Setenv("QI_SESSION_DIR", t.TempDir())
 	s1, _ := Create("/p", "", "m", "interactive", false)
 	s1.Message(llm.UserText("real work"), "m", nil)
 	s1.Message(llm.Message{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: "done"}}}, "m", nil)
@@ -117,7 +117,7 @@ func TestLatestSkipsEmptySessions(t *testing.T) {
 }
 
 func TestDropEntry(t *testing.T) {
-	t.Setenv("AICODE_SESSION_DIR", t.TempDir())
+	t.Setenv("QI_SESSION_DIR", t.TempDir())
 	s, _ := Create("/p", "", "m", "interactive", false)
 	s.Message(llm.UserText("keep"), "m", nil)
 	s.Message(llm.UserText("bad image prompt"), "m", nil)
@@ -139,7 +139,7 @@ func TestIDs(t *testing.T) {
 			t.Errorf("%q accepted", bad)
 		}
 	}
-	t.Setenv("AICODE_SESSION_DIR", t.TempDir())
+	t.Setenv("QI_SESSION_DIR", t.TempDir())
 	s, err := Create("/p", "MY-ID", "m", "interactive", false)
 	if err != nil || s.ID != "MY-ID" || s.Path != PathFor("/p", "MY-ID") {
 		t.Errorf("create with id: %+v %v", s, err)

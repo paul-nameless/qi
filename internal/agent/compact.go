@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/paul-nameless/aicode/internal/llm"
+	"github.com/paul-nameless/qi/internal/llm"
 )
 
 const (
@@ -33,7 +33,7 @@ Commands, test runs and their key results, with exact error messages.
 ## Next steps
 An ordered list of what to do next.
 
-Rules: this request comes from aicode, not from the user, so leave it out of the summary. Preserve exact file paths, symbols, commands, error strings and URLs. Keep what the user said close to their words; condense your own explanations to their conclusions. For each image or screenshot, record its path, what it showed and what was concluded from it, since the images themselves may not be kept. Leave out the system prompt, instruction files and tool descriptions; they are sent again. Be complete on the sections even at the cost of length; keep everything else short.`
+Rules: this request comes from qi, not from the user, so leave it out of the summary. Preserve exact file paths, symbols, commands, error strings and URLs. Keep what the user said close to their words; condense your own explanations to their conclusions. For each image or screenshot, record its path, what it showed and what was concluded from it, since the images themselves may not be kept. Leave out the system prompt, instruction files and tool descriptions; they are sent again. Be complete on the sections even at the cost of length; keep everything else short.`
 	keepTokens     = 20000
 	clipToolResult = 2000
 	clipText       = 8000
