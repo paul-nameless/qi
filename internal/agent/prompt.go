@@ -233,6 +233,12 @@ type SystemPrompt struct {
 	Sections []Section
 }
 
+func LoadPrompt(cwd string, cfg config.Config) ([]Skill, SystemPrompt) {
+	roots := ProjectRoots(cwd)
+	skills := LoadSkills(ExpandPaths(roots, cfg.SkillDirs))
+	return skills, BuildSystemPrompt(cwd, ExpandPaths(roots, cfg.InstructionFile), skills)
+}
+
 type promptBuilder struct {
 	b        strings.Builder
 	sections []Section

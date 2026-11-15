@@ -18,6 +18,7 @@ const helpText = `Commands:
   /help              this help
   /clear             start a new session
   /context           show what takes space in the context
+  /reload            re-read skills, commands and CLAUDE.md files (rebuilds the cached prompt)
   /compact [focus]   summarize the conversation to free context (optional focus for the summary)
   /model [name]      show or switch the model (switching loses the prompt cache)
   /profile [name]    show or switch the profile
@@ -52,6 +53,8 @@ func (r *repl) handleInput(line string) (string, bool) {
 		} else {
 			r.display.Info("new session " + r.agent.Session.ID)
 		}
+	case "reload":
+		r.reload()
 	case "context":
 		r.display.Info(r.agent.ContextReport())
 	case "compact":
@@ -102,6 +105,19 @@ func (r *repl) handleInput(line string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+func (r *repl) reload() {
+	before := r.agent.System
+	skills, sys := agent.LoadPrompt(r.agent.Cwd, r.agent.Cfg)
+	r.agent.SetSystem(sys)
+	r.skills = skills
+	r.commands = agent.LoadCommands(agent.ProjectRoots(r.agent.Cwd))
+	note := "unchanged"
+	if sys.Text != before {
+		note = "changed; the next request rewrites the prompt cache"
+	}
+	r.display.Info(fmt.Sprintf("reloaded %d skills, %d commands; system prompt %s · %s", len(skills), len(r.commands), note, r.agent.ContextUsage()))
 }
 
 func (r *repl) expand(name, args string) (string, error) {

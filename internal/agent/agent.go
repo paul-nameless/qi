@@ -93,6 +93,12 @@ func (a *Agent) Reconfigure(cfg config.Config, p llm.Provider) {
 	a.paused, a.thrashAt = false, 0
 }
 
+func (a *Agent) SetSystem(sp SystemPrompt) {
+	a.busy.Lock()
+	defer a.busy.Unlock()
+	a.System, a.StaticSystem, a.Sections = sp.Text, sp.Static, sp.Sections
+}
+
 func (a *Agent) SetEffort(effort string) {
 	a.busy.Lock()
 	defer a.busy.Unlock()

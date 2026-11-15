@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/paul-nameless/aicode/internal/config"
@@ -101,5 +102,25 @@ func TestSubagentModeIsFixedAtLaunch(t *testing.T) {
 	r.toggleMode()
 	if !runner.ReadOnly() {
 		t.Error("subagents launched after switching to read-only would not get -read-only")
+	}
+}
+
+func TestReloadRereadsInstructionsAndSkills(t *testing.T) {
+	dir := t.TempDir()
+	cfg := config.Config{Model: "m", InstructionFile: []string{"CLAUDE.md"}, SkillDirs: []string{".claude/skills"}}
+	a, runner, _ := buildAgent(cfg, options{}, dir, nopProvider{}, devNullPrinter(t), true, false)
+	a.Registry = tools.NewRegistry()
+	r := &repl{agent: a, display: devNullPrinter(t), runner: runner}
+	os.WriteFile(dir+"/CLAUDE.md", []byte("rule one"), 0o600)
+	r.reload()
+	if !strings.Contains(a.System, "rule one") || len(r.skills) != 0 {
+		t.Fatalf("first reload: skills %d, prompt %q", len(r.skills), a.System)
+	}
+	os.WriteFile(dir+"/CLAUDE.md", []byte("rule two"), 0o600)
+	os.MkdirAll(dir+"/.claude/skills/s", 0o755)
+	os.WriteFile(dir+"/.claude/skills/s/SKILL.md", []byte("---\nname: s\ndescription: does s\n---\nbody"), 0o600)
+	r.reload()
+	if !strings.Contains(a.System, "rule two") || strings.Contains(a.System, "rule one") || len(r.skills) != 1 || !strings.Contains(a.System, "- s: does s") {
+		t.Errorf("second reload: skills %d, prompt %q", len(r.skills), a.System)
 	}
 }
