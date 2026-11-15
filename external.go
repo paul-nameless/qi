@@ -275,7 +275,6 @@ func (r *repl) toolKeys() [][2]string {
 		{"history_picker", cfg.HistoryPicker},
 		{"session_picker", cfg.SessionPicker},
 		{"pager", cfg.Pager},
-		{"viewer", cfg.Viewer},
 		{"copy_cmd", cfg.CopyCmd},
 	}
 }

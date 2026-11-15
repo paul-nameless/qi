@@ -58,7 +58,7 @@ func renderBlock(b *strings.Builder, role string, blk llm.Block, resultLines int
 func indentResult(text string, max int) string {
 	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
 	more := 0
-	if len(lines) > max {
+	if max > 0 && len(lines) > max {
 		more = len(lines) - max
 		lines = lines[:max]
 	}

@@ -26,8 +26,6 @@ const helpText = `Commands:
   /compact [focus]   summarize the conversation to free context (optional focus for the summary)
   /resume [id]       switch to another session of this directory (picker without id)
   /history           open the whole conversation in the pager
-  /out               open the full output of the last cut-off tool result in the pager
-  /view              open the last answer in the viewer (rendered markdown)
   /copy [code]       copy the last answer (or its last code block) to the clipboard
   /model [name]      show or switch the model (switching loses the prompt cache)
   /profile [name]    show or switch the profile
@@ -77,10 +75,6 @@ func (r *repl) handleInput(line string) (string, bool) {
 		r.report(r.resume(args))
 	case "history":
 		r.report(r.showHistory())
-	case "out":
-		r.report(r.showOut())
-	case "view":
-		r.report(r.showAnswer())
 	case "copy":
 		r.report(r.copyAnswer(args))
 	case "compact":

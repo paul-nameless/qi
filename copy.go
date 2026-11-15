@@ -76,3 +76,12 @@ func (r *repl) copyAnswer(args string) error {
 	r.display.Info(fmt.Sprintf("copied %s (%d lines)", what, strings.Count(text, "\n")+1))
 	return nil
 }
+
+func lastAnswer(msgs []llm.Message) string {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if t := strings.TrimSpace(msgs[i].Text()); msgs[i].Role == "assistant" && t != "" {
+			return t
+		}
+	}
+	return ""
+}

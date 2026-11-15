@@ -7,91 +7,35 @@ import (
 	"testing"
 
 	"github.com/paul-nameless/aicode/internal/config"
-	"github.com/paul-nameless/aicode/internal/llm"
 	"github.com/paul-nameless/aicode/internal/session"
 )
-
-func toolResult(text string) llm.Message {
-	return llm.Message{Role: "user", Blocks: []llm.Block{{Type: llm.BlockToolResult, ToolUseID: "x", Text: text}}}
-}
-
-func TestLastSpill(t *testing.T) {
-	dir := "/cache/aicode/out"
-	msgs := []llm.Message{
-		toolResult("head\n… 9 lines omitted. Full output: /cache/aicode/out/1.txt\ntail"),
-		llm.UserText("Full output: /cache/aicode/out/text.txt"),
-		toolResult("Full output: /etc/passwd\n"),
-		toolResult("Full output: /cache/aicode/out/../../x.txt\n"),
-	}
-	if got := lastSpill(msgs, dir); got != "/cache/aicode/out/1.txt" {
-		t.Errorf("got %q", got)
-	}
-	if got := lastSpill(msgs[1:], dir); got != "" {
-		t.Errorf("paths outside the spill dir accepted: %q", got)
-	}
-}
 
 func TestPager(t *testing.T) {
 	t.Setenv("AICODE_SESSION_DIR", t.TempDir())
 	out := filepath.Join(t.TempDir(), "paged")
 	a := newTestAgent(t, config.Config{Pager: "cat > " + out})
-	a.Env.SpillDir = t.TempDir()
 	s := writeSession(t, a.Cwd, "hello pager")
 	cur, ld, err := session.Open(s.Path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	a.Load(cur, ld)
 	defer cur.Close()
+	a.Load(cur, ld)
 	r := &repl{agent: a, display: devNullPrinter(t)}
 	if err := r.showHistory(); err != nil {
 		t.Fatal(err)
 	}
-	if data, _ := os.ReadFile(out); !strings.Contains(string(data), "❯ hello pager") || !strings.Contains(string(data), "── compacted ──") {
-		t.Errorf("history: %q", data)
+	data, _ := os.ReadFile(out)
+	for _, want := range []string{"❯ hello pager", "── compacted ──", "    8\n"} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("history misses %q: %q", want, data)
+		}
 	}
-	if err := r.showOut(); err == nil {
-		t.Error("expected no cut-off output")
-	}
-	spill := filepath.Join(a.Env.SpillDir, "1.txt")
-	os.WriteFile(spill, []byte("full output"), 0o600)
-	a.Messages = append(a.Messages, toolResult("x\nFull output: "+spill+"\ny"))
-	a.Cfg.Pager = "cp {file} " + out
-	if err := r.showOut(); err != nil {
-		t.Fatal(err)
-	}
-	if data, _ := os.ReadFile(out); string(data) != "full output" {
-		t.Errorf("out: %q", data)
+	if strings.Contains(string(data), "more lines") {
+		t.Errorf("history cut a tool result: %q", data)
 	}
 	a.Cfg.Pager = "no-such-pager-xyz"
-	if err := r.showOut(); err == nil || !strings.Contains(err.Error(), "pager is off") {
+	if err := r.showHistory(); err == nil || !strings.Contains(err.Error(), "pager is off") {
 		t.Errorf("missing pager: %v", err)
-	}
-}
-
-func answer(text string) llm.Message {
-	return llm.Message{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: text}}}
-}
-
-func TestView(t *testing.T) {
-	out := filepath.Join(t.TempDir(), "viewed")
-	r := &repl{agent: newTestAgent(t, config.Config{Viewer: "cp {file} " + out + "; case {file} in *.md) ;; *) exit 1;; esac"}), display: devNullPrinter(t)}
-	if err := r.showAnswer(); err == nil {
-		t.Error("expected no answer")
-	}
-	r.agent.Messages = []llm.Message{answer("# old"), llm.UserText("q"), answer("# Title\n\n| a | b |"), toolResult("r"), {Role: "assistant"}}
-	if err := r.showAnswer(); err != nil {
-		t.Fatal(err)
-	}
-	if data, _ := os.ReadFile(out); string(data) != "# Title\n\n| a | b |\n" {
-		t.Errorf("viewed %q", data)
-	}
-	r.agent.Cfg.Viewer = "cat > " + out
-	r.agent.Messages = append(r.agent.Messages, answer("stdin mode"))
-	if err := r.showAnswer(); err != nil {
-		t.Fatal(err)
-	}
-	if data, _ := os.ReadFile(out); string(data) != "stdin mode\n" {
-		t.Errorf("stdin viewer %q", data)
 	}
 }

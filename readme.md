@@ -79,7 +79,7 @@ Compaction summarizes the conversation into a structured handoff (updated on lat
 
 Keys: shift+tab toggles read-only, ctrl+g edits the prompt in `$EDITOR`, ctrl+r searches prompt history, `@` picks files, alt+enter or ctrl+j inserts a newline, ctrl+c or esc cancels a turn. Text typed while the agent works is queued and delivered after the next tool results.
 
-Commands: `/help`, `/keys`, `/config`, `/clear`, `/context`, `/reload`, `/compact [focus]`, `/resume`, `/history`, `/out`, `/view`, `/copy`, `/model`, `/profile`, `/effort`, `/skills`, `/exit`, and `/<skill-or-command> [args]`. Typing `/` on an empty line opens a picker (fzf by default; set `picker:` in the config to use another command that reads `name<TAB>description` lines and prints the chosen one).
+Commands: `/help`, `/keys`, `/config`, `/clear`, `/context`, `/reload`, `/compact [focus]`, `/resume`, `/history`, `/copy`, `/model`, `/profile`, `/effort`, `/skills`, `/exit`, and `/<skill-or-command> [args]`. Typing `/` on an empty line opens a picker (fzf by default; set `picker:` in the config to use another command that reads `name<TAB>description` lines and prints the chosen one).
 
 ## External tools
 
@@ -89,6 +89,5 @@ UI features reuse CLI tools you already have. Each is a shell string in the conf
 - `file_picker` (default `{picker}`): typing `@` at the start of a word opens it with this directory's files on stdin and inserts the chosen paths. The list has git files first (tracked and untracked, shallowest first), then all other files including ignored ones, breadth-first so top-level files come before deep ones; `.git` is skipped and the list stops at 20000 files or 2 seconds of walking, so big trees like `node_modules` can't stall it (images become `[image N]`). Works with file managers too: `ranger --choosefile={file}`, `yazi --chooser-file={file}`, `nnn -p {file}`.
 - `history_picker` (default `{picker}`): ctrl+r picks a prompt from history (newest first) and puts it in the input line without sending it.
 - `session_picker` (default `{picker} --with-nth=2.. --nth=.. --preview '"$AICODE_BIN" -show {1}' --preview-window=right,60%`): `/resume` and `aicode -r` pick a session of this directory (newest first, with age, message count and first prompt) and switch to it. `$AICODE_BIN` is set to the running aicode binary for every tool; `aicode -show <id>` prints a session as plain text. The default uses fzf flags, so set it to `{picker}` with another picker.
-- `pager` (default `$PAGER`, else `less -R`): `/history` opens the whole conversation with tool calls, `/out` opens the full output of the last cut-off tool result.
-- `viewer` (default `glow`): `/view` prints the last answer rendered (markdown on stdin); use `glow -p {file}` to open it in a pager instead.
+- `pager` (default `$PAGER`, else `less -R`): `/history` opens the whole conversation with tool calls and their full results (as the model saw them; a long result shows the path of its full output).
 - `copy_cmd` (default `pbcopy` on macOS, `wl-copy` or `xclip -selection clipboard` on Linux): `/copy` copies the last answer, `/copy code` its last code block.

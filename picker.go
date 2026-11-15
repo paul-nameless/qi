@@ -102,8 +102,6 @@ var builtinCommands = []pickItem{
 	{"compact", "summarize the conversation to free context"},
 	{"resume", "switch to another session"},
 	{"history", "open the conversation in the pager"},
-	{"out", "open the last cut-off tool output in the pager"},
-	{"view", "open the last answer in the viewer"},
 	{"copy", "copy the last answer to the clipboard"},
 	{"model", "switch the model"},
 	{"profile", "switch the profile"},

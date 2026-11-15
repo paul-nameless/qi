@@ -69,3 +69,7 @@ func TestLastFence(t *testing.T) {
 		}
 	}
 }
+
+func answer(text string) llm.Message {
+	return llm.Message{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: text}}}
+}
