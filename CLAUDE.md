@@ -10,7 +10,7 @@ Minimal Go coding agent for the terminal (v2 rewrite). Plan: `docs/plans/aicode-
 - `internal/tools` registry with parallel execution, read/write/edit/bash/subagent, read-only allowlist, `files.go` tracks file mtimes so write refuses to overwrite a file changed since the model last read or wrote it (edit needs no guard: it only replaces exact text); it also snapshots files the model read or wrote, and the agent sends a diff of any outside change with the next tool results or user message; `image.go` scales images from read, paste and MCP to ≤1568px with a stdlib area-average resize, `read` takes `crop` for full-resolution regions
 - `internal/ui` termios, key decoder, line editor, printer with status line, `markdown.go` streaming markdown styling of answers (TTY only; `table.go` aligns tables, `width.go` display width)
 - `internal/session` append-only JSONL sessions; `Load`/`Entries` are read-only (`Open` repairs the file for appending), `List` summarizes a directory's sessions
-- `sessions.go` `/resume`, `-r`, `-show`; `render.go` renders a session as plain text (shared by `-show` and the pager)
+- `sessions.go` `/resume`, `-r`, `-show`; `render.go` renders a session as text (plain for `-show`, colored with `ui.Markdown` for the `/history` pager)
 - `internal/mcp` stdio MCP client (lazy start, tool search); exposed as `tool_search`/`mcp_call` in `internal/tools/mcp.go`
 
 ## Commands

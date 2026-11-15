@@ -1,13 +1,16 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/paul-nameless/aicode/internal/config"
+	"github.com/paul-nameless/aicode/internal/llm"
 	"github.com/paul-nameless/aicode/internal/session"
+	"github.com/paul-nameless/aicode/internal/ui"
 )
 
 func TestPager(t *testing.T) {
@@ -37,5 +40,25 @@ func TestPager(t *testing.T) {
 	a.Cfg.Pager = "no-such-pager-xyz"
 	if err := r.showHistory(); err == nil || !strings.Contains(err.Error(), "pager is off") {
 		t.Errorf("missing pager: %v", err)
+	}
+}
+
+func TestRenderColor(t *testing.T) {
+	msgs := []llm.Message{
+		llm.UserText("hi"),
+		{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: "a **bold** word"}, {Type: llm.BlockToolUse, Name: "bash", Input: json.RawMessage(`{"command":"ls"}`)}}},
+		{Role: "user", Blocks: []llm.Block{{Type: llm.BlockToolResult, Text: "one\n\x1b[31mtwo"}}},
+	}
+	got := renderTranscript(msgs, 0, 80)
+	for _, want := range []string{ui.Cyan + "❯ " + ui.Reset + "hi\n", ui.Bold + "bold", ui.Dim + "· bash {\"command\":\"ls\"}" + ui.Reset, ui.Dim + "    two" + ui.Reset} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in %q", want, got)
+		}
+	}
+	if strings.Contains(got, ui.Red) {
+		t.Errorf("tool output escapes kept: %q", got)
+	}
+	if plain := renderTranscript(msgs, 0, 0); strings.Contains(plain, "\x1b") {
+		t.Errorf("plain render has escapes: %q", plain)
 	}
 }

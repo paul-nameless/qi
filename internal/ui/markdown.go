@@ -329,3 +329,8 @@ func (m *markdown) endTable() {
 		m.table = nil
 	}
 }
+
+func Markdown(s string, width int) string {
+	m := markdown{width: width}
+	return m.feed(s) + m.flush()
+}

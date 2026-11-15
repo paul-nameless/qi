@@ -26,32 +26,62 @@ func transcript(entries []session.Entry) []llm.Message {
 	return msgs
 }
 
-func renderTranscript(msgs []llm.Message, resultLines int) string {
-	var b strings.Builder
-	for _, m := range msgs {
-		for _, blk := range m.Blocks {
-			renderBlock(&b, m.Role, blk, resultLines)
-		}
-	}
-	return strings.TrimLeft(ui.Sanitize(b.String()), "\n")
+type painter struct {
+	width int
 }
 
-func renderBlock(b *strings.Builder, role string, blk llm.Block, resultLines int) {
+func (p painter) paint(code, s string) string {
+	if p.width == 0 {
+		return s
+	}
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		if l != "" {
+			lines[i] = code + l + ui.Reset
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (p painter) markdown(s string) string {
+	if p.width == 0 {
+		return s + "\n"
+	}
+	out := ui.Markdown(s, p.width)
+	if !strings.HasSuffix(out, "\n") {
+		out += "\n"
+	}
+	return out
+}
+
+func renderTranscript(msgs []llm.Message, resultLines, width int) string {
+	var b strings.Builder
+	p := painter{width: width}
+	for _, m := range msgs {
+		for _, blk := range m.Blocks {
+			renderBlock(&b, p, m.Role, blk, resultLines)
+		}
+	}
+	return strings.TrimLeft(b.String(), "\n")
+}
+
+func renderBlock(b *strings.Builder, p painter, role string, blk llm.Block, resultLines int) {
+	text := strings.TrimSpace(ui.Sanitize(blk.Text))
 	switch {
 	case role == "compaction":
-		fmt.Fprintf(b, "\n── compacted ──\n%s\n", strings.TrimSpace(blk.Text))
+		fmt.Fprintf(b, "\n%s\n%s", p.paint(ui.Dim, "── compacted ──"), p.markdown(text))
 	case blk.Type == llm.BlockText && role == "user":
 		if session.IsPrompt(blk.Text) {
-			fmt.Fprintf(b, "\n❯ %s\n", strings.ReplaceAll(strings.TrimSpace(blk.Text), "\n", "\n  "))
+			fmt.Fprintf(b, "\n%s%s\n", p.paint(ui.Cyan, "❯ "), strings.ReplaceAll(text, "\n", "\n  "))
 		}
 	case blk.Type == llm.BlockText:
-		fmt.Fprintf(b, "%s\n", strings.TrimSpace(blk.Text))
+		b.WriteString(p.markdown(text))
 	case blk.Type == llm.BlockToolUse:
-		fmt.Fprintf(b, "· %s %s\n", blk.Name, tools.OneLine(string(blk.Input), 200))
+		b.WriteString(p.paint(ui.Dim, "· "+blk.Name+" "+ui.Sanitize(tools.OneLine(string(blk.Input), 200))) + "\n")
 	case blk.Type == llm.BlockToolResult:
-		b.WriteString(indentResult(blk.Text, resultLines))
+		b.WriteString(p.paint(ui.Dim, indentResult(ui.Sanitize(blk.Text), resultLines)))
 	case blk.Type == llm.BlockImage:
-		b.WriteString("[image]\n")
+		b.WriteString(p.paint(ui.Dim, "[image]") + "\n")
 	}
 }
 

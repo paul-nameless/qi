@@ -477,3 +477,7 @@ func truncateVisible(s string, width int) string {
 func VisibleLen(s string) int {
 	return displayWidth(stripANSI(s))
 }
+
+func (p *Printer) Width() int {
+	return p.width()
+}

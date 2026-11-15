@@ -122,6 +122,9 @@ func toolEnv(extra []string) []string {
 	if self, err := os.Executable(); err == nil {
 		env = append(env, "AICODE_BIN="+self)
 	}
+	if _, ok := os.LookupEnv("LESS"); !ok {
+		env = append(env, "LESS=-R")
+	}
 	return append(env, extra...)
 }
 

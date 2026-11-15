@@ -7,5 +7,9 @@ func (r *repl) showHistory() error {
 	if err != nil {
 		return err
 	}
-	return r.view("pager", r.agent.Cfg.Pager, renderTranscript(transcript(entries), 0), ".txt")
+	width := 0
+	if r.display.TTY {
+		width = r.display.Width()
+	}
+	return r.view("pager", r.agent.Cfg.Pager, renderTranscript(transcript(entries), 0, width), ".txt")
 }
