@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"image"
 	"image/png"
 	"os"
@@ -288,5 +289,15 @@ func TestNoSandboxWarning(t *testing.T) {
 	warnNoSandbox(display)
 	if got := out.String(); tools.HasSandbox() == strings.Contains(got, noSandboxNote) {
 		t.Errorf("sandbox %v, output %q", tools.HasSandbox(), got)
+	}
+}
+
+func TestBuildAgentSetsSubagentLabels(t *testing.T) {
+	_, runner := buildAgent(config.Config{Model: "m"}, options{}, t.TempDir(), nopProvider{}, devNullPrinter(t), true, false)
+	if got := runner.Label(llm.Block{Type: llm.BlockToolUse, Name: "bash", Input: json.RawMessage(`{"command":"ls"}`)}); got != "bash ls" {
+		t.Errorf("label %q", got)
+	}
+	if got := runner.Label(llm.Block{Type: llm.BlockToolUse, Name: "nope", Input: json.RawMessage(`{}`)}); got != "nope" {
+		t.Errorf("unknown tool label %q", got)
 	}
 }

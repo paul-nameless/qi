@@ -2,13 +2,16 @@ package agent
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/paul-nameless/qi/internal/config"
@@ -70,34 +73,33 @@ func (r *SubagentRunner) Run(parent context.Context, task tools.SubagentTask, pr
 	if err != nil {
 		return "", err
 	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return "", err
-	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return "", err
-	}
+	stdout, out := io.Pipe()
+	stderr := &lineTail{max: 20}
+	cmd.Stdout, cmd.Stderr = out, stderr
 	if err := cmd.Start(); err != nil {
 		return "", err
 	}
-	tail := make(chan []string, 1)
-	go func() { tail <- lastLines(stderr, 20) }()
-	answer, readErr := r.readEntries(stdout, progress)
-	lines := <-tail
-	if err := cmd.Wait(); err != nil {
-		if ctx.Err() != nil {
-			return "", ctx.Err()
-		}
-		return "", fmt.Errorf("%w\n%s", err, strings.Join(lines, "\n"))
+	read := make(chan entriesResult, 1)
+	go func() { read <- r.readEntries(stdout, progress) }()
+	waitErr := cmd.Wait()
+	out.Close()
+	res := <-read
+	switch {
+	case ctx.Err() != nil:
+		return "", ctx.Err()
+	case waitErr != nil && !errors.Is(waitErr, exec.ErrWaitDelay):
+		return "", fmt.Errorf("%w\n%s", waitErr, stderr.String())
+	case res.err != nil:
+		return "", fmt.Errorf("read subagent output: %w", res.err)
+	case res.answer == "":
+		return "(the subagent returned no answer)", nil
 	}
-	if readErr != nil {
-		return "", fmt.Errorf("read subagent output: %w", readErr)
-	}
-	if answer == "" {
-		answer = "(the subagent returned no answer)"
-	}
-	return answer, nil
+	return res.answer, nil
+}
+
+type entriesResult struct {
+	answer string
+	err    error
 }
 
 func (r *SubagentRunner) command(ctx context.Context, task tools.SubagentTask) (*exec.Cmd, error) {
@@ -119,7 +121,7 @@ func (r *SubagentRunner) command(ctx context.Context, task tools.SubagentTask) (
 	return cmd, nil
 }
 
-func (r *SubagentRunner) readEntries(rd io.Reader, progress func(string)) (string, error) {
+func (r *SubagentRunner) readEntries(rd io.Reader, progress func(string)) entriesResult {
 	sc := bufio.NewScanner(rd)
 	sc.Buffer(make([]byte, 1<<20), 256<<20)
 	answer := ""
@@ -137,21 +139,50 @@ func (r *SubagentRunner) readEntries(rd io.Reader, progress func(string)) (strin
 	if err != nil {
 		_, _ = io.Copy(io.Discard, rd)
 	}
-	return answer, err
+	return entriesResult{answer, err}
 }
 
-func lastLines(rd io.Reader, n int) []string {
-	var tail []string
-	sc := bufio.NewScanner(rd)
-	sc.Buffer(make([]byte, 64<<10), 4<<20)
-	for sc.Scan() {
-		if line := strings.TrimSpace(sc.Text()); line != "" {
-			tail = append(tail, line)
-			if len(tail) > n {
-				tail = tail[1:]
-			}
+type lineTail struct {
+	mu      sync.Mutex
+	max     int
+	lines   []string
+	partial []byte
+}
+
+func (t *lineTail) Write(p []byte) (int, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.partial = append(t.partial, p...)
+	for {
+		i := bytes.IndexByte(t.partial, '\n')
+		if i < 0 {
+			break
 		}
+		t.add(string(t.partial[:i]))
+		t.partial = t.partial[i+1:]
 	}
-	_, _ = io.Copy(io.Discard, rd)
-	return tail
+	if len(t.partial) > 64<<10 {
+		t.partial = t.partial[len(t.partial)-64<<10:]
+	}
+	return len(p), nil
+}
+
+func (t *lineTail) add(line string) {
+	if line = strings.TrimSpace(line); line == "" {
+		return
+	}
+	t.lines = append(t.lines, line)
+	if len(t.lines) > t.max {
+		t.lines = t.lines[1:]
+	}
+}
+
+func (t *lineTail) String() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	lines := t.lines
+	if rest := strings.TrimSpace(string(t.partial)); rest != "" {
+		lines = append(append([]string{}, lines...), rest)
+	}
+	return strings.Join(lines, "\n")
 }

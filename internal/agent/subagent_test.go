@@ -3,11 +3,14 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/paul-nameless/qi/internal/llm"
 	"github.com/paul-nameless/qi/internal/session"
@@ -69,5 +72,28 @@ func TestSubagentFailureKeepsStderrTail(t *testing.T) {
 	r.Exe = fakeChild(t, entryLines(t, session.Entry{Type: "meta"}), "", 0)
 	if answer, err := r.Run(context.Background(), tools.SubagentTask{Prompt: "x", Model: "m"}, func(string) {}); err != nil || answer != "(the subagent returned no answer)" {
 		t.Errorf("no answer: %q %v", answer, err)
+	}
+}
+
+func TestSubagentCancelWithGrandchildHoldingStdout(t *testing.T) {
+	if _, err := exec.LookPath("perl"); err != nil {
+		t.Skip("perl not installed")
+	}
+	dir := t.TempDir()
+	script := filepath.Join(dir, "qi")
+	body := "#!/bin/sh\nperl -MPOSIX -e 'fork and exit; POSIX::setsid(); sleep 30' &\necho started >&2\nexec sleep 30\n"
+	if err := os.WriteFile(script, []byte(body), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	r := &SubagentRunner{ReadOnly: func() bool { return false }, Label: func(b llm.Block) string { return b.Name }, Cwd: dir, Exe: script}
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(200*time.Millisecond, cancel)
+	start := time.Now()
+	_, err := r.Run(ctx, tools.SubagentTask{Prompt: "x", Model: "m"}, func(string) {})
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("err %v", err)
+	}
+	if d := time.Since(start); d > subagentGrace+3*time.Second {
+		t.Errorf("cancel took %v", d)
 	}
 }
