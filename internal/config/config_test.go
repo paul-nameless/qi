@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -153,5 +154,32 @@ func TestXDGDirs(t *testing.T) {
 		if got := DataDir(); got != c.data {
 			t.Errorf("%+v: DataDir() = %q", c, got)
 		}
+	}
+}
+
+func TestEnvKeyFollowsHost(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "oa")
+	t.Setenv("OPENROUTER_API_KEY", "or")
+	t.Setenv("ANTHROPIC_API_KEY", "an")
+	cases := []struct {
+		cfg  Config
+		want string
+	}{
+		{Config{API: "anthropic", BaseURL: "https://api.anthropic.com"}, "an"},
+		{Config{BaseURL: "https://openrouter.ai/api/v1"}, "or"},
+		{Config{BaseURL: "https://eu.openrouter.ai/api/v1"}, "or"},
+		{Config{BaseURL: "https://evil.example/openrouter.ai/v1"}, "oa"},
+		{Config{BaseURL: "https://openrouter.ai.evil.example/v1"}, "oa"},
+		{Config{BaseURL: "http://localhost:8080/v1"}, "oa"},
+		{Config{}, "oa"},
+	}
+	for _, c := range cases {
+		if got, err := c.cfg.ResolveAPIKey(); err != nil || got != c.want {
+			t.Errorf("%+v: %q %v", c.cfg.BaseURL, got, err)
+		}
+	}
+	t.Setenv("OPENAI_API_KEY", "")
+	if _, err := (Config{BaseURL: "http://localhost:8080/v1"}).ResolveAPIKey(); err == nil || !strings.Contains(err.Error(), "OPENAI_API_KEY") {
+		t.Errorf("OpenRouter key sent to another host: %v", err)
 	}
 }

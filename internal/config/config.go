@@ -4,6 +4,7 @@ import (
 	"encoding/json/jsontext"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -466,21 +467,30 @@ func (c Config) ResolveAPIKey() (string, error) {
 		}
 		return key, nil
 	}
-	var envs []string
+	env := c.keyEnv()
+	if v := os.Getenv(env); v != "" {
+		return v, nil
+	}
+	return "", fmt.Errorf("no API key: set api_key_shell in %s or %s", ShortHome(DefaultPath()), env)
+}
+
+func (c Config) keyEnv() string {
 	switch {
 	case c.API == "anthropic":
-		envs = []string{"ANTHROPIC_API_KEY"}
-	case strings.Contains(c.BaseURL, "openrouter"):
-		envs = []string{"OPENROUTER_API_KEY", "OPENAI_API_KEY"}
-	default:
-		envs = []string{"OPENAI_API_KEY", "OPENROUTER_API_KEY"}
+		return "ANTHROPIC_API_KEY"
+	case isOpenRouter(c.BaseURL):
+		return "OPENROUTER_API_KEY"
 	}
-	for _, e := range envs {
-		if v := os.Getenv(e); v != "" {
-			return v, nil
-		}
+	return "OPENAI_API_KEY"
+}
+
+func isOpenRouter(baseURL string) bool {
+	u, err := url.Parse(baseURL)
+	if err != nil {
+		return false
 	}
-	return "", fmt.Errorf("no API key: set api_key_shell in %s or %s", ShortHome(DefaultPath()), strings.Join(envs, "/"))
+	host := strings.ToLower(u.Hostname())
+	return host == "openrouter.ai" || strings.HasSuffix(host, ".openrouter.ai")
 }
 
 func (c *Config) DefaultCacheTTL(headless bool) {

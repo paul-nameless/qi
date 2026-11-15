@@ -27,7 +27,7 @@
       "type": "string"
     },
     "api_key": {
-      "description": "Literal API key. Prefer api_key_shell so the key stays out of the file. Without either, the key comes from OPENROUTER_API_KEY, OPENAI_API_KEY or ANTHROPIC_API_KEY.",
+      "description": "Literal API key. Prefer api_key_shell so the key stays out of the file. Without either, the key comes from ANTHROPIC_API_KEY (api anthropic), OPENROUTER_API_KEY (only for an openrouter.ai base_url) or OPENAI_API_KEY (any other host).",
       "type": "string"
     },
     "api_key_shell": {
