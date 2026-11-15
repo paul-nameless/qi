@@ -87,6 +87,7 @@ qi                             # interactive
 qi -c                          # continue the last session here
 qi -r [id]                     # pick a session to resume, or resume <id>
 qi -q "fix the failing test"   # one prompt, answer on stdout
+qi -q "list files" -json       # stream the session entries (meta, message, compaction, drop) as JSON lines on stdout
 git diff | qi -q "review this"
 ```
 

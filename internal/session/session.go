@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -40,6 +41,7 @@ type Session struct {
 	ID   string
 	mu   sync.Mutex
 	f    *os.File
+	tee  io.Writer
 	last string
 }
 
@@ -115,6 +117,7 @@ type CreateOptions struct {
 	Model    string
 	Kind     Kind
 	Subagent bool
+	Tee      io.Writer
 }
 
 func Create(o CreateOptions) (*Session, error) {
@@ -134,7 +137,7 @@ func Create(o CreateOptions) (*Session, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create session file: %w", err)
 	}
-	s := &Session{Path: path, ID: id, f: f}
+	s := &Session{Path: path, ID: id, f: f, tee: o.Tee}
 	if err := s.write(Entry{Type: "meta", Version: Version, Cwd: o.Cwd, Model: o.Model, Kind: o.Kind}); err != nil {
 		f.Close()
 		return nil, err
@@ -344,11 +347,23 @@ func (s *Session) write(e Entry) error {
 	if err != nil {
 		return fmt.Errorf("encode session entry: %w", err)
 	}
-	if _, err := s.f.Write(append(data, '\n')); err != nil {
+	line := append(data, '\n')
+	if _, err := s.f.Write(line); err != nil {
 		return fmt.Errorf("write session: %w", err)
 	}
 	s.last = e.ID
+	if s.tee != nil {
+		if _, err := s.tee.Write(line); err != nil {
+			return fmt.Errorf("write session to stdout: %w", err)
+		}
+	}
 	return nil
+}
+
+func (s *Session) SetTee(w io.Writer) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.tee = w
 }
 
 func (s *Session) Message(m llm.Message, model string, u *llm.Usage) error {

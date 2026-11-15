@@ -417,3 +417,25 @@ func TestQueuedPromptHookDoesNotBlockKeys(t *testing.T) {
 		t.Error("turn not cancelled")
 	}
 }
+
+func TestHeadlessJSONStreamsSessionEntries(t *testing.T) {
+	srv := headlessServer(t)
+	path := headlessConfig(t, srv.URL)
+	var err error
+	stdout := withStdio(t, func() { err = run(options{query: "say ok", configPath: path, json: true}) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, _ := filepath.Glob(filepath.Join(os.Getenv("QI_SESSION_DIR"), "*", "*.jsonl"))
+	if len(files) != 1 {
+		t.Fatalf("session files %v", files)
+	}
+	data, _ := os.ReadFile(files[0])
+	if stdout != string(data) {
+		t.Errorf("stdout differs from the session file:\nstdout %s\nfile   %s", stdout, data)
+	}
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	if len(lines) != 3 || !strings.HasPrefix(lines[0], `{"type":"meta"`) || !strings.Contains(lines[2], `"role":"assistant"`) || strings.Contains(stdout, "\nok\n") {
+		t.Errorf("stream:\n%s", stdout)
+	}
+}

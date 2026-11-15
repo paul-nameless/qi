@@ -65,7 +65,7 @@ func readStdin(wait bool) string {
 	return string(head) + string(rest)
 }
 
-func runHeadless(a *agent.Agent, display *ui.Printer, hooks *agent.Hooks, prompt string) error {
+func runHeadless(a *agent.Agent, display *ui.Printer, hooks *agent.Hooks, prompt string, jsonOut bool) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	sig := make(chan os.Signal, 1)
@@ -81,7 +81,7 @@ func runHeadless(a *agent.Agent, display *ui.Printer, hooks *agent.Hooks, prompt
 	final, stats, err := a.Turn(ctx, blocks)
 	display.EndBlock()
 	display.Info(stats.String(a.ContextShort()) + " · " + resourceUsage())
-	if err != nil {
+	if err != nil || jsonOut {
 		return err
 	}
 	fmt.Println(final)

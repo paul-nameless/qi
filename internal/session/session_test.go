@@ -1,6 +1,7 @@
 package session
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -188,5 +189,34 @@ func TestSessionDirFollowsXDGDataHome(t *testing.T) {
 	t.Setenv("QI_SESSION_DIR", "/s")
 	if got := Dir("/p"); got != "/s/-p" {
 		t.Errorf("QI_SESSION_DIR does not win: %q", got)
+	}
+}
+
+func TestTeeMatchesFile(t *testing.T) {
+	t.Setenv("QI_SESSION_DIR", t.TempDir())
+	var out bytes.Buffer
+	s, err := Create(CreateOptions{Cwd: "/p", Model: "m", Kind: Headless, Tee: &out})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Message(llm.UserText("hi"), "m", nil)
+	s.Drop()
+	s.Compaction("sum", nil, "m")
+	s.Close()
+	data, err := os.ReadFile(s.Path)
+	if err != nil || !bytes.Equal(data, out.Bytes()) || bytes.Count(data, []byte("\n")) != 4 {
+		t.Errorf("tee differs from the file:\nfile %s\ntee  %s", data, out.Bytes())
+	}
+	r, _, err := Open(s.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var later bytes.Buffer
+	r.SetTee(&later)
+	r.Message(llm.UserText("again"), "m", nil)
+	r.Close()
+	data, _ = os.ReadFile(s.Path)
+	if !bytes.HasSuffix(data, later.Bytes()) || bytes.Count(later.Bytes(), []byte("\n")) != 1 {
+		t.Errorf("tee after open: %s", later.Bytes())
 	}
 }

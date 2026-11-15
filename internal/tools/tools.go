@@ -213,6 +213,10 @@ func (r *Registry) runOne(ctx context.Context, env *Env, call llm.Block, ui UI) 
 	return llm.Block{Type: llm.BlockToolResult, ToolUseID: call.ID, Text: res.Text, IsError: res.IsError, Images: res.Images}
 }
 
+func (r *Registry) Label(env *Env, call llm.Block) string {
+	return toolLabel(r.byKey[call.Name], env, call)
+}
+
 func toolLabel(t *Tool, env *Env, call llm.Block) (label string) {
 	label = call.Name
 	defer func() {

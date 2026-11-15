@@ -2,16 +2,19 @@ package agent
 
 import (
 	"bufio"
-	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
 	"time"
 
 	"github.com/paul-nameless/qi/internal/config"
+	"github.com/paul-nameless/qi/internal/llm"
 	"github.com/paul-nameless/qi/internal/proc"
+	"github.com/paul-nameless/qi/internal/session"
 	"github.com/paul-nameless/qi/internal/tools"
 )
 
@@ -24,6 +27,8 @@ type SubagentRunner struct {
 	ReadOnly   func() bool
 	Cwd        string
 	MCP        map[string]config.MCPServer
+	Label      func(llm.Block) string
+	Exe        string
 }
 
 func (r *SubagentRunner) Env() ([]string, error) {
@@ -35,7 +40,7 @@ func (r *SubagentRunner) Env() ([]string, error) {
 }
 
 func (r *SubagentRunner) args(task tools.SubagentTask) []string {
-	args := []string{"-q", task.Prompt, "-model", task.Model}
+	args := []string{"-q", task.Prompt, "-json", "-model", task.Model}
 	provider := task.Provider
 	if provider == "" {
 		provider = r.Provider
@@ -61,20 +66,14 @@ func (r *SubagentRunner) args(task tools.SubagentTask) []string {
 func (r *SubagentRunner) Run(parent context.Context, task tools.SubagentTask, progress func(string)) (string, error) {
 	ctx, cancel := context.WithTimeout(parent, 30*time.Minute)
 	defer cancel()
-	exe, err := os.Executable()
+	cmd, err := r.command(ctx, task)
 	if err != nil {
 		return "", err
 	}
-	env, err := r.Env()
+	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return "", err
 	}
-	cmd := exec.CommandContext(ctx, exe, r.args(task)...)
-	cmd.Dir = r.Cwd
-	cmd.Env = env
-	proc.Setup(cmd, proc.Session, subagentGrace)
-	var stdout bytes.Buffer
-	cmd.Stdout = &stdout
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		return "", err
@@ -82,33 +81,84 @@ func (r *SubagentRunner) Run(parent context.Context, task tools.SubagentTask, pr
 	if err := cmd.Start(); err != nil {
 		return "", err
 	}
-	var tail []string
-	sc := bufio.NewScanner(stderr)
-	sc.Buffer(make([]byte, 64<<10), 4<<20)
-	for sc.Scan() {
-		line := strings.TrimSpace(sc.Text())
-		if line == "" {
-			continue
-		}
-		progress(line)
-		tail = append(tail, line)
-		if len(tail) > 20 {
-			tail = tail[1:]
-		}
-	}
-	scanErr := sc.Err()
+	tail := make(chan []string, 1)
+	go func() { tail <- lastLines(stderr, 20) }()
+	answer, readErr := r.readEntries(stdout, progress)
+	lines := <-tail
 	if err := cmd.Wait(); err != nil {
 		if ctx.Err() != nil {
 			return "", ctx.Err()
 		}
-		return "", fmt.Errorf("%w\n%s", err, strings.Join(tail, "\n"))
+		return "", fmt.Errorf("%w\n%s", err, strings.Join(lines, "\n"))
 	}
-	if scanErr != nil {
-		return "", fmt.Errorf("read subagent output: %w", scanErr)
+	if readErr != nil {
+		return "", fmt.Errorf("read subagent output: %w", readErr)
 	}
-	answer := strings.TrimSpace(stdout.String())
 	if answer == "" {
 		answer = "(the subagent returned no answer)"
 	}
 	return answer, nil
+}
+
+func (r *SubagentRunner) command(ctx context.Context, task tools.SubagentTask) (*exec.Cmd, error) {
+	exe := r.Exe
+	if exe == "" {
+		var err error
+		if exe, err = os.Executable(); err != nil {
+			return nil, err
+		}
+	}
+	env, err := r.Env()
+	if err != nil {
+		return nil, err
+	}
+	cmd := exec.CommandContext(ctx, exe, r.args(task)...)
+	cmd.Dir = r.Cwd
+	cmd.Env = env
+	proc.Setup(cmd, proc.Session, subagentGrace)
+	return cmd, nil
+}
+
+func (r *SubagentRunner) readEntries(rd io.Reader, progress func(string)) (string, error) {
+	sc := bufio.NewScanner(rd)
+	sc.Buffer(make([]byte, 1<<20), 256<<20)
+	answer := ""
+	for sc.Scan() {
+		var e session.Entry
+		if json.Unmarshal(sc.Bytes(), &e) != nil || e.Type != "message" || e.Message == nil || e.Message.Role != llm.RoleAssistant {
+			continue
+		}
+		for _, call := range e.Message.ToolUses() {
+			progress(r.label(call))
+		}
+		answer = strings.TrimSpace(e.Message.Text())
+	}
+	err := sc.Err()
+	if err != nil {
+		_, _ = io.Copy(io.Discard, rd)
+	}
+	return answer, err
+}
+
+func (r *SubagentRunner) label(call llm.Block) string {
+	if r.Label == nil {
+		return call.Name
+	}
+	return r.Label(call)
+}
+
+func lastLines(rd io.Reader, n int) []string {
+	var tail []string
+	sc := bufio.NewScanner(rd)
+	sc.Buffer(make([]byte, 64<<10), 4<<20)
+	for sc.Scan() {
+		if line := strings.TrimSpace(sc.Text()); line != "" {
+			tail = append(tail, line)
+			if len(tail) > n {
+				tail = tail[1:]
+			}
+		}
+	}
+	_, _ = io.Copy(io.Discard, rd)
+	return tail
 }

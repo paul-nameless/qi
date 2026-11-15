@@ -27,6 +27,7 @@ type options struct {
 	sessionID   string
 	pickSession bool
 	resumeID    string
+	json        bool
 	version     string
 }
 
@@ -46,6 +47,9 @@ func run(o options) error {
 	stdinPiped := stdinHasData()
 	headless := o.query != "" || stdinPiped || !ui.IsTerminal(os.Stdin)
 	isSub := os.Getenv("QI_SUBAGENT") != ""
+	if o.json && !headless {
+		return errors.New("-json works only with -q or piped stdin")
+	}
 
 	var display *ui.Printer
 	if headless {
@@ -99,7 +103,7 @@ func run(o options) error {
 		if err != nil {
 			return err
 		}
-		return runHeadless(a, display, hooks, prompt)
+		return runHeadless(a, display, hooks, prompt, o.json)
 	}
 	r := &repl{agent: a, display: display, skills: skills, commands: agent.LoadCommands(roots), hooks: hooks, runner: runner, opts: o, mcp: manager}
 	return r.run()
@@ -139,6 +143,9 @@ func openSession(a *agent.Agent, o options, cfg config.Config, cwd, resume strin
 		if err != nil {
 			return err
 		}
+		if o.json {
+			s.SetTee(os.Stdout)
+		}
 		a.Load(s, ld)
 		return nil
 	}
@@ -146,7 +153,11 @@ func openSession(a *agent.Agent, o options, cfg config.Config, cwd, resume strin
 	if headless {
 		kind = session.Headless
 	}
-	s, err := session.Create(session.CreateOptions{Cwd: cwd, ID: o.sessionID, Model: cfg.Model, Kind: kind, Subagent: isSub})
+	opts := session.CreateOptions{Cwd: cwd, ID: o.sessionID, Model: cfg.Model, Kind: kind, Subagent: isSub}
+	if o.json {
+		opts.Tee = os.Stdout
+	}
+	s, err := session.Create(opts)
 	if err != nil {
 		return err
 	}
@@ -215,8 +226,15 @@ func buildAgent(cfg config.Config, o options, cwd string, p llm.Provider, displa
 	a := agent.New(opts)
 	if runner != nil {
 		runner.ReadOnly = a.ReadOnly
+		runner.Label = toolLabels(cwd, opts.Tools)
 	}
 	return a, runner
+}
+
+func toolLabels(cwd string, toolset []*tools.Tool) func(llm.Block) string {
+	labels := tools.NewRegistry(toolset...)
+	env := &tools.Env{Cwd: cwd}
+	return func(call llm.Block) string { return labels.Label(env, call) }
 }
 
 func newProvider(cfg config.Config, key string) llm.Provider {
