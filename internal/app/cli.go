@@ -53,8 +53,29 @@ func exitCode(err error) int {
 func parseArgs(args []string, out io.Writer) (cliArgs, error) {
 	var c cliArgs
 	fs := newFlagSet(&c, out)
-	err := fs.Parse(args)
-	return c, err
+	if err := fs.Parse(args); err != nil {
+		return c, err
+	}
+	if c.opts.pickSession && c.opts.resumeID == "" && fs.NArg() > 0 {
+		c.opts.resumeID = fs.Arg(0)
+		if err := fs.Parse(fs.Args()[1:]); err != nil {
+			return c, err
+		}
+	}
+	return c, nil
+}
+
+type resumeFlag struct{ o *options }
+
+func (f resumeFlag) String() string   { return "" }
+func (f resumeFlag) IsBoolFlag() bool { return true }
+
+func (f resumeFlag) Set(v string) error {
+	f.o.pickSession = true
+	if v != "true" {
+		f.o.resumeID = v
+	}
+	return nil
 }
 
 func newFlagSet(c *cliArgs, out io.Writer) *flag.FlagSet {
@@ -70,13 +91,19 @@ func newFlagSet(c *cliArgs, out io.Writer) *flag.FlagSet {
 	fs.StringVar(&o.effort, "effort", "", "reasoning `effort` override")
 	fs.BoolVar(&o.readOnly, "read-only", false, "start in read-only mode")
 	fs.StringVar(&o.sessionID, "session-id", "", "use this session `id`: continues it if it exists, creates it otherwise")
-	fs.BoolVar(&o.pickSession, "r", false, "pick a session of this directory to resume")
+	fs.Var(resumeFlag{o}, "r", "pick a session of this directory to resume, or resume <id>")
 	fs.StringVar(&c.show, "show", "", "print a `session` of this directory (id or path) as plain text and exit")
 	fs.BoolVar(&c.showVersion, "version", false, "print version")
+	fs.BoolVar(&c.showVersion, "v", false, "print version")
 	fs.BoolVar(&c.checkConfig, "check-config", false, "load the config and every profile without calling any API, then exit")
 	fs.Usage = func() { usage(fs) }
 	return fs
 }
+
+var (
+	flagAliases  = map[string]string{"v": "version"}
+	optionalArgs = map[string]string{"r": "[id]"}
+)
 
 func usage(fs *flag.FlagSet) {
 	out := fs.Output()
@@ -84,8 +111,19 @@ func usage(fs *flag.FlagSet) {
 	var rows [][2]string
 	width := 0
 	fs.VisitAll(func(f *flag.Flag) {
+		if _, alias := flagAliases[f.Name]; alias {
+			return
+		}
 		arg, help := flag.UnquoteUsage(f)
+		if opt, ok := optionalArgs[f.Name]; ok {
+			arg = opt
+		}
 		name := "-" + f.Name
+		for short, long := range flagAliases {
+			if long == f.Name {
+				name = "-" + short + ", " + name
+			}
+		}
 		if arg != "" {
 			name += " " + arg
 		}

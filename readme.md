@@ -85,7 +85,7 @@ The agent finds MCP tools with `tool_search` and calls them with `mcp_call`, so 
 ```bash
 qi                             # interactive
 qi -c                          # continue the last session here
-qi -r                          # pick a session to resume
+qi -r [id]                     # pick a session to resume, or resume <id>
 qi -q "fix the failing test"   # one prompt, answer on stdout
 git diff | qi -q "review this"
 ```

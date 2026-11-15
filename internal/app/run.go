@@ -26,6 +26,7 @@ type options struct {
 	readOnly    bool
 	sessionID   string
 	pickSession bool
+	resumeID    string
 	version     string
 }
 
@@ -116,6 +117,9 @@ func resumePath(o options, cfg config.Config, cwd string, headless bool) (string
 		}
 	case o.cont:
 		path, err := session.Latest(cwd, !headless)
+		return path, false, err
+	case o.pickSession && o.resumeID != "":
+		path, err := sessionPath(cwd, o.resumeID)
 		return path, false, err
 	case o.pickSession:
 		if headless {
