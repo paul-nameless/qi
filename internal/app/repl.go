@@ -73,6 +73,7 @@ func (r *repl) run() error {
 	}
 	r.term = t
 	defer t.Restore()
+	ui.OnCrash(r.closeResources)
 	defer ui.CleanupOnPanic()
 	hist := filepath.Join(config.Home(), ".local", "share", "qi", "history")
 	r.editor = ui.NewEditor(t, r.display, hist)
@@ -210,18 +211,54 @@ func (r *repl) cancelTurn() bool {
 }
 
 func (r *repl) shutdown() {
-	r.stopIdle()
-	r.mu.Lock()
-	done := r.turnDone
-	r.mu.Unlock()
-	if r.cancelTurn() && done != nil {
-		select {
-		case <-done:
-		case <-time.After(3 * time.Second):
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		r.quit()
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		if r.term != nil {
+			r.term.Restore()
 		}
 	}
-	r.term.Restore()
 	os.Exit(1)
+}
+
+func (r *repl) quit() {
+	r.settle(3 * time.Second)
+	r.closeResources()
+	if r.term != nil {
+		r.term.Restore()
+	}
+}
+
+func (r *repl) settle(limit time.Duration) {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		r.stopIdle()
+		r.mu.Lock()
+		turnDone := r.turnDone
+		r.mu.Unlock()
+		if r.cancelTurn() && turnDone != nil {
+			<-turnDone
+		}
+	}()
+	select {
+	case <-done:
+	case <-time.After(limit):
+	}
+}
+
+func (r *repl) closeResources() {
+	if r.mcp != nil {
+		r.mcp.Close()
+	}
+	if r.agent.Session != nil {
+		r.agent.Session.Close()
+	}
 }
 
 func (r *repl) cancellable(fn func(ctx context.Context) error) error {

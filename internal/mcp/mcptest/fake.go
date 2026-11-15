@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
+	"time"
 )
 
 const Env = "FAKE_MCP"
@@ -16,6 +19,10 @@ const Env = "FAKE_MCP"
 const CallLogEnv = "FAKE_MCP_CALLS"
 
 const BulkEnv = "FAKE_MCP_BULK"
+
+const PidEnv = "FAKE_MCP_PID"
+
+const LingerEnv = "FAKE_MCP_LINGER"
 
 var page1 = []string{"list_issues", "get_issue", "delete_issue"}
 
@@ -35,6 +42,10 @@ type request struct {
 }
 
 func Serve(in io.Reader, w io.Writer) {
+	if p := os.Getenv(PidEnv); p != "" {
+		_ = os.WriteFile(p, []byte(strconv.Itoa(os.Getpid())), 0o600)
+	}
+	defer linger()
 	sc := bufio.NewScanner(in)
 	out := json.NewEncoder(w)
 	for sc.Scan() {
@@ -46,6 +57,13 @@ func Serve(in io.Reader, w io.Writer) {
 			_ = out.Encode(map[string]any{"jsonrpc": "2.0", "id": 99, "method": "roots/list"})
 		}
 		_ = out.Encode(respond(req))
+	}
+}
+
+func linger() {
+	if os.Getenv(LingerEnv) != "" {
+		signal.Ignore(syscall.SIGTERM, syscall.SIGHUP, syscall.SIGINT)
+		time.Sleep(time.Hour)
 	}
 }
 
