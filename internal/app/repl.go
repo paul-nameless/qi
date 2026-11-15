@@ -110,6 +110,7 @@ func (r *repl) run() error {
 		r.editor.OnAt = r.filePicker
 	}
 	r.handleSignals()
+	r.handleResize()
 	r.banner()
 	if r.agent.ReadOnly() {
 		warnNoSandbox(r.display)
@@ -239,6 +240,17 @@ func (r *repl) handleSignals() {
 			default:
 				r.shutdown()
 			}
+		}
+	}()
+}
+
+func (r *repl) handleResize() {
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, syscall.SIGWINCH)
+	go func() {
+		defer ui.CleanupOnPanic()
+		for range ch {
+			r.display.Redraw()
 		}
 	}()
 }

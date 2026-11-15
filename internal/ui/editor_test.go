@@ -103,6 +103,15 @@ func TestEditorApply(t *testing.T) {
 		{"kill word", "foo bar.baz", 11, Key{Kind: KeyKillWord}, "foo bar.", 8},
 		{"kill word over spaces", "foo bar  ", 9, Key{Kind: KeyKillWord}, "foo ", 4},
 		{"esc clears", "foo", 2, Key{Kind: KeyEsc}, "", 0},
+		{"left across newline", "ab\ncd", 3, Key{Kind: KeyLeft}, "ab\ncd", 2},
+		{"right across newline", "ab\ncd", 2, Key{Kind: KeyRight}, "ab\ncd", 3},
+		{"home on second line", "ab\ncd", 4, Key{Kind: KeyHome}, "ab\ncd", 3},
+		{"end on first line", "ab\ncd", 0, Key{Kind: KeyEnd}, "ab\ncd", 2},
+		{"up to previous row", "ab\ncd", 4, Key{Kind: KeyUp}, "ab\ncd", 1},
+		{"down to next row", "ab\ncd", 1, Key{Kind: KeyDown}, "ab\ncd", 4},
+		{"word left across newline", "foo\nbar", 4, Key{Kind: KeyWordLeft}, "foo\nbar", 0},
+		{"word right across newline", "foo\nbar", 3, Key{Kind: KeyWordRight}, "foo\nbar", 7},
+		{"kill word across newline", "foo\nbar", 4, Key{Kind: KeyKillWord}, "bar", 0},
 		{"unknown key ignored", "foo", 1, Key{Kind: KeyClear}, "foo", 1},
 	}
 	for _, c := range cases {
@@ -136,6 +145,35 @@ func TestEditorHistoryKeepsDraft(t *testing.T) {
 		e.apply(st, Key{Kind: s.key}, &idx, &draft)
 		if string(st.buf) != s.want || idx != s.idx || st.pos != len(st.buf) {
 			t.Errorf("step %d: buf %q idx %d pos %d, want %q idx %d", i, string(st.buf), idx, st.pos, s.want, s.idx)
+		}
+	}
+}
+
+func TestEditorRowsThenHistory(t *testing.T) {
+	e := testEditor(t)
+	e.history = []string{"a", "b\nc"}
+	st := &lineState{buf: []rune("x\ny"), pos: 3}
+	idx, draft := len(e.history), ""
+	steps := []struct {
+		key      KeyKind
+		want     string
+		pos, idx int
+	}{
+		{KeyUp, "x\ny", 1, 2},
+		{KeyUp, "b\nc", 3, 1},
+		{KeyUp, "b\nc", 1, 1},
+		{KeyUp, "a", 1, 0},
+		{KeyUp, "a", 1, 0},
+		{KeyDown, "b\nc", 3, 1},
+		{KeyDown, "x\ny", 3, 2},
+		{KeyUp, "x\ny", 1, 2},
+		{KeyDown, "x\ny", 3, 2},
+		{KeyDown, "x\ny", 3, 2},
+	}
+	for i, s := range steps {
+		e.apply(st, Key{Kind: s.key}, &idx, &draft)
+		if string(st.buf) != s.want || idx != s.idx || st.pos != s.pos {
+			t.Errorf("step %d: buf %q idx %d pos %d, want %q idx %d pos %d", i, string(st.buf), idx, st.pos, s.want, s.idx, s.pos)
 		}
 	}
 }

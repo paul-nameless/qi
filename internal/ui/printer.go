@@ -43,9 +43,16 @@ type Printer struct {
 	frame       int
 	ticking     bool
 	stopTick    chan struct{}
-	promptDraw  func()
-	promptFinal func() string
+	promptDraw  func(width, height int) Frame
+	promptFinal func(width int) string
+	shown       shownFrame
 	md          markdown
+}
+
+type shownFrame struct {
+	widths   []int
+	row, col int
+	term     int
 }
 
 func NewPrinter(out *os.File) *Printer {
@@ -59,31 +66,108 @@ func (p *Printer) Color(code, s string) string {
 	return code + s + Reset
 }
 
-func (p *Printer) width() int {
+func (p *Printer) size() (int, int) {
 	ws, err := unix.IoctlGetWinsize(int(p.out.Fd()), unix.TIOCGWINSZ)
-	if err != nil || ws.Col == 0 {
-		return 80
+	if err != nil || ws.Col == 0 || ws.Row == 0 {
+		return 80, 24
 	}
-	return int(ws.Col)
+	return int(ws.Col), int(ws.Row)
+}
+
+func (p *Printer) width() int {
+	w, _ := p.size()
+	return w
 }
 
 func (p *Printer) clearFooter() {
-	if p.footerShown {
-		_, _ = p.out.WriteString("\r\x1b[K")
-		p.footerShown = false
-	}
+	_, _ = p.out.WriteString(p.clearSeq())
 }
 
-func (p *Printer) footerText() string {
+func (p *Printer) clearSeq() string {
+	if !p.footerShown {
+		return ""
+	}
+	p.footerShown = false
+	w := p.width()
+	seq := "\r" + cursorMove(p.shown.above(w), 'A') + "\x1b[2K"
+	if p.shown.height(w) > 1 {
+		seq += "\x1b[1B\x1b[J\x1b[1A"
+	}
+	return seq
+}
+
+func (s shownFrame) above(width int) int {
+	n := s.span(s.widths[:s.row], width)
+	if width < s.term && width > 0 {
+		n += s.col / width
+	}
+	return n
+}
+
+func (s shownFrame) height(width int) int {
+	return s.span(s.widths, width)
+}
+
+func (s shownFrame) span(widths []int, width int) int {
+	n := 0
+	for _, w := range widths {
+		n += s.reflowed(w, width)
+	}
+	return n
+}
+
+func (s shownFrame) reflowed(w, width int) int {
+	if width >= s.term || width <= 0 {
+		return 1
+	}
+	return max(1, (w+width-1)/width)
+}
+
+func (p *Printer) frameSeq(f Frame, width int) string {
+	if len(f.Rows) == 0 {
+		return ""
+	}
+	p.shown = shownFrame{row: f.Row, col: f.Col, term: width}
+	for _, r := range f.Rows {
+		p.shown.widths = append(p.shown.widths, VisibleLen(r))
+	}
+	p.footerShown = true
+	seq := "\r" + strings.Join(f.Rows, "\r\n") + cursorMove(len(f.Rows)-1-f.Row, 'A') + "\r"
+	return seq + cursorMove(f.Col, 'C')
+}
+
+func (p *Printer) footerFrame(width, height int) Frame {
+	if p.promptDraw != nil {
+		return p.promptDraw(width, height)
+	}
 	status := p.statusText()
 	if p.draft == "" {
-		return status
+		if status == "" {
+			return Frame{}
+		}
+		row := truncateVisible(status, width-1)
+		return Frame{Rows: []string{row}, Col: VisibleLen(row)}
 	}
-	draft := p.Color(Cyan, "› ") + p.draft + p.Color(Dim, "  (enter to queue)")
-	if status == "" {
-		return draft
+	return p.draftFrame(status, width, height)
+}
+
+func (p *Printer) draftFrame(status string, width, height int) Frame {
+	prompt := p.Color(Cyan, "› ")
+	buf := []rune(p.draft)
+	l := layoutRows(VisibleLen(prompt), width, buf, len(buf))
+	limit := maxRows(height - 1)
+	f := l.frame(prompt, buf, scrollTop(0, l.row, len(l.rows), limit), limit)
+	tail := p.Color(Dim, "(enter to queue)")
+	if status != "" {
+		tail += p.Color(Dim, "  ·  ") + status
 	}
-	return draft + p.Color(Dim, "  ·  ") + status
+	last := len(f.Rows) - 1
+	if VisibleLen(f.Rows[last])+2+VisibleLen(tail) <= width-1 {
+		f.Rows[last] += "  " + tail
+		return f
+	}
+	f.Rows = append(f.Rows, truncateVisible(tail, width-1))
+	return f
 }
 
 func (p *Printer) statusText() string {
@@ -112,20 +196,20 @@ func (p *Printer) statusText() string {
 }
 
 func (p *Printer) drawFooter() {
+	_, _ = p.out.WriteString(p.drawSeq())
+}
+
+func (p *Printer) drawSeq() string {
 	if !p.TTY || !p.atLineStart {
-		return
+		return ""
 	}
-	if p.promptDraw != nil {
-		p.promptDraw()
-		p.footerShown = true
-		return
-	}
-	text := p.footerText()
-	if text == "" {
-		return
-	}
-	_, _ = p.out.WriteString("\r\x1b[K" + truncateVisible(text, p.width()-1))
-	p.footerShown = true
+	w, h := p.size()
+	return p.frameSeq(p.footerFrame(w, h), w)
+}
+
+func (p *Printer) redraw() {
+	clear := p.clearSeq()
+	_, _ = p.out.WriteString(clear + p.drawSeq())
 }
 
 func (p *Printer) write(s string) {
@@ -269,8 +353,7 @@ func (p *Printer) ToolStart(id, label string) {
 	p.running[id] = &toolState{label: Sanitize(label), start: time.Now()}
 	p.order = append(p.order, id)
 	p.startTicker()
-	p.clearFooter()
-	p.drawFooter()
+	p.redraw()
 }
 
 func (p *Printer) ToolProgress(id, progress string) {
@@ -312,9 +395,8 @@ func (p *Printer) ToolDone(id string, ok bool, line string) {
 func (p *Printer) SetDraft(s string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.draft = strings.ReplaceAll(s, "\n", "↵")
-	p.clearFooter()
-	p.drawFooter()
+	p.draft = s
+	p.redraw()
 }
 
 func (p *Printer) startTicker() {
@@ -336,8 +418,7 @@ func (p *Printer) startTicker() {
 				p.mu.Lock()
 				p.frame++
 				if p.footerShown || p.atLineStart {
-					p.clearFooter()
-					p.drawFooter()
+					p.redraw()
 				}
 				p.mu.Unlock()
 			}
@@ -350,11 +431,10 @@ func (p *Printer) stopTicker() {
 		close(p.stopTick)
 		p.ticking = false
 	}
-	p.clearFooter()
-	p.drawFooter()
+	p.redraw()
 }
 
-func (p *Printer) SetPrompt(draw func(), final func() string) {
+func (p *Printer) SetPrompt(draw func(width, height int) Frame, final func(width int) string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.clearFooter()
@@ -372,9 +452,19 @@ func (p *Printer) SetPrompt(draw func(), final func() string) {
 func (p *Printer) RenderPrompt() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.promptDraw != nil {
-		p.promptDraw()
-		p.footerShown = true
+	if p.promptDraw == nil {
+		return
+	}
+	clear := p.clearSeq()
+	w, h := p.size()
+	_, _ = p.out.WriteString(clear + p.frameSeq(p.promptDraw(w, h), w))
+}
+
+func (p *Printer) Redraw() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.footerShown {
+		p.redraw()
 	}
 }
 
@@ -382,7 +472,11 @@ func (p *Printer) FinishPrompt() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.promptFinal != nil {
-		_, _ = p.out.WriteString("\r\x1b[K" + p.promptFinal() + "\n")
+		seq := "\r\x1b[K"
+		if p.footerShown {
+			seq = p.clearSeq()
+		}
+		_, _ = p.out.WriteString(seq + p.promptFinal(p.width()) + "\n")
 	}
 	p.promptDraw, p.promptFinal = nil, nil
 	p.footerShown = false
@@ -402,15 +496,20 @@ func (p *Printer) EndLine() {
 	}
 	defer p.mu.Unlock()
 	if p.footerShown || !p.atLineStart {
-		_, _ = p.out.WriteString("\n")
+		below := ""
+		if p.footerShown {
+			below = cursorMove(len(p.shown.widths)-1-p.shown.row, 'B')
+		}
+		_, _ = p.out.WriteString(below + "\n")
 		p.footerShown, p.atLineStart = false, true
 	}
 }
 
-func (p *Printer) Raw(s string) {
+func (p *Printer) ClearScreen() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	_, _ = p.out.WriteString(s)
+	_, _ = p.out.WriteString("\x1b[2J\x1b[H")
+	p.footerShown = false
 }
 
 func formatDuration(d time.Duration) string {

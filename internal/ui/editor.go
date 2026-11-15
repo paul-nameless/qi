@@ -76,50 +76,27 @@ func (e *Editor) addHistory(s string) {
 }
 
 type lineState struct {
-	prompt string
-	buf    []rune
-	pos    int
+	prompt  string
+	buf     []rune
+	pos     int
+	top     int
+	goal    int
+	hasGoal bool
 }
 
-func (e *Editor) render(st *lineState) func() {
-	return func() {
-		width := e.P.width()
-		pw := VisibleLen(st.prompt)
-		avail := width - pw - 1
-		if avail < 10 {
-			avail = 10
-		}
-		disp := make([]rune, len(st.buf))
-		for i, r := range st.buf {
-			switch r {
-			case '\n':
-				disp[i] = '↵'
-			case '\t':
-				disp[i] = ' '
-			default:
-				disp[i] = r
-			}
-		}
-		pos := min(max(st.pos, 0), len(disp))
-		start := 0
-		if pos >= avail {
-			start = pos - avail + 1
-		}
-		end := min(start+avail, len(disp))
-		start = min(start, end)
-		s := "\r\x1b[K" + st.prompt + string(disp[start:end]) + "\r"
-		if col := pw + pos - start; col > 0 {
-			s += fmt.Sprintf("\x1b[%dC", col)
-		}
-		_, _ = e.P.out.WriteString(s)
+func (e *Editor) render(st *lineState) func(width, height int) Frame {
+	return func(width, height int) Frame {
+		l := layoutRows(VisibleLen(st.prompt), width, st.buf, st.pos)
+		st.top = scrollTop(st.top, l.row, len(l.rows), maxRows(height))
+		return l.frame(st.prompt, st.buf, st.top, maxRows(height))
 	}
 }
 
 func (e *Editor) ReadLine(prompt, initial string) (string, error) {
 	st := &lineState{prompt: prompt, buf: []rune(initial)}
 	st.pos = len(st.buf)
-	e.P.SetPrompt(e.render(st), func() string {
-		return st.prompt + strings.ReplaceAll(string(st.buf), "\n", "\n  ")
+	e.P.SetPrompt(e.render(st), func(width int) string {
+		return echoText(st.prompt, width, st.buf)
 	})
 	defer e.P.SetPrompt(nil, nil)
 	histIdx := len(e.history)
@@ -186,7 +163,7 @@ func (e *Editor) ReadLine(prompt, initial string) (string, error) {
 				e.P.Locked(func() { st.set(text) })
 			}
 		case KeyClear:
-			e.P.Raw("\x1b[2J\x1b[H")
+			e.P.ClearScreen()
 		}
 		e.P.Locked(func() { e.apply(st, k, &histIdx, &draft) })
 		e.P.RenderPrompt()
@@ -226,6 +203,9 @@ func (e *Editor) quiet(st *lineState, cond func() bool) bool {
 }
 
 func (e *Editor) apply(st *lineState, k Key, histIdx *int, draft *string) {
+	if k.Kind != KeyUp && k.Kind != KeyDown {
+		st.hasGoal = false
+	}
 	switch k.Kind {
 	case KeyEOF, KeyDelete:
 		if st.pos < len(st.buf) {
@@ -247,9 +227,9 @@ func (e *Editor) apply(st *lineState, k Key, histIdx *int, draft *string) {
 	case KeyRight:
 		st.pos = min(st.pos+1, len(st.buf))
 	case KeyHome:
-		st.pos = 0
+		st.pos = lineStart(st.buf, st.pos)
 	case KeyEnd:
-		st.pos = len(st.buf)
+		st.pos = lineEnd(st.buf, st.pos)
 	case KeyWordLeft:
 		st.pos = wordLeft(st.buf, st.pos)
 	case KeyWordRight:
@@ -264,27 +244,54 @@ func (e *Editor) apply(st *lineState, k Key, histIdx *int, draft *string) {
 		st.buf = append(st.buf[:w], st.buf[st.pos:]...)
 		st.pos = w
 	case KeyUp:
-		if *histIdx > 0 {
-			if *histIdx == len(e.history) {
-				*draft = string(st.buf)
-			}
-			*histIdx--
-			st.buf = []rune(e.history[*histIdx])
-			st.pos = len(st.buf)
+		if !e.moveRow(st, -1) {
+			e.historyBack(st, histIdx, draft)
 		}
 	case KeyDown:
-		if *histIdx < len(e.history) {
-			*histIdx++
-			if *histIdx == len(e.history) {
-				st.buf = []rune(*draft)
-			} else {
-				st.buf = []rune(e.history[*histIdx])
-			}
-			st.pos = len(st.buf)
+		if !e.moveRow(st, 1) {
+			e.historyForward(st, histIdx, draft)
 		}
 	case KeyEsc:
 		st.buf, st.pos = nil, 0
 	}
+}
+
+func (e *Editor) moveRow(st *lineState, dir int) bool {
+	goal := -1
+	if st.hasGoal {
+		goal = st.goal
+	}
+	pos, goal, ok := moveVertical(VisibleLen(st.prompt), e.P.width(), st.buf, st.pos, dir, goal)
+	if !ok {
+		return false
+	}
+	st.pos, st.goal, st.hasGoal = pos, goal, true
+	return true
+}
+
+func (e *Editor) historyBack(st *lineState, histIdx *int, draft *string) {
+	if *histIdx == 0 {
+		return
+	}
+	if *histIdx == len(e.history) {
+		*draft = string(st.buf)
+	}
+	*histIdx--
+	st.set(e.history[*histIdx])
+	st.hasGoal = false
+}
+
+func (e *Editor) historyForward(st *lineState, histIdx *int, draft *string) {
+	if *histIdx >= len(e.history) {
+		return
+	}
+	*histIdx++
+	if *histIdx == len(e.history) {
+		st.set(*draft)
+	} else {
+		st.set(e.history[*histIdx])
+	}
+	st.hasGoal = false
 }
 
 func (e *Editor) pasteText(text string) string {
@@ -374,7 +381,7 @@ func (e *Editor) RunTTY(cmd *exec.Cmd) error {
 		cmd.Stdout = os.Stdout
 	}
 	cmd.Stderr = os.Stderr
-	e.P.Raw("\r\x1b[K")
+	e.P.ClearFooter()
 	e.T.Suspend()
 	e.T.child.Store(true)
 	err := cmd.Run()
