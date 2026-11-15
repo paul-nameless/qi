@@ -52,8 +52,8 @@ func run(o options) error {
 	stdinPiped := stdinHasData()
 	headless := o.query != "" || stdinPiped || !ui.IsTerminal(os.Stdin)
 	isSub := os.Getenv("QI_SUBAGENT") != ""
-	if o.json && !headless {
-		return errors.New("-json works only with -q or piped stdin")
+	if err := checkJSON(o, headless); err != nil {
+		return err
 	}
 
 	var display *ui.Printer
@@ -117,6 +117,13 @@ func run(o options) error {
 	return r.run()
 }
 
+func checkJSON(o options, headless bool) error {
+	if o.json && !headless {
+		return errors.New("-json works only with -q or piped stdin")
+	}
+	return nil
+}
+
 func resumePath(o options, cfg config.Config, cwd string, headless bool) (string, bool, error) {
 	if o.sessionID != "" && !session.ValidID(o.sessionID) {
 		return "", false, fmt.Errorf("invalid session id %q", o.sessionID)
@@ -152,7 +159,10 @@ func openSession(a *agent.Agent, o options, cfg config.Config, cwd, resume strin
 			return err
 		}
 		if o.json {
-			s.SetTee(os.Stdout)
+			if err := s.Tee(os.Stdout); err != nil {
+				s.Close()
+				return err
+			}
 		}
 		a.Load(s, ld)
 		return nil

@@ -84,7 +84,7 @@ func newFlagSet(c *cliArgs, out io.Writer) *flag.FlagSet {
 	fs.SetOutput(out)
 	o := &c.opts
 	fs.StringVar(&o.query, "q", "", "run one `prompt` without the interactive UI and print the answer")
-	fs.BoolVar(&o.json, "json", false, "with -q, stream every session entry to stdout as a JSON line (the session file's format) instead of the answer")
+	fs.BoolVar(&o.json, "json", false, "with -q, stream every session entry to stdout as a JSON line (the session file's format) instead of the answer; a resumed session starts with its meta line, then this run's entries")
 	fs.BoolVar(&o.cont, "c", false, "continue the last session in this directory")
 	fs.StringVar(&o.profile, "p", "", "profile `name` from \"profiles\" in the config, or "+filepath.Join(config.ShortHome(config.Dir()), "<name>.json"))
 	fs.StringVar(&o.provider, "provider", "", "provider `name` override (from \"providers\" in the config)")

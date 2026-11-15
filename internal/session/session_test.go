@@ -203,12 +203,16 @@ func TestTeeMatchesFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	var later bytes.Buffer
-	r.SetTee(&later)
+	if err := r.Tee(&later); err != nil {
+		t.Fatal(err)
+	}
 	r.Message(llm.UserText("again"), "m", nil)
 	r.Close()
 	data, _ = os.ReadFile(s.Path)
-	if !bytes.HasSuffix(data, later.Bytes()) || bytes.Count(later.Bytes(), []byte("\n")) != 1 {
-		t.Errorf("tee after open: %s", later.Bytes())
+	lines := bytes.SplitAfter(data, []byte("\n"))
+	want := append(append([]byte{}, lines[0]...), lines[len(lines)-2]...)
+	if !bytes.Equal(later.Bytes(), want) {
+		t.Errorf("tee after open: %s, want the meta line and the new entry", later.Bytes())
 	}
 }
 

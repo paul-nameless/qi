@@ -365,10 +365,34 @@ func (s *Session) write(e Entry) error {
 	return nil
 }
 
-func (s *Session) SetTee(w io.Writer) {
+func (s *Session) Tee(w io.Writer) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	meta, err := firstLine(s.Path)
+	if err != nil {
+		return err
+	}
+	if strings.HasPrefix(meta, `{"type":"meta"`) {
+		if _, err := io.WriteString(w, meta+"\n"); err != nil {
+			return fmt.Errorf("write session to stdout: %w", err)
+		}
+	}
 	s.tee = w
+	return nil
+}
+
+func firstLine(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", fmt.Errorf("open session: %w", err)
+	}
+	defer f.Close()
+	r := bufio.NewReaderSize(f, 64<<10)
+	line, err := r.ReadString('\n')
+	if err != nil && err != io.EOF {
+		return "", fmt.Errorf("read session: %w", err)
+	}
+	return strings.TrimSuffix(line, "\n"), nil
 }
 
 func (s *Session) Message(m llm.Message, model string, u *llm.Usage) error {

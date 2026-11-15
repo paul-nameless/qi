@@ -453,3 +453,35 @@ func TestBannerLine(t *testing.T) {
 		t.Errorf("banner with an unknown window %q", got)
 	}
 }
+
+func TestHeadlessJSONResumeStreamsMetaAndNewTail(t *testing.T) {
+	srv := headlessServer(t)
+	path := headlessConfig(t, srv.URL)
+	if err := run(options{query: "first", configPath: path, sessionID: "S1"}); err != nil {
+		t.Fatal(err)
+	}
+	files, _ := filepath.Glob(filepath.Join(os.Getenv("QI_SESSION_DIR"), "*", "S1.jsonl"))
+	if len(files) != 1 {
+		t.Fatalf("session files %v", files)
+	}
+	for _, o := range []options{{sessionID: "S1"}, {cont: true}, {pickSession: true, resumeID: "S1"}} {
+		before, _ := os.ReadFile(files[0])
+		o.query, o.configPath, o.json = "again", path, true
+		var err error
+		stdout := withStdio(t, func() { err = run(o) })
+		after, _ := os.ReadFile(files[0])
+		meta, _, _ := strings.Cut(string(before), "\n")
+		if err != nil || stdout != meta+"\n"+string(after[len(before):]) || strings.Count(stdout, "\n") != 3 {
+			t.Errorf("%+v: err %v\nstdout %s", o, err, stdout)
+		}
+	}
+}
+
+func TestJSONNeedsHeadless(t *testing.T) {
+	if err := checkJSON(options{json: true}, false); err == nil || !strings.Contains(err.Error(), "-json works only with -q") {
+		t.Errorf("interactive -json: %v", err)
+	}
+	if checkJSON(options{json: true, query: "x"}, true) != nil || checkJSON(options{}, false) != nil {
+		t.Error("valid combinations rejected")
+	}
+}
