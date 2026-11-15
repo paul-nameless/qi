@@ -107,11 +107,11 @@ func TestRuntimeBuiltinSwitchDropsOldKey(t *testing.T) {
 	t.Setenv("QI_CONFIG_DIR", dir)
 	path := filepath.Join(dir, "c.json")
 	os.WriteFile(path, []byte(`{"api": "anthropic", "api_key": "sk-ant"}`), 0o600)
-	c, err := Resolve(path, "", "openai", "", "")
+	c, err := Resolve(Options{Path: path, Provider: "openai"})
 	if err != nil || c.API != "openai" || c.APIKey != "" || c.Model != "gpt-6-luna" {
 		t.Errorf("openai override kept anthropic settings: %+v %v", c, err)
 	}
-	c, err = Resolve(path, "", "claude", "", "high")
+	c, err = Resolve(Options{Path: path, Provider: "claude", Effort: "high"})
 	if err != nil || c.API != "anthropic" || c.Model != "claude-sonnet-5-5" || c.ReasoningEffort != "high" {
 		t.Errorf("claude override: %+v %v", c, err)
 	}

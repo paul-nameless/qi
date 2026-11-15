@@ -32,7 +32,7 @@ func TestQuitStopsMCPServersThatIgnoreEOF(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = syscall.Kill(-pid, syscall.SIGKILL) })
 	a := newTestAgent(t, config.Config{})
-	s, err := session.Create(t.TempDir(), "", "m", "interactive", false)
+	s, err := session.Create(session.CreateOptions{Cwd: t.TempDir(), Model: "m", Kind: session.Interactive})
 	if err != nil {
 		t.Fatal(err)
 	}

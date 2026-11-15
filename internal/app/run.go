@@ -142,11 +142,11 @@ func openSession(a *agent.Agent, o options, cfg config.Config, cwd, resume strin
 		a.Load(s, ld)
 		return nil
 	}
-	kind := "interactive"
+	kind := session.Interactive
 	if headless {
-		kind = "headless"
+		kind = session.Headless
 	}
-	s, err := session.Create(cwd, o.sessionID, cfg.Model, kind, isSub)
+	s, err := session.Create(session.CreateOptions{Cwd: cwd, ID: o.sessionID, Model: cfg.Model, Kind: kind, Subagent: isSub})
 	if err != nil {
 		return err
 	}
@@ -159,7 +159,7 @@ func resolveConfig(o options) (config.Config, error) {
 	if err != nil {
 		return config.Config{}, err
 	}
-	cfg, err := config.Resolve(o.configPath, o.profile, o.provider, o.model, o.effort)
+	cfg, err := config.Resolve(config.Options{Path: o.configPath, Profile: o.profile, Provider: o.provider, Model: o.model, Effort: o.effort})
 	if err != nil {
 		return cfg, err
 	}

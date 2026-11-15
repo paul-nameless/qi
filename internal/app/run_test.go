@@ -78,7 +78,7 @@ func TestModelSwitchKeepsSubagentsOnProfileProvider(t *testing.T) {
 }
 `), 0o600)
 	o := options{configPath: path, provider: "anth"}
-	cfg, err := config.Resolve(path, "", o.provider, "", "")
+	cfg, err := config.Resolve(config.Options{Path: path, Provider: o.provider})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +134,7 @@ func TestReloadRereadsInstructionsAndSkills(t *testing.T) {
 func TestPastedTempImagesAreKeptWithTheSession(t *testing.T) {
 	t.Setenv("QI_SESSION_DIR", t.TempDir())
 	a, _ := buildAgent(config.Config{Model: "m"}, options{}, t.TempDir(), nopProvider{}, devNullPrinter(t), true, false)
-	s, err := session.Create(a.Cwd(), "", "m", "interactive", false)
+	s, err := session.Create(session.CreateOptions{Cwd: a.Cwd(), Model: "m", Kind: session.Interactive})
 	if err != nil {
 		t.Fatal(err)
 	}

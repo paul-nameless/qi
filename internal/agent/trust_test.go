@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/paul-nameless/qi/internal/tools"
 )
 
 func TestSplitHookFiles(t *testing.T) {
@@ -120,12 +122,12 @@ func TestTrustFingerprint(t *testing.T) {
 func TestSubagentArgs(t *testing.T) {
 	ro := true
 	r := &SubagentRunner{Profile: "p", Provider: "openrouter", ReadOnly: func() bool { return ro }}
-	args := strings.Join(r.args("do it", "m", "", "low"), " ")
+	args := strings.Join(r.args(tools.SubagentTask{Prompt: "do it", Model: "m", Effort: "low"}), " ")
 	if !strings.Contains(args, "-read-only") || !strings.Contains(args, "-provider openrouter") || !strings.Contains(args, "-p p") {
 		t.Errorf("args %q", args)
 	}
 	ro = false
-	if strings.Contains(strings.Join(r.args("x", "m", "anth", ""), " "), "-read-only") {
+	if strings.Contains(strings.Join(r.args(tools.SubagentTask{Prompt: "x", Model: "m", Provider: "anth"}), " "), "-read-only") {
 		t.Error("read-only flag without read-only mode")
 	}
 }

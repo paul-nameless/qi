@@ -146,7 +146,7 @@ func TestValidateMirrorsSchema(t *testing.T) {
 	if _, err := Load(path, ""); err != nil {
 		t.Error(err)
 	}
-	_, err := Resolve(path, "", "", "", "turbo")
+	_, err := Resolve(Options{Path: path, Effort: "turbo"})
 	wantErr(t, err, `key "reasoning_effort"`)
 }
 

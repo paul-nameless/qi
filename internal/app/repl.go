@@ -383,7 +383,7 @@ func (r *repl) stopIdle() {
 }
 
 func (r *repl) resolve(profile string) (config.Config, error) {
-	return config.Resolve(r.opts.configPath, profile, r.opts.provider, "", r.opts.effort)
+	return config.Resolve(config.Options{Path: r.opts.configPath, Profile: profile, Provider: r.opts.provider, Effort: r.opts.effort})
 }
 
 func (r *repl) switchProfile(name string) error {
@@ -549,7 +549,7 @@ func queuedText(blocks []llm.Block) string {
 }
 
 func (r *repl) newSession() error {
-	s, err := session.Create(r.agent.Cwd(), "", r.agent.Model(), "interactive", false)
+	s, err := session.Create(session.CreateOptions{Cwd: r.agent.Cwd(), Model: r.agent.Model(), Kind: session.Interactive})
 	if err != nil {
 		return err
 	}

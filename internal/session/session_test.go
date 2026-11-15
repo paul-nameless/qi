@@ -54,7 +54,7 @@ func TestRepair(t *testing.T) {
 
 func TestRoundTrip(t *testing.T) {
 	t.Setenv("QI_SESSION_DIR", t.TempDir())
-	s, err := Create("/tmp/proj", "", "m", "interactive", false)
+	s, err := Create(CreateOptions{Cwd: "/tmp/proj", Model: "m", Kind: Interactive})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,16 +95,16 @@ func TestRoundTrip(t *testing.T) {
 
 func TestLatestSkipsEmptySessions(t *testing.T) {
 	t.Setenv("QI_SESSION_DIR", t.TempDir())
-	s1, _ := Create("/p", "", "m", "interactive", false)
+	s1, _ := Create(CreateOptions{Cwd: "/p", Model: "m", Kind: Interactive})
 	s1.Message(llm.UserText("real work"), "m", nil)
 	s1.Message(llm.Message{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: "done"}}}, "m", nil)
 	s1.Close()
 	time.Sleep(1100 * time.Millisecond)
-	s2, _ := Create("/p", "", "m", "interactive", false)
+	s2, _ := Create(CreateOptions{Cwd: "/p", Model: "m", Kind: Interactive})
 	s2.Message(llm.UserText("asked but never answered"), "m", nil)
 	s2.Close()
 	time.Sleep(1100 * time.Millisecond)
-	s3, _ := Create("/p", "", "m", "headless", false)
+	s3, _ := Create(CreateOptions{Cwd: "/p", Model: "m", Kind: Headless})
 	s3.Message(llm.UserText("one-shot"), "m", nil)
 	s3.Message(llm.Message{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: "ok"}}}, "m", nil)
 	s3.Close()
@@ -118,7 +118,7 @@ func TestLatestSkipsEmptySessions(t *testing.T) {
 
 func TestDropEntry(t *testing.T) {
 	t.Setenv("QI_SESSION_DIR", t.TempDir())
-	s, _ := Create("/p", "", "m", "interactive", false)
+	s, _ := Create(CreateOptions{Cwd: "/p", Model: "m", Kind: Interactive})
 	s.Message(llm.UserText("keep"), "m", nil)
 	s.Message(llm.UserText("bad image prompt"), "m", nil)
 	s.Drop()
@@ -140,7 +140,7 @@ func TestIDs(t *testing.T) {
 		}
 	}
 	t.Setenv("QI_SESSION_DIR", t.TempDir())
-	s, err := Create("/p", "MY-ID", "m", "interactive", false)
+	s, err := Create(CreateOptions{Cwd: "/p", ID: "MY-ID", Model: "m", Kind: Interactive})
 	if err != nil || s.ID != "MY-ID" || s.Path != PathFor("/p", "MY-ID") {
 		t.Errorf("create with id: %+v %v", s, err)
 	}

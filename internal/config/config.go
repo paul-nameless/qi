@@ -113,16 +113,25 @@ func ShortHome(p string) string {
 	return p
 }
 
+type Options struct {
+	Path     string
+	Profile  string
+	Provider string
+	Model    string
+	Effort   string
+}
+
 func Load(path, profile string) (Config, error) {
-	return Resolve(path, profile, "", "", "")
+	return Resolve(Options{Path: path, Profile: profile})
 }
 
 func DefaultPath() string {
 	return filepath.Join(Dir(), "config.json")
 }
 
-func Resolve(path, profile, provider, model, effort string) (Config, error) {
+func Resolve(o Options) (Config, error) {
 	var c Config
+	path, profile := o.Path, o.Profile
 	if path == "" {
 		path = DefaultPath()
 	}
@@ -151,16 +160,16 @@ func Resolve(path, profile, provider, model, effort string) (Config, error) {
 			return c, fmt.Errorf("%s: %w", c.source, err)
 		}
 	}
-	if provider != "" {
-		if err := c.UseProvider(provider); err != nil {
+	if o.Provider != "" {
+		if err := c.UseProvider(o.Provider); err != nil {
 			return c, fmt.Errorf("-provider: %w", err)
 		}
 	}
-	if model != "" {
-		c.SetModel(model)
+	if o.Model != "" {
+		c.SetModel(o.Model)
 	}
-	if effort != "" {
-		c.ReasoningEffort = effort
+	if o.Effort != "" {
+		c.ReasoningEffort = o.Effort
 	}
 	c.applyDefaults()
 	if err := c.validate(); err != nil {
@@ -170,7 +179,7 @@ func Resolve(path, profile, provider, model, effort string) (Config, error) {
 }
 
 func Check(path, profile string) error {
-	c, err := Resolve(path, profile, "", "", "")
+	c, err := Load(path, profile)
 	if err != nil {
 		return err
 	}
@@ -185,7 +194,7 @@ func Check(path, profile string) error {
 		}
 	}
 	for _, name := range names {
-		if _, err := Resolve(path, name, "", "", ""); err != nil {
+		if _, err := Load(path, name); err != nil {
 			return err
 		}
 	}

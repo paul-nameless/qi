@@ -64,7 +64,7 @@ func Subagent(mainModel string, menu []config.SubagentModel, efforts []string) *
 					model, provider = m.Model, m.Provider
 				}
 			}
-			answer, err := env.Subagent(ctx, a.Prompt, model, provider, a.Effort, progress)
+			answer, err := env.Subagent(ctx, SubagentTask{Prompt: a.Prompt, Model: model, Provider: provider, Effort: a.Effort}, progress)
 			if err != nil {
 				return errResult("subagent failed: %v", err)
 			}

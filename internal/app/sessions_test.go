@@ -14,7 +14,7 @@ import (
 )
 
 func writeSession(t *testing.T, cwd, prompt string) *session.Session {
-	s, err := session.Create(cwd, "", "m", "interactive", false)
+	s, err := session.Create(session.CreateOptions{Cwd: cwd, Model: "m", Kind: session.Interactive})
 	if err != nil {
 		t.Fatal(err)
 	}

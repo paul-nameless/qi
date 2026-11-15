@@ -12,6 +12,7 @@ import (
 
 	"github.com/paul-nameless/qi/internal/config"
 	"github.com/paul-nameless/qi/internal/proc"
+	"github.com/paul-nameless/qi/internal/tools"
 )
 
 const subagentGrace = 5 * time.Second
@@ -33,16 +34,17 @@ func (r *SubagentRunner) Env() ([]string, error) {
 	return append(os.Environ(), "QI_SUBAGENT=1", config.MCPEnv+"="+servers), nil
 }
 
-func (r *SubagentRunner) args(prompt, model, provider, effort string) []string {
-	args := []string{"-q", prompt, "-model", model}
+func (r *SubagentRunner) args(task tools.SubagentTask) []string {
+	args := []string{"-q", task.Prompt, "-model", task.Model}
+	provider := task.Provider
 	if provider == "" {
 		provider = r.Provider
 	}
 	if provider != "" {
 		args = append(args, "-provider", provider)
 	}
-	if effort != "" {
-		args = append(args, "-effort", effort)
+	if task.Effort != "" {
+		args = append(args, "-effort", task.Effort)
 	}
 	if r.ConfigPath != "" {
 		args = append(args, "-config", r.ConfigPath)
@@ -56,7 +58,7 @@ func (r *SubagentRunner) args(prompt, model, provider, effort string) []string {
 	return args
 }
 
-func (r *SubagentRunner) Run(parent context.Context, prompt, model, provider, effort string, progress func(string)) (string, error) {
+func (r *SubagentRunner) Run(parent context.Context, task tools.SubagentTask, progress func(string)) (string, error) {
 	ctx, cancel := context.WithTimeout(parent, 30*time.Minute)
 	defer cancel()
 	exe, err := os.Executable()
@@ -67,7 +69,7 @@ func (r *SubagentRunner) Run(parent context.Context, prompt, model, provider, ef
 	if err != nil {
 		return "", err
 	}
-	cmd := exec.CommandContext(ctx, exe, r.args(prompt, model, provider, effort)...)
+	cmd := exec.CommandContext(ctx, exe, r.args(task)...)
 	cmd.Dir = r.Cwd
 	cmd.Env = env
 	proc.Setup(cmd, proc.Session, subagentGrace)

@@ -86,7 +86,7 @@ func pinConfig(t *testing.T, dir, provider string) config.Config {
 	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := config.Resolve(path, "", "", "", "")
+	cfg, err := config.Resolve(config.Options{Path: path})
 	if err != nil {
 		t.Fatal(err)
 	}

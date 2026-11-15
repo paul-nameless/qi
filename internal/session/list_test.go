@@ -9,7 +9,7 @@ import (
 )
 
 func answered(t *testing.T, cwd, kind string, prompts ...string) *Session {
-	s, err := Create(cwd, "", "m", kind, false)
+	s, err := Create(CreateOptions{Cwd: cwd, Model: "m", Kind: Kind(kind)})
 	if err != nil {
 		t.Fatal(err)
 	}

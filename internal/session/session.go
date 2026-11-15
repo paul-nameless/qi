@@ -27,7 +27,7 @@ type Entry struct {
 	Time    string        `json:"time"`
 	Version int           `json:"version,omitempty"`
 	Cwd     string        `json:"cwd,omitempty"`
-	Kind    string        `json:"kind,omitempty"`
+	Kind    Kind          `json:"kind,omitempty"`
 	Model   string        `json:"model,omitempty"`
 	Message *llm.Message  `json:"message,omitempty"`
 	Usage   *llm.Usage    `json:"usage,omitempty"`
@@ -90,14 +90,30 @@ func newID() string {
 	return hex.EncodeToString(b)
 }
 
-func Create(cwd, id, model, kind string, subagent bool) (*Session, error) {
-	dir := Dir(cwd)
-	if subagent {
+type Kind string
+
+const (
+	Interactive Kind = "interactive"
+	Headless    Kind = "headless"
+)
+
+type CreateOptions struct {
+	Cwd      string
+	ID       string
+	Model    string
+	Kind     Kind
+	Subagent bool
+}
+
+func Create(o CreateOptions) (*Session, error) {
+	dir := Dir(o.Cwd)
+	if o.Subagent {
 		dir = filepath.Join(dir, "subagents")
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("create session dir: %w", err)
 	}
+	id := o.ID
 	if id == "" {
 		id = NewID()
 	}
@@ -107,7 +123,7 @@ func Create(cwd, id, model, kind string, subagent bool) (*Session, error) {
 		return nil, fmt.Errorf("create session file: %w", err)
 	}
 	s := &Session{Path: path, ID: id, f: f}
-	if err := s.write(Entry{Type: "meta", Version: Version, Cwd: cwd, Model: model, Kind: kind}); err != nil {
+	if err := s.write(Entry{Type: "meta", Version: Version, Cwd: o.Cwd, Model: o.Model, Kind: o.Kind}); err != nil {
 		f.Close()
 		return nil, err
 	}

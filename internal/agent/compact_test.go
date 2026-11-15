@@ -232,7 +232,7 @@ func TestCompactionSurvivesResume(t *testing.T) {
 	p := &scriptedProvider{steps: []func(llm.Request) (llm.Message, error){reply(assistantText("SUMMARY"))}}
 	a := newAgent(t, &fakeProvider{})
 	a.live.provider = p
-	s, err := session.Create(a.cwd, "", "m", "interactive", false)
+	s, err := session.Create(session.CreateOptions{Cwd: a.cwd, Model: "m", Kind: session.Interactive})
 	if err != nil {
 		t.Fatal(err)
 	}

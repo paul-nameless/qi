@@ -40,7 +40,14 @@ type HookCall struct {
 type Hook func(ctx context.Context, call HookCall) (block bool, reason string, input json.RawMessage)
 type PostHook func(ctx context.Context, call HookCall, res Result) string
 
-type SubagentFunc func(ctx context.Context, prompt, model, provider, effort string, progress func(string)) (string, error)
+type SubagentTask struct {
+	Prompt   string
+	Model    string
+	Provider string
+	Effort   string
+}
+
+type SubagentFunc func(ctx context.Context, task SubagentTask, progress func(string)) (string, error)
 
 type Env struct {
 	Cwd         string
