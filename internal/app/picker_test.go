@@ -232,7 +232,7 @@ func TestMissingToolNamesTheResolvedCommand(t *testing.T) {
 		}
 	}
 	r := &repl{agent: newTestAgent(t, config.Config{Picker: "no-such-fzf-xyz --height=40%", SessionPicker: "{picker} --nth=1"}), opts: options{configPath: "/x/c.json"}}
-	if got := r.configInfo(); !strings.Contains(got, "session_picker  off  {picker} --nth=1  (no-such-fzf-xyz not found)") {
+	if got := r.configInfo(); !strings.Contains(got, "session_picker  off  no-such-fzf-xyz --height=40% --nth=1  (no-such-fzf-xyz not found)") {
 		t.Errorf("config info:\n%s", got)
 	}
 	if _, err := pickSession(runPlain, r.agent.Config(), t.TempDir(), ""); err == nil || !strings.Contains(err.Error(), "session_picker is off (no-such-fzf-xyz not found)") {

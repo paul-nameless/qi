@@ -300,7 +300,7 @@ func (r *repl) configInfo() string {
 				note = "  (" + missingTool(kv[1], picker) + " not found)"
 			}
 		}
-		fmt.Fprintf(&b, "\n  %-15s %s  %s%s", kv[0], state, tools.OneLine(kv[1], 90), note)
+		fmt.Fprintf(&b, "\n  %-15s %s  %s%s", kv[0], state, tools.OneLine(strings.ReplaceAll(kv[1], "{picker}", picker), 90), note)
 	}
 	return b.String()
 }
