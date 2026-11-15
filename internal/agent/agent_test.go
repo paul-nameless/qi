@@ -433,3 +433,10 @@ func TestAccessorsDuringTurn(t *testing.T) {
 		}
 	}
 }
+
+func TestTurnStatsUsesBannerContextFormat(t *testing.T) {
+	s := TurnStats{Requests: 1, Usage: llm.Usage{Input: 8300, CacheRead: 4731, Output: 80}}
+	if got := s.String(usageOf(8400, 1000000, true)); got != "1 req · in 8.3k (57% cached) · out 80 · 8.4k/1M (0.8%)" {
+		t.Errorf("stats %q", got)
+	}
+}

@@ -320,7 +320,7 @@ type TurnStats struct {
 }
 
 func (s TurnStats) String(context string) string {
-	return fmt.Sprintf("%d req · in %s%s · out %s · context %s", s.Requests, fmtTokens(s.Usage.Input), cachedPct(s.Usage), fmtTokens(s.Usage.Output), context)
+	return fmt.Sprintf("%d req · in %s%s · out %s · %s", s.Requests, fmtTokens(s.Usage.Input), cachedPct(s.Usage), fmtTokens(s.Usage.Output), context)
 }
 
 func cachedPct(u llm.Usage) string {
@@ -347,11 +347,8 @@ func usageOf(n, window int, known bool) string {
 }
 
 func (a *Agent) ContextShort() string {
-	n := a.ContextTokens()
-	if window, known := a.Config().Window(); known && window > 0 {
-		return fmt.Sprintf("%s (%s)", fmtTokens(n), pct(n, window))
-	}
-	return fmtTokens(n)
+	window, known := a.Config().Window()
+	return usageOf(a.ContextTokens(), window, known)
 }
 
 func fmtTokens(n int) string {
