@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -241,5 +242,44 @@ func TestReadOnlyGitIgnoresFsmonitor(t *testing.T) {
 	runBash(context.Background(), env, json.RawMessage(`{"command":"git status"}`), nil)
 	if _, err := os.Stat(mark); err == nil {
 		t.Error("core.fsmonitor ran in read-only mode")
+	}
+}
+
+func TestBwrapExecDenyList(t *testing.T) {
+	root := t.TempDir()
+	usr := filepath.Join(root, "usr", "bin")
+	os.MkdirAll(usr, 0o755)
+	os.WriteFile(filepath.Join(usr, "sudo"), []byte("x"), 0o755)
+	os.WriteFile(filepath.Join(usr, "busybox"), []byte("x"), 0o755)
+	os.Symlink(filepath.Join(usr, "busybox"), filepath.Join(usr, "su"))
+	os.Symlink(usr, filepath.Join(root, "bin"))
+	got := deniedPaths([]string{usr, filepath.Join(root, "bin"), filepath.Join(root, "missing")}, []string{"sudo", "su", "pkexec"})
+	real, _ := filepath.EvalSymlinks(usr)
+	if !slices.Equal(got, []string{filepath.Join(real, "sudo")}) {
+		t.Errorf("denied %q: want only the real sudo, no symlinked multi-call binary, no duplicates", got)
+	}
+	args := strings.Join(bwrapArgs("ls", "/tmp/x", []string{"/usr/bin/sudo"}), " ")
+	if args != "--ro-bind / / --dev /dev --proc /proc --bind /tmp/x /tmp/x --ro-bind /dev/null /usr/bin/sudo --die-with-parent bash -c ls" {
+		t.Errorf("bwrap args: %s", args)
+	}
+}
+
+func TestLinuxSandboxDeniesExec(t *testing.T) {
+	if runtime.GOOS != "linux" || !HasSandbox() {
+		t.Skip("needs the Linux bwrap sandbox")
+	}
+	denied := execDenied()
+	if len(denied) == 0 {
+		t.Skip("none of the denied binaries is installed")
+	}
+	allowed, _ := filepath.EvalSymlinks(t.TempDir())
+	for _, bin := range denied {
+		out, err := sandboxCmd(context.Background(), bin+" --help", allowed).CombinedOutput()
+		if err == nil || !strings.Contains(string(out), "Permission denied") {
+			t.Errorf("%s ran under the sandbox: %v %s", bin, err, out)
+		}
+	}
+	if out, err := sandboxCmd(context.Background(), "ls /", allowed).CombinedOutput(); err != nil {
+		t.Errorf("ls failed under the sandbox: %v %s", err, out)
 	}
 }

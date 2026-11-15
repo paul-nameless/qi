@@ -116,7 +116,8 @@ func findSandbox() string {
 	if err != nil {
 		return ""
 	}
-	if exec.Command(path, "--ro-bind", "/", "/", "--dev", "/dev", "--die-with-parent", "true").Run() != nil {
+	tmp, _ := filepath.EvalSymlinks(os.TempDir())
+	if exec.Command(path, bwrapArgs("true", tmp, execDenied())...).Run() != nil {
 		return ""
 	}
 	return path
@@ -130,7 +131,45 @@ func sandboxCmd(ctx context.Context, command, tmp string) *exec.Cmd {
 	case runtime.GOOS == "darwin":
 		return exec.CommandContext(ctx, path, "-D", "TMP="+tmp, "-p", sandboxProfile, "bash", "-c", command)
 	}
-	return exec.CommandContext(ctx, path, "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--bind", tmp, tmp, "--die-with-parent", "bash", "-c", command)
+	return exec.CommandContext(ctx, path, bwrapArgs(command, tmp, execDenied())...)
+}
+
+var deniedExecs = []string{
+	"sudo", "su", "doas", "pkexec", "run0",
+	"xdg-open", "gio", "gnome-open", "kde-open", "kde-open5", "exo-open",
+	"systemctl", "loginctl", "systemd-run", "crontab", "at",
+	"gsettings", "dconf", "secret-tool", "dbus-send", "gdbus", "busctl", "qdbus",
+}
+
+var execDirs = []string{"/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin"}
+
+var execDenied = sync.OnceValue(func() []string { return deniedPaths(execDirs, deniedExecs) })
+
+func deniedPaths(dirs, names []string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, d := range dirs {
+		real, err := filepath.EvalSymlinks(d)
+		if err != nil {
+			continue
+		}
+		for _, n := range names {
+			p := filepath.Join(real, n)
+			if st, err := os.Lstat(p); err == nil && st.Mode().IsRegular() && !seen[p] {
+				seen[p] = true
+				out = append(out, p)
+			}
+		}
+	}
+	return out
+}
+
+func bwrapArgs(command, tmp string, denied []string) []string {
+	args := []string{"--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--bind", tmp, tmp}
+	for _, p := range denied {
+		args = append(args, "--ro-bind", "/dev/null", p)
+	}
+	return append(args, "--die-with-parent", "bash", "-c", command)
 }
 
 func HasSandbox() bool {
