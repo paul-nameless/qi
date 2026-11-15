@@ -291,3 +291,19 @@ func TestSystemPromptStaticPartIsDirectoryFree(t *testing.T) {
 		t.Errorf("directory part: %q", rest)
 	}
 }
+
+func TestFmtTokens(t *testing.T) {
+	cases := map[int]string{42: "42", 5234: "5.2k", 200000: "200k", 1000000: "1M", 1050000: "1.05M"}
+	for n, want := range cases {
+		if got := fmtTokens(n); got != want {
+			t.Errorf("fmtTokens(%d) = %q, want %q", n, got, want)
+		}
+	}
+}
+
+func TestContextUsageBeforeFirstRequest(t *testing.T) {
+	a := &Agent{System: strings.Repeat("x", 40000), Registry: tools.NewRegistry(), Cfg: config.Config{Model: "claude-opus-5-5", ContextWindow: 200000}}
+	if got, want := a.ContextUsage(), "context ~10.0k of 200k (5.0%)"; got != want {
+		t.Errorf("ContextUsage() = %q, want %q", got, want)
+	}
+}

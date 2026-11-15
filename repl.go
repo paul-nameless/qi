@@ -133,7 +133,7 @@ func (r *repl) run() error {
 
 func (r *repl) banner() {
 	where := r.agent.Session.ID
-	r.display.Line(r.display.Color(ui.Bold, "aicode") + r.display.Color(ui.Dim, fmt.Sprintf(" %s · %s · %s · session %s", version, r.agent.Model(), r.modeName(), where)))
+	r.display.Line(r.display.Color(ui.Bold, "aicode") + r.display.Color(ui.Dim, fmt.Sprintf(" %s · %s · %s · %s · session %s", version, r.agent.Model(), r.modeName(), r.agent.ContextUsage(), where)))
 	if n := len(r.agent.Messages); n > 0 {
 		r.printHistory()
 	}

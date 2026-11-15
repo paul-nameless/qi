@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -227,7 +229,25 @@ func cachedPct(u llm.Usage) string {
 	return fmt.Sprintf(" (%d%% cached)", u.CacheRead*100/u.Input)
 }
 
+func (a *Agent) ContextUsage() string {
+	n := a.ContextTokens()
+	if n == 0 {
+		n = a.EstimateTokens()
+	}
+	window, known := a.Cfg.Window()
+	if !known || window <= 0 {
+		return "context ~" + fmtTokens(n)
+	}
+	return fmt.Sprintf("context ~%s of %s (%.1f%%)", fmtTokens(n), fmtTokens(window), float64(n)*100/float64(window))
+}
+
 func fmtTokens(n int) string {
+	switch {
+	case n >= 1000000:
+		return strconv.FormatFloat(math.Round(float64(n)/1e4)/100, 'f', -1, 64) + "M"
+	case n >= 100000:
+		return fmt.Sprintf("%dk", n/1000)
+	}
 	if n >= 1000 {
 		return fmt.Sprintf("%.1fk", float64(n)/1000)
 	}
