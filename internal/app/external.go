@@ -284,11 +284,15 @@ func (r *repl) toolKeys() [][2]string {
 	}
 }
 
-func (r *repl) configInfo() string {
-	path := r.opts.configPath
-	if path == "" {
-		path = config.DefaultPath()
+func (r *repl) configPath() string {
+	if r.opts.configPath != "" {
+		return config.ExpandHome(r.opts.configPath)
 	}
+	return config.DefaultPath()
+}
+
+func (r *repl) configInfo() string {
+	path := r.configPath()
 	var b strings.Builder
 	fmt.Fprintf(&b, "Config: %s\nExternal tools:", path)
 	picker := r.agent.Config().Picker

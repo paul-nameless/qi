@@ -89,6 +89,7 @@ func (r *repl) run() error {
 		return fmt.Errorf("terminal: %w", err)
 	}
 	r.term = t
+	defer r.resumeHint()
 	defer t.Restore()
 	ui.OnCrash(r.closeResources)
 	defer ui.CleanupOnPanic()
@@ -155,8 +156,7 @@ func (r *repl) run() error {
 }
 
 func (r *repl) banner() {
-	where := r.agent.Session().ID
-	r.display.Line(r.bannerLine(where))
+	r.display.Line(r.bannerLine())
 	if n := len(r.agent.Messages()); n > 0 {
 		r.printHistory()
 	}
@@ -169,8 +169,55 @@ func bannerVersion(v string) string {
 	return v
 }
 
-func (r *repl) bannerLine(sessionID string) string {
-	return r.display.Color(ui.Bold, "qi") + r.display.Color(ui.Dim, fmt.Sprintf(" %s · %s · %s · %s · %s · %s", bannerVersion(r.opts.version), r.agent.Model(), effortName(r.agent.Config().ReasoningEffort), r.modeName(), r.agent.ContextUsage(), sessionID))
+func (r *repl) bannerLine() string {
+	return r.display.Color(ui.Bold, "qi") + r.display.Color(ui.Dim, fmt.Sprintf(" %s · %s · %s · %s · %s", bannerVersion(r.opts.version), r.agent.Model(), effortName(r.agent.Config().ReasoningEffort), r.modeName(), r.agent.ContextUsage()))
+}
+
+func (r *repl) resumeHint() {
+	s := r.agent.Session()
+	if s == nil || len(r.agent.Messages()) == 0 {
+		return
+	}
+	fmt.Println(r.display.Color(ui.Dim, "resume: qi -r "+s.ID))
+}
+
+func (r *repl) status() string {
+	cfg := r.agent.Config()
+	rows := [][2]string{
+		{"version", r.opts.version},
+		{"model", cfg.Model + providerNote(cfg.Provider)},
+		{"effort", effortName(cfg.ReasoningEffort)},
+		{"profile", orDash(cfg.Profile)},
+		{"mode", r.modeName()},
+		{"context", strings.TrimPrefix(r.agent.ContextUsage(), "context ")},
+		{"cwd", config.ShortHome(r.agent.Cwd())},
+		{"config", config.ShortHome(r.configPath())},
+	}
+	if s := r.agent.Session(); s != nil {
+		rows = append(rows, [2]string{"session", s.ID}, [2]string{"file", config.ShortHome(s.Path)})
+	}
+	var b strings.Builder
+	for i, row := range rows {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		fmt.Fprintf(&b, "%-8s %s", row[0], row[1])
+	}
+	return b.String()
+}
+
+func providerNote(p string) string {
+	if p == "" {
+		return ""
+	}
+	return " (" + p + ")"
+}
+
+func orDash(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
 }
 
 func (r *repl) handleSignals() {
@@ -247,6 +294,7 @@ func (r *repl) shutdown() {
 		defer close(done)
 		r.quit()
 		proc.Settle(time.Second)
+		r.resumeHint()
 	}()
 	select {
 	case <-done:

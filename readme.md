@@ -93,7 +93,7 @@ git diff | qi -q "review this"
 
 Keys: shift+tab toggles read-only, ctrl+g opens `$EDITOR`, ctrl+r searches past prompts, `@` picks files, alt+enter adds a newline, esc or ctrl+c stops the agent. Text typed while it works is sent with the next tool results.
 
-Commands: `/help`, `/keys`, `/config`, `/clear`, `/context`, `/compact`, `/reload`, `/resume`, `/history`, `/copy`, `/model`, `/profile`, `/effort`, `/skills`, `/mcp`, `/exit`, plus `/<skill or command>`. `/` on an empty line opens the picker.
+Commands: `/help`, `/keys`, `/status`, `/config`, `/clear`, `/context`, `/compact`, `/reload`, `/resume`, `/history`, `/copy`, `/model`, `/profile`, `/effort`, `/skills`, `/mcp`, `/exit`, plus `/<skill or command>`. `/` on an empty line opens the picker.
 
 ## External tools
 

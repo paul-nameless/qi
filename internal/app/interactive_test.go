@@ -452,13 +452,25 @@ func TestBannerLine(t *testing.T) {
 	r, _ := testRepl(t, config.Config{Model: "claude-opus-5-5", ContextWindow: 200000}, nopProvider{})
 	r.opts.version = "dev-x"
 	id := r.agent.Session().ID
-	got := r.bannerLine(id)
-	if !strings.HasPrefix(got, "qi dev · claude-opus-5-5 · default · yolo · ") || !strings.HasSuffix(got, "/200k ("+strings.Split(strings.Split(got, "(")[1], ")")[0]+") · "+id) || strings.Contains(got, "context") || strings.Contains(got, "~") || strings.Contains(got, "session") {
+	got := r.bannerLine()
+	if !strings.HasPrefix(got, "qi dev · claude-opus-5-5 · default · yolo · ") || !strings.HasSuffix(got, "/200k ("+strings.Split(strings.Split(got, "(")[1], ")")[0]+")") || strings.Contains(got, id) || strings.Contains(got, "context") || strings.Contains(got, "~") {
 		t.Errorf("banner %q", got)
 	}
 	r2, _ := testRepl(t, config.Config{Model: "unknown-model"}, nopProvider{})
-	if got := r2.bannerLine("ID"); strings.Contains(got, "/") || !strings.HasSuffix(got, " · ID") {
+	if got := r2.bannerLine(); strings.Contains(got, "/") {
 		t.Errorf("banner with an unknown window %q", got)
+	}
+}
+
+func TestStatusShowsSessionAndSettings(t *testing.T) {
+	r, _ := testRepl(t, config.Config{Model: "claude-opus-5-5", Provider: "anthropic", Profile: "opus", ReasoningEffort: "high", ContextWindow: 200000}, nopProvider{})
+	r.opts.version = "1.0.0"
+	got := r.status()
+	s := r.agent.Session()
+	for _, want := range []string{"version  1.0.0", "model    claude-opus-5-5 (anthropic)", "effort   high", "profile  opus", "mode     yolo", "/200k (", "session  " + s.ID, "file     " + config.ShortHome(s.Path)} {
+		if !strings.Contains(got, want) {
+			t.Errorf("status missing %q:\n%s", want, got)
+		}
 	}
 }
 
