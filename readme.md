@@ -55,7 +55,7 @@ go install github.com/paul-nameless/qi@latest
 
 Top-level keys apply to every profile; a profile overrides them. `qi -p opus` picks a profile, `/profile` and `/model` switch while running. A provider's key comes from `api_key` (the key itself), `api_key_shell` (a command that prints it, so the key stays out of the file), or the environment: `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`.
 
-Every key is described in [`internal/config/schema.json`](internal/config/schema.json). `qi --check-config` checks the config without calling any API. Or just ask qi to change a setting: the built-in `qi-config` skill knows the format.
+Every key is described in [`internal/config/schema.json`](internal/config/schema.json). `qi -check-config` checks the config without calling any API. Or just ask qi to change a setting: the built-in `qi-config` skill knows the format.
 
 ### MCP
 

@@ -32,24 +32,24 @@ func (r *SubagentRunner) Env() ([]string, error) {
 }
 
 func (r *SubagentRunner) args(prompt, model, provider, effort string) []string {
-	args := []string{"-q", prompt, "--model", model}
+	args := []string{"-q", prompt, "-model", model}
 	if provider == "" {
 		provider = r.Provider
 	}
 	if provider != "" {
-		args = append(args, "--provider", provider)
+		args = append(args, "-provider", provider)
 	}
 	if effort != "" {
-		args = append(args, "--effort", effort)
+		args = append(args, "-effort", effort)
 	}
 	if r.ConfigPath != "" {
-		args = append(args, "--config", r.ConfigPath)
+		args = append(args, "-config", r.ConfigPath)
 	}
 	if r.Profile != "" {
 		args = append(args, "-p", r.Profile)
 	}
 	if r.ReadOnly() {
-		args = append(args, "--read-only")
+		args = append(args, "-read-only")
 	}
 	return args
 }

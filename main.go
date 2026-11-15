@@ -316,10 +316,7 @@ func usage() {
 	width := 0
 	flag.VisitAll(func(f *flag.Flag) {
 		arg, help := flag.UnquoteUsage(f)
-		name := "--" + f.Name
-		if len(f.Name) == 1 {
-			name = "-" + f.Name
-		}
+		name := "-" + f.Name
 		if arg != "" {
 			name += " " + arg
 		}

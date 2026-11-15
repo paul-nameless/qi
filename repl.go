@@ -143,7 +143,7 @@ func (r *repl) banner() {
 	if n := len(r.agent.Messages); n > 0 {
 		r.printHistory()
 	}
-	r.display.Info("/help for commands · shift+tab toggles read-only · ctrl+g opens $EDITOR")
+	r.display.Info("/help for commands")
 }
 
 func (r *repl) handleSignals() {

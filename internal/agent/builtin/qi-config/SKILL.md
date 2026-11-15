@@ -9,7 +9,7 @@ qi is the agent you are running in. Its settings are JSON files.
 
 ## Files
 
-- `~/.config/qi/config.json`: the main config (the directory is `$QI_CONFIG_DIR` when set). `qi --config path.json` uses another file.
+- `~/.config/qi/config.json`: the main config (the directory is `$QI_CONFIG_DIR` when set). `qi -config path.json` uses another file.
 - Profiles live under `profiles` in the config, or in their own file `~/.config/qi/<name>.json` (selected with `-p name`; `-p` also takes a path).
 - Related files that are not JSON config: hooks in `~/.config/qi/settings.json` (Claude Code settings format), skills in `~/.config/qi/skills/<name>/SKILL.md`, commands in `~/.config/qi/commands/*.md`.
 - `schema.json` next to this file is the JSON Schema (draft 2020-12) for every key: types, allowed values, defaults and what each key does. Read it before adding a key you are not sure about.
@@ -26,11 +26,11 @@ qi is the agent you are running in. Its settings are JSON files.
 1. The top-level keys are the shared settings.
 2. The profile is `-p name`, else `default_profile`. Every key a profile sets replaces the top-level value as a whole, including objects (`providers`) and arrays (`subagent_models`); `mcp` is the exception (see MCP servers). `null` resets a key to its default. A profile cannot contain `profiles` or `default_profile`.
 3. `provider` names an entry in `providers` (or the built-ins `claude`, `anthropic`, `openai`) and sets `api`, `base_url`, `api_key`, `api_key_shell` and `cache_control` from it. Connection keys set in the profile itself win over the provider's.
-4. The flags `--provider`, `--model` and `--effort` override everything for one run. `/profile`, `/model` and `/effort` switch at runtime without saving anything.
+4. The flags `-provider`, `-model` and `-effort` override everything for one run. `/profile`, `/model` and `/effort` switch at runtime without saving anything.
 
 ## Check your change
 
-Run `qi --check-config` (add `--config path.json` when relevant). It loads the config, every inline profile and every profile file without calling any API, checks allowed values, and prints the file and key of the first problem.
+Run `qi -check-config` (add `-config path.json` when relevant). It loads the config, every inline profile and every profile file without calling any API, checks allowed values, and prints the file and key of the first problem.
 
 When a change takes effect in a running session:
 - Most keys: after `/profile <name>`, which re-reads the file.
