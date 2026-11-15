@@ -31,7 +31,7 @@ func serverLines(m *mcp.Manager) string {
 	for _, n := range m.Names() {
 		srv := m.Server(n)
 		line := srv.Description
-		if names := srv.ExactTools(); len(names) > 0 && len(names) <= maxListedTools {
+		if names := srv.ExactTools(); len(names) > 0 && len(srv.Tools) <= maxListedTools {
 			line = strings.TrimSpace(line + " (tools: " + strings.Join(names, ", ") + ")")
 		}
 		fmt.Fprintf(&b, "\n- %s: %s", n, line)

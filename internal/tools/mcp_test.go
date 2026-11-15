@@ -77,9 +77,10 @@ func TestToolSearchDescriptionListsExactTools(t *testing.T) {
 		"notes":  {Command: "notes", Description: "Notes", Tools: []string{"*_note"}},
 		"many":   {Command: "many", Tools: strings.Fields("a b c d e f g h i j k l m")},
 		"bare":   {Command: "bare", Tools: []string{"one"}},
+		"cut":    {Command: "cut", Tools: strings.Fields("a b c d e f g h i j k l m"), ExcludeTools: []string{"m"}},
 	})
 	desc := MCPTools(m)[0].Def.Description
-	for _, want := range []string{"\n- github: GitHub issues (tools: get_issue, list_issues)\n", "\n- notes: Notes\n", "\n- many: \n", "\n- bare: (tools: one)"} {
+	for _, want := range []string{"\n- github: GitHub issues (tools: get_issue, list_issues)\n", "\n- notes: Notes\n", "\n- many: \n", "\n- bare: (tools: one)", "\n- cut: \n"} {
 		if !strings.Contains(desc+"\n", want) {
 			t.Errorf("description lacks %q:\n%s", want, desc)
 		}
