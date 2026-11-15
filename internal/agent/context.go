@@ -94,7 +94,7 @@ func messagesRow(msgs []llm.Message) usageRow {
 		for _, b := range m.Blocks {
 			switch b.Type {
 			case llm.BlockText:
-				if m.Role == "assistant" {
+				if m.Role == llm.RoleAssistant {
 					assistant += len(b.Text)
 				} else {
 					user += len(b.Text)

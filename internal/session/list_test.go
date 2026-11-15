@@ -15,7 +15,7 @@ func answered(t *testing.T, cwd, kind string, prompts ...string) *Session {
 	}
 	for _, p := range prompts {
 		_ = s.Message(llm.UserText(p), "m", nil)
-		_ = s.Message(llm.Message{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: "a"}}}, "m", nil)
+		_ = s.Message(llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: "a"}}}, "m", nil)
 	}
 	s.Close()
 	return s

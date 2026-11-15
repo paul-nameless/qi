@@ -29,7 +29,7 @@ func (s *scriptedProvider) Stream(ctx context.Context, req llm.Request, onDelta 
 }
 
 func assistantText(s string) llm.Message {
-	return llm.Message{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: s}}}
+	return llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: s}}}
 }
 
 func reply(m llm.Message) func(llm.Request) (llm.Message, error) {
@@ -46,7 +46,7 @@ func isSummaryRequest(req llm.Request) bool {
 }
 
 func toolResult(id, text string) llm.Message {
-	return llm.Message{Role: "user", Blocks: []llm.Block{{Type: llm.BlockToolResult, ToolUseID: id, Text: text}}}
+	return llm.Message{Role: llm.RoleUser, Blocks: []llm.Block{{Type: llm.BlockToolResult, ToolUseID: id, Text: text}}}
 }
 
 func withReasoning(m llm.Message) llm.Message {
@@ -92,7 +92,7 @@ func TestKeepTail(t *testing.T) {
 	if tail := keepTail(msgs, 2); len(tail) != 0 {
 		t.Errorf("nothing fits, tail must be empty: %+v", tail)
 	}
-	if tail := keepTail(msgs, 1<<30); len(tail) != len(msgs)-1 || tail[0].Role != "assistant" {
+	if tail := keepTail(msgs, 1<<30); len(tail) != len(msgs)-1 || tail[0].Role != llm.RoleAssistant {
 		t.Errorf("the first message is never kept: %d", len(tail))
 	}
 }
@@ -149,7 +149,7 @@ func TestSummaryClipsOnlyWhenTooLong(t *testing.T) {
 }
 
 func TestCompactRejectsCutOffSummary(t *testing.T) {
-	cut := llm.Message{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: "## Objective\nhalf"}, {Type: llm.BlockText, Text: "\n" + llm.CutOffMarker}}}
+	cut := llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: "## Objective\nhalf"}, {Type: llm.BlockText, Text: "\n" + llm.CutOffMarker}}}
 	a := newAgent(t, &fakeProvider{replies: []llm.Message{cut}})
 	a.conv.messages = history()
 	if err := a.Compact(context.Background(), ""); err == nil || len(a.conv.messages) != len(history()) {
@@ -159,7 +159,7 @@ func TestCompactRejectsCutOffSummary(t *testing.T) {
 
 func TestCompactReannouncesModeLostToSummary(t *testing.T) {
 	a := newAgent(t, &fakeProvider{replies: []llm.Message{assistantText("SUMMARY")}})
-	a.conv.messages = append([]llm.Message{{Role: "user", Blocks: []llm.Block{{Type: llm.BlockText, Text: "go"}, {Type: llm.BlockText, Text: readOnlyNote}}}}, history()[1:]...)
+	a.conv.messages = append([]llm.Message{{Role: llm.RoleUser, Blocks: []llm.Block{{Type: llm.BlockText, Text: "go"}, {Type: llm.BlockText, Text: readOnlyNote}}}}, history()[1:]...)
 	a.conv.announced = true
 	if err := a.Compact(context.Background(), ""); err != nil {
 		t.Fatal(err)
@@ -440,7 +440,7 @@ func TestClipHistory(t *testing.T) {
 	in, _ := json.Marshal(map[string]string{"content": big})
 	msgs := []llm.Message{
 		llm.UserText(big),
-		{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockToolUse, ID: "w", Name: "write", Input: in}}},
+		{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockToolUse, ID: "w", Name: "write", Input: in}}},
 		toolResult("w", big),
 	}
 	out := clipHistory(msgs)

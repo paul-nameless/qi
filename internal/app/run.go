@@ -197,7 +197,7 @@ func submitPrompt(ctx context.Context, a *agent.Agent, display notifier, hooks *
 	}
 	blocks := userBlocks(a.Cwd(), sessionPath, display, prompt, images)
 	if extra != "" {
-		blocks = append(blocks, llm.Block{Type: llm.BlockText, Text: "<hook-context>\n" + extra + "\n</hook-context>"})
+		blocks = append(blocks, llm.Block{Type: llm.BlockText, Text: llm.HookContext(extra)})
 	}
 	return blocks, nil
 }

@@ -138,8 +138,8 @@ func TestBuildBodyCacheAndReasoning(t *testing.T) {
 		System: "sys",
 		Messages: []Message{
 			UserText("hi"),
-			{Role: "assistant", Blocks: []Block{reasoning, other, {Type: BlockToolUse, ID: "c1", Name: "read", Input: json.RawMessage(`{}`)}}},
-			{Role: "user", Blocks: []Block{{Type: BlockToolResult, ToolUseID: "c1", Text: ""}, {Type: BlockText, Text: "note"}}},
+			{Role: RoleAssistant, Blocks: []Block{reasoning, other, {Type: BlockToolUse, ID: "c1", Name: "read", Input: json.RawMessage(`{}`)}}},
+			{Role: RoleUser, Blocks: []Block{{Type: BlockToolResult, ToolUseID: "c1", Text: ""}, {Type: BlockText, Text: "note"}}},
 		},
 		ReasoningEffort: "low",
 		MaxTokens:       10,

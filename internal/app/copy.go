@@ -10,7 +10,7 @@ import (
 
 func lastCodeBlock(msgs []llm.Message) string {
 	for i := len(msgs) - 1; i >= 0; i-- {
-		if msgs[i].Role != "assistant" {
+		if msgs[i].Role != llm.RoleAssistant {
 			continue
 		}
 		if code, ok := lastFence(msgs[i].Text()); ok {
@@ -79,7 +79,7 @@ func (r *repl) copyAnswer(args string) error {
 
 func lastAnswer(msgs []llm.Message) string {
 	for i := len(msgs) - 1; i >= 0; i-- {
-		if t := strings.TrimSpace(msgs[i].Text()); msgs[i].Role == "assistant" && t != "" {
+		if t := strings.TrimSpace(msgs[i].Text()); msgs[i].Role == llm.RoleAssistant && t != "" {
 			return t
 		}
 	}

@@ -19,10 +19,10 @@ func writeSession(t *testing.T, cwd, prompt string) *session.Session {
 		t.Fatal(err)
 	}
 	_ = s.Message(llm.UserText(prompt), "m", nil)
-	_ = s.Message(llm.Message{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: "running"}, {Type: llm.BlockToolUse, ID: "c1", Name: "bash", Input: json.RawMessage(`{"command":"seq 20"}`)}}}, "m", nil)
-	_ = s.Message(llm.Message{Role: "user", Blocks: []llm.Block{{Type: llm.BlockToolResult, ToolUseID: "c1", Text: "1\n2\n3\n4\n5\n6\n7\n8\x1b[31m"}}}, "m", nil)
+	_ = s.Message(llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: "running"}, {Type: llm.BlockToolUse, ID: "c1", Name: "bash", Input: json.RawMessage(`{"command":"seq 20"}`)}}}, "m", nil)
+	_ = s.Message(llm.Message{Role: llm.RoleUser, Blocks: []llm.Block{{Type: llm.BlockToolResult, ToolUseID: "c1", Text: "1\n2\n3\n4\n5\n6\n7\n8\x1b[31m"}}}, "m", nil)
 	_ = s.Compaction("the summary", nil, "m")
-	_ = s.Message(llm.Message{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: "done"}}}, "m", nil)
+	_ = s.Message(llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: "done"}}}, "m", nil)
 	_ = s.Message(llm.UserText("dropped"), "m", nil)
 	_ = s.Drop()
 	s.Close()

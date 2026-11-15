@@ -5,16 +5,25 @@ import (
 	"encoding/json"
 )
 
+type BlockType string
+
 const (
-	BlockText       = "text"
-	BlockReasoning  = "reasoning_raw"
-	BlockToolUse    = "tool_use"
-	BlockToolResult = "tool_result"
-	BlockImage      = "image"
+	BlockText       BlockType = "text"
+	BlockReasoning  BlockType = "reasoning_raw"
+	BlockToolUse    BlockType = "tool_use"
+	BlockToolResult BlockType = "tool_result"
+	BlockImage      BlockType = "image"
+)
+
+type Role string
+
+const (
+	RoleUser      Role = "user"
+	RoleAssistant Role = "assistant"
 )
 
 type Block struct {
-	Type      string          `json:"type"`
+	Type      BlockType       `json:"type"`
 	Text      string          `json:"text,omitempty"`
 	Raw       json.RawMessage `json:"raw,omitempty"`
 	Model     string          `json:"model,omitempty"`
@@ -44,12 +53,12 @@ func ImageTokens(b Block) int {
 }
 
 type Message struct {
-	Role   string  `json:"role"`
+	Role   Role    `json:"role"`
 	Blocks []Block `json:"blocks"`
 }
 
 func UserText(text string) Message {
-	return Message{Role: "user", Blocks: []Block{{Type: BlockText, Text: text}}}
+	return Message{Role: RoleUser, Blocks: []Block{{Type: BlockText, Text: text}}}
 }
 
 func (m Message) Text() string {

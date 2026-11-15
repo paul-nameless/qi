@@ -281,12 +281,12 @@ func Repair(msgs []llm.Message) []llm.Message {
 		m := msgs[i]
 		out = append(out, m)
 		calls := m.ToolUses()
-		if m.Role != "assistant" || len(calls) == 0 {
+		if m.Role != llm.RoleAssistant || len(calls) == 0 {
 			continue
 		}
 		answered := map[string]bool{}
 		var next *llm.Message
-		if i+1 < len(msgs) && msgs[i+1].Role == "user" {
+		if i+1 < len(msgs) && msgs[i+1].Role == llm.RoleUser {
 			next = &msgs[i+1]
 			for _, b := range next.Blocks {
 				if b.Type == llm.BlockToolResult {
@@ -304,12 +304,12 @@ func Repair(msgs []llm.Message) []llm.Message {
 			continue
 		}
 		if next != nil {
-			fixed := llm.Message{Role: "user", Blocks: append(missing, next.Blocks...)}
+			fixed := llm.Message{Role: llm.RoleUser, Blocks: append(missing, next.Blocks...)}
 			out = append(out, fixed)
 			i++
 			continue
 		}
-		out = append(out, llm.Message{Role: "user", Blocks: missing})
+		out = append(out, llm.Message{Role: llm.RoleUser, Blocks: missing})
 	}
 	return out
 }

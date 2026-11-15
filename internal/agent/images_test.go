@@ -13,11 +13,11 @@ import (
 func imageRound(i int) []llm.Message {
 	id := fmt.Sprintf("t%d", i)
 	return []llm.Message{
-		{Role: "assistant", Blocks: []llm.Block{
+		{Role: llm.RoleAssistant, Blocks: []llm.Block{
 			{Type: llm.BlockReasoning, Raw: json.RawMessage(`{"type":"thinking"}`), Model: "m"},
 			{Type: llm.BlockToolUse, ID: id, Name: "read", Input: json.RawMessage(`{}`)},
 		}},
-		{Role: "user", Blocks: []llm.Block{{Type: llm.BlockToolResult, ToolUseID: id, Text: "image", Images: []llm.Block{
+		{Role: llm.RoleUser, Blocks: []llm.Block{{Type: llm.BlockToolResult, ToolUseID: id, Text: "image", Images: []llm.Block{
 			{Type: llm.BlockImage, MediaType: "image/png", Data: "AAAA", Width: 1568, Height: 1008, Source: fmt.Sprintf("shot%d.png", i)},
 		}}}},
 	}
@@ -74,7 +74,7 @@ func TestImageTokensFromSize(t *testing.T) {
 }
 
 func TestOverflowClipRemovesPastedImages(t *testing.T) {
-	msgs := []llm.Message{{Role: "user", Blocks: []llm.Block{
+	msgs := []llm.Message{{Role: llm.RoleUser, Blocks: []llm.Block{
 		{Type: llm.BlockText, Text: "look"},
 		{Type: llm.BlockImage, Data: "AAAA", Source: "/tmp/a.png"},
 	}}}
@@ -98,8 +98,8 @@ func TestEvictImagesKeepsTheNewestMessage(t *testing.T) {
 		imgs = append(imgs, llm.Block{Type: llm.BlockImage, Data: big, Source: fmt.Sprintf("b%d.webp", i)})
 	}
 	a.conv.messages = []llm.Message{
-		{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockToolUse, ID: "x", Name: "read", Input: json.RawMessage(`{}`)}}},
-		{Role: "user", Blocks: []llm.Block{{Type: llm.BlockToolResult, ToolUseID: "x", Text: "images", Images: imgs}}},
+		{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockToolUse, ID: "x", Name: "read", Input: json.RawMessage(`{}`)}}},
+		{Role: llm.RoleUser, Blocks: []llm.Block{{Type: llm.BlockToolResult, ToolUseID: "x", Text: "images", Images: imgs}}},
 	}
 	a.evictImages()
 	if n, _ := imageLoad(a.conv.messages); n != 5 {
@@ -122,12 +122,12 @@ func TestEvictImagesBySize(t *testing.T) {
 }
 
 func TestCompactionEvictsImagesFirst(t *testing.T) {
-	p := &fakeProvider{replies: []llm.Message{{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: "summary"}}}}}
+	p := &fakeProvider{replies: []llm.Message{{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: "summary"}}}}}
 	a := newAgent(t, p)
 	for i := 0; i < 130; i++ {
 		a.conv.messages = append(a.conv.messages, imageRound(i)...)
 	}
-	a.conv.messages = append(a.conv.messages, llm.Message{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: "ok"}}})
+	a.conv.messages = append(a.conv.messages, llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: "ok"}}})
 	if err := a.Compact(context.Background(), ""); err != nil {
 		t.Fatal(err)
 	}

@@ -321,7 +321,7 @@ func (s *anthropicStream) result() (Message, Usage, streamEnd) {
 		CacheRead:  s.usage.CacheReadTokens,
 		CacheWrite: s.usage.CacheCreationTokens,
 	}
-	msg := Message{Role: "assistant"}
+	msg := Message{Role: RoleAssistant}
 	for i, b := range s.blocks {
 		if b != nil {
 			msg.Blocks = append(msg.Blocks, b.block(i, s.model)...)

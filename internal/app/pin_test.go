@@ -49,15 +49,15 @@ func pinHistory(model string) []llm.Message {
 	think, _ := json.Marshal(map[string]any{"type": "thinking", "thinking": "plan", "signature": "SIG"})
 	return []llm.Message{
 		llm.UserText("list the files"),
-		{Role: "assistant", Blocks: []llm.Block{
+		{Role: llm.RoleAssistant, Blocks: []llm.Block{
 			{Type: llm.BlockReasoning, Raw: think, Model: model},
 			{Type: llm.BlockText, Text: "Listing."},
 			{Type: llm.BlockToolUse, ID: "call_1", Name: "bash", Input: json.RawMessage(`{"command":"ls"}`)},
 		}},
-		{Role: "user", Blocks: []llm.Block{
+		{Role: llm.RoleUser, Blocks: []llm.Block{
 			{Type: llm.BlockToolResult, ToolUseID: "call_1", Text: "a.go\nb.go", Images: []llm.Block{{Type: llm.BlockImage, MediaType: "image/png", Data: "AAAA", Width: 10, Height: 10}}},
 		}},
-		{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: "Two files."}}},
+		{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: "Two files."}}},
 	}
 }
 

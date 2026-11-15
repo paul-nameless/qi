@@ -513,8 +513,8 @@ func (r *repl) printHistory() {
 	for _, m := range msgs {
 		for _, b := range m.Blocks {
 			switch {
-			case b.Type == llm.BlockText && m.Role == "user":
-				if t := strings.TrimSpace(b.Text); t != "" && !strings.HasPrefix(t, "<") && !strings.HasPrefix(t, "The user sent this") {
+			case b.Type == llm.BlockText && m.Role == llm.RoleUser:
+				if t := strings.TrimSpace(b.Text); t != "" && !llm.IsInBand(t) {
 					r.display.Line(r.display.Color(ui.Cyan, "❯ ") + firstLines(t, 6))
 				}
 			case b.Type == llm.BlockText:
@@ -541,7 +541,7 @@ func firstLines(s string, n int) string {
 func queuedText(blocks []llm.Block) string {
 	var parts []string
 	for _, b := range blocks {
-		if b.Type == llm.BlockText && !strings.HasPrefix(b.Text, "<hook-context>") && !strings.HasPrefix(b.Text, "<attached-image>") {
+		if b.Type == llm.BlockText && !llm.IsAttachment(b.Text) {
 			parts = append(parts, b.Text)
 		}
 	}

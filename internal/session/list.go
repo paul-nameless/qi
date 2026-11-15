@@ -76,5 +76,5 @@ func firstPrompt(line []byte) string {
 
 func IsPrompt(text string) bool {
 	t := strings.TrimSpace(text)
-	return t != "" && !strings.HasPrefix(t, "<") && !strings.HasPrefix(t, "The user sent this")
+	return t != "" && !llm.IsInBand(t)
 }

@@ -11,6 +11,8 @@ import (
 	"github.com/paul-nameless/qi/internal/ui"
 )
 
+const compactionRole llm.Role = "compaction"
+
 func transcript(entries []session.Entry) []llm.Message {
 	var msgs []llm.Message
 	for _, e := range entries {
@@ -20,7 +22,7 @@ func transcript(entries []session.Entry) []llm.Message {
 		case e.Type == "drop" && len(msgs) > 0:
 			msgs = msgs[:len(msgs)-1]
 		case e.Type == "compaction":
-			msgs = append(msgs, llm.Message{Role: "compaction", Blocks: []llm.Block{{Type: llm.BlockText, Text: e.Summary}}})
+			msgs = append(msgs, llm.Message{Role: compactionRole, Blocks: []llm.Block{{Type: llm.BlockText, Text: e.Summary}}})
 		}
 	}
 	return msgs
@@ -65,12 +67,12 @@ func renderTranscript(msgs []llm.Message, resultLines, width int) string {
 	return strings.TrimLeft(b.String(), "\n")
 }
 
-func renderBlock(b *strings.Builder, p painter, role string, blk llm.Block, resultLines int) {
+func renderBlock(b *strings.Builder, p painter, role llm.Role, blk llm.Block, resultLines int) {
 	text := strings.TrimSpace(ui.Sanitize(blk.Text))
 	switch {
-	case role == "compaction":
+	case role == compactionRole:
 		fmt.Fprintf(b, "\n%s\n%s", p.paint(ui.Dim, "── compacted ──"), p.markdown(text))
-	case blk.Type == llm.BlockText && role == "user":
+	case blk.Type == llm.BlockText && role == llm.RoleUser:
 		if session.IsPrompt(blk.Text) {
 			fmt.Fprintf(b, "\n%s%s\n", p.paint(ui.Cyan, "❯ "), strings.ReplaceAll(text, "\n", "\n  "))
 		}

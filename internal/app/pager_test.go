@@ -46,8 +46,8 @@ func TestPager(t *testing.T) {
 func TestRenderColor(t *testing.T) {
 	msgs := []llm.Message{
 		llm.UserText("hi"),
-		{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: "a **bold** word"}, {Type: llm.BlockToolUse, Name: "bash", Input: json.RawMessage(`{"command":"ls"}`)}}},
-		{Role: "user", Blocks: []llm.Block{{Type: llm.BlockToolResult, Text: "one\n\x1b[31mtwo"}}},
+		{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: "a **bold** word"}, {Type: llm.BlockToolUse, Name: "bash", Input: json.RawMessage(`{"command":"ls"}`)}}},
+		{Role: llm.RoleUser, Blocks: []llm.Block{{Type: llm.BlockToolResult, Text: "one\n\x1b[31mtwo"}}},
 	}
 	got := renderTranscript(msgs, 0, 80)
 	for _, want := range []string{ui.Cyan + "❯ " + ui.Reset + "hi\n", ui.Bold + "bold", ui.Dim + "· bash {\"command\":\"ls\"}" + ui.Reset, ui.Dim + "    two" + ui.Reset} {

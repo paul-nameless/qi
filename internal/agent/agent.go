@@ -380,7 +380,7 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 	if mb, ok := a.modeBlock(); ok {
 		blocks = append(blocks, mb)
 	}
-	a.appendMsg(llm.Message{Role: "user", Blocks: blocks}, nil)
+	a.appendMsg(llm.Message{Role: llm.RoleUser, Blocks: blocks}, nil)
 	maxRounds := a.Config().MaxRounds
 	stopActive := false
 	overflowRetried := false
@@ -434,7 +434,7 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 		if len(calls) > 0 {
 			next = a.conv.registry.Execute(ctx, a.env, calls, a.ui)
 			if ctx.Err() != nil {
-				a.appendMsg(llm.Message{Role: "user", Blocks: next}, nil)
+				a.appendMsg(llm.Message{Role: llm.RoleUser, Blocks: next}, nil)
 				return "", stats, context.Canceled
 			}
 			if cb, ok := a.changesBlock(); ok {
@@ -456,13 +456,13 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 			}
 		}
 		if q := a.DrainQueue(); len(q) > 0 {
-			next = append(next, llm.Block{Type: llm.BlockText, Text: "The user sent this while you were working:"})
+			next = append(next, llm.Block{Type: llm.BlockText, Text: llm.QueuedLead})
 			next = append(next, q...)
 		}
 		if mb, ok := a.modeBlock(); ok {
 			next = append(next, mb)
 		}
-		a.appendMsg(llm.Message{Role: "user", Blocks: next}, nil)
+		a.appendMsg(llm.Message{Role: llm.RoleUser, Blocks: next}, nil)
 		a.SetContextTokens(a.ContextTokens() + blockChars(next)/4)
 	}
 }

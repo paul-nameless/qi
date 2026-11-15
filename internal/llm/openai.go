@@ -50,7 +50,7 @@ func (o *OpenAI) buildMessages(req Request) []map[string]any {
 		out = append(out, map[string]any{"role": "system", "content": parts})
 	}
 	for _, m := range MergeConsecutive(req.Messages) {
-		if m.Role == "assistant" {
+		if m.Role == RoleAssistant {
 			out = append(out, o.assistantMessage(m, req.Model))
 			continue
 		}
@@ -325,7 +325,7 @@ func (s *openAIStream) toolCall(tc oaToolDelta) {
 }
 
 func (s *openAIStream) result() (Message, Usage, streamEnd) {
-	msg := Message{Role: "assistant"}
+	msg := Message{Role: RoleAssistant}
 	for _, raw := range s.details.result() {
 		msg.Blocks = append(msg.Blocks, Block{Type: BlockReasoning, Raw: raw, Model: s.model})
 	}

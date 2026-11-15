@@ -35,7 +35,7 @@ func (f *fakeProvider) Stream(ctx context.Context, req llm.Request, onDelta func
 		return llm.Message{}, llm.Usage{}, err
 	}
 	if n >= len(f.replies) {
-		return llm.Message{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: "done"}}}, f.usage, nil
+		return llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: "done"}}}, f.usage, nil
 	}
 	return f.replies[n], f.usage, nil
 }
@@ -53,7 +53,7 @@ func (nopDisplay) Error(string)                  {}
 
 func toolCall(id, cmd string) llm.Message {
 	in, _ := json.Marshal(map[string]string{"command": cmd})
-	return llm.Message{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockToolUse, ID: id, Name: "bash", Input: in}}}
+	return llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockToolUse, ID: id, Name: "bash", Input: in}}}
 }
 
 func newAgent(t *testing.T, p *fakeProvider) *Agent {
@@ -109,7 +109,7 @@ func TestModeNoteSentOnChangeOnly(t *testing.T) {
 	_, _, _ = a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "three"}})
 	users := []string{}
 	for _, m := range a.conv.messages {
-		if m.Role == "user" {
+		if m.Role == llm.RoleUser {
 			users = append(users, lastText(m))
 		}
 	}
@@ -135,16 +135,16 @@ func TestCancelDuringToolsKeepsLogValid(t *testing.T) {
 		t.Fatalf("err %v", err)
 	}
 	last := a.conv.messages[len(a.conv.messages)-1]
-	if last.Role != "user" || len(last.Blocks) != 1 || last.Blocks[0].ToolUseID != "c1" || !last.Blocks[0].IsError {
+	if last.Role != llm.RoleUser || len(last.Blocks) != 1 || last.Blocks[0].ToolUseID != "c1" || !last.Blocks[0].IsError {
 		t.Fatalf("expected interrupted result, got %+v", last)
 	}
 }
 
 func TestCompactBeforeNewPrompt(t *testing.T) {
-	p := &fakeProvider{replies: []llm.Message{{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: "SUMMARY"}}}}}
+	p := &fakeProvider{replies: []llm.Message{{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: "SUMMARY"}}}}}
 	a := newAgent(t, p)
 	a.live.cfg.CompactAt = config.Threshold{Tokens: 100}
-	a.conv.messages = []llm.Message{llm.UserText("old"), {Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: "old answer"}}}}
+	a.conv.messages = []llm.Message{llm.UserText("old"), {Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: "old answer"}}}}
 	a.SetContextTokens(500)
 	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "new request"}}); err != nil {
 		t.Fatal(err)
@@ -159,7 +159,7 @@ func TestCompactBeforeNewPrompt(t *testing.T) {
 }
 
 func TestCompactRejectsEmptySummary(t *testing.T) {
-	p := &fakeProvider{replies: []llm.Message{{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockToolUse, ID: "x", Name: "bash", Input: json.RawMessage(`{}`)}}}}}
+	p := &fakeProvider{replies: []llm.Message{{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockToolUse, ID: "x", Name: "bash", Input: json.RawMessage(`{}`)}}}}}
 	a := newAgent(t, p)
 	a.conv.messages = []llm.Message{llm.UserText("old")}
 	if err := a.Compact(context.Background(), ""); err == nil {
@@ -193,7 +193,7 @@ func TestStopHookContinuesOnceWithActiveFlag(t *testing.T) {
 }
 
 func TestCompactRejectsToolCallsAndTriesOncePerTurn(t *testing.T) {
-	summaryWithTool := llm.Message{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: "Let me check first."}, {Type: llm.BlockToolUse, ID: "x", Name: "bash", Input: json.RawMessage(`{"command":"ls"}`)}}}
+	summaryWithTool := llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: "Let me check first."}, {Type: llm.BlockToolUse, ID: "x", Name: "bash", Input: json.RawMessage(`{"command":"ls"}`)}}}
 	p := &fakeProvider{replies: []llm.Message{summaryWithTool, toolCall("c1", "echo a"), toolCall("c2", "echo b")}}
 	a := newAgent(t, p)
 	a.live.cfg.CompactAt = config.Threshold{Tokens: 10}
@@ -228,14 +228,14 @@ func TestStopHookEmptyReason(t *testing.T) {
 		t.Fatal(err)
 	}
 	last := p.requests[1][len(p.requests[1])-1]
-	if last.Role != "user" || lastText(last) == "" {
+	if last.Role != llm.RoleUser || lastText(last) == "" {
 		t.Errorf("continuation message empty: %+v", last)
 	}
 }
 
 func TestRestoreMode(t *testing.T) {
 	a := newAgent(t, &fakeProvider{})
-	a.conv.messages = []llm.Message{{Role: "user", Blocks: []llm.Block{{Type: llm.BlockText, Text: "x"}, {Type: llm.BlockText, Text: readOnlyNote}}}}
+	a.conv.messages = []llm.Message{{Role: llm.RoleUser, Blocks: []llm.Block{{Type: llm.BlockText, Text: "x"}, {Type: llm.BlockText, Text: readOnlyNote}}}}
 	a.restoreMode()
 	if mb, ok := a.modeBlock(); !ok || mb.Text != yoloNote {
 		t.Errorf("resumed yolo session after read-only should announce yolo: %v %v", mb, ok)
@@ -327,8 +327,8 @@ func TestContextReport(t *testing.T) {
 	a.SetSystem(SystemPrompt{Text: strings.Repeat("s", 4000), Sections: []Section{{"base prompt", 1000}, {"environment", 3000}}})
 	a.conv.messages = []llm.Message{
 		llm.UserText(strings.Repeat("u", 400)),
-		{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockToolUse, ID: "1", Name: "read", Input: json.RawMessage(`{"file_path":"a"}`)}}},
-		{Role: "user", Blocks: []llm.Block{{Type: llm.BlockToolResult, ToolUseID: "1", Text: strings.Repeat("r", 2000)}}},
+		{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockToolUse, ID: "1", Name: "read", Input: json.RawMessage(`{"file_path":"a"}`)}}},
+		{Role: llm.RoleUser, Blocks: []llm.Block{{Type: llm.BlockToolResult, ToolUseID: "1", Text: strings.Repeat("r", 2000)}}},
 	}
 	got := a.ContextReport()
 	for _, want := range []string{"of 200k", "system prompt", "base prompt", "environment", "tools (1)", "messages (3)", "user text", "read results", "500", "free"} {

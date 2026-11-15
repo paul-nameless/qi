@@ -59,7 +59,7 @@ func (a *Agent) evictImages() {
 		return
 	}
 	for i := first + 1; i < len(a.conv.messages); i++ {
-		if a.conv.messages[i].Role == "assistant" {
+		if a.conv.messages[i].Role == llm.RoleAssistant {
 			a.conv.messages[i] = withoutReasoning(a.conv.messages[i])
 		}
 	}

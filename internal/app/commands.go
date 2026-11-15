@@ -362,7 +362,7 @@ func attachImage(sessionPath string, ui notifier, path string) (llm.Block, llm.B
 		info += fmt.Sprintf(" (%d×%d)", img.Width, img.Height)
 	}
 	ui.Info(info)
-	return img, llm.Block{Type: llm.BlockText, Text: "<attached-image>" + note + "</attached-image>"}, nil
+	return img, llm.Block{Type: llm.BlockText, Text: llm.AttachedImage(note)}, nil
 }
 
 func keepTempImage(sessionPath, path string) string {

@@ -12,11 +12,11 @@ import (
 )
 
 func call(id string) llm.Message {
-	return llm.Message{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockToolUse, ID: id, Name: "bash", Input: json.RawMessage(`{}`)}}}
+	return llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockToolUse, ID: id, Name: "bash", Input: json.RawMessage(`{}`)}}}
 }
 
 func result(id string) llm.Message {
-	return llm.Message{Role: "user", Blocks: []llm.Block{{Type: llm.BlockToolResult, ToolUseID: id, Text: "ok"}}}
+	return llm.Message{Role: llm.RoleUser, Blocks: []llm.Block{{Type: llm.BlockToolResult, ToolUseID: id, Text: "ok"}}}
 }
 
 func resultIDs(m llm.Message) []string {
@@ -37,7 +37,7 @@ func TestRepair(t *testing.T) {
 		}
 	})
 	t.Run("orphan in the middle is answered before the next user text", func(t *testing.T) {
-		out := Repair([]llm.Message{llm.UserText("hi"), call("c1"), llm.UserText("again"), {Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: "ok"}}}})
+		out := Repair([]llm.Message{llm.UserText("hi"), call("c1"), llm.UserText("again"), {Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: "ok"}}}})
 		if len(out) != 4 {
 			t.Fatalf("len %d: %+v", len(out), out)
 		}
@@ -61,10 +61,10 @@ func TestRoundTrip(t *testing.T) {
 	}
 	reasoning := llm.Block{Type: llm.BlockReasoning, Raw: json.RawMessage(`{"type":"reasoning.encrypted","data":"x"}`), Model: "m"}
 	_ = s.Message(llm.UserText("first"), "m", nil)
-	_ = s.Message(llm.Message{Role: "assistant", Blocks: []llm.Block{reasoning, {Type: llm.BlockText, Text: "a"}}}, "m", &llm.Usage{Input: 100, Output: 20})
+	_ = s.Message(llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{reasoning, {Type: llm.BlockText, Text: "a"}}}, "m", &llm.Usage{Input: 100, Output: 20})
 	_ = s.Compaction("summary text", nil, "m")
 	_ = s.Message(llm.UserText("after"), "m", nil)
-	_ = s.Message(llm.Message{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: "b"}}}, "m", &llm.Usage{Input: 50, Output: 5})
+	_ = s.Message(llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: "b"}}}, "m", &llm.Usage{Input: 50, Output: 5})
 	s.Close()
 
 	f, _ := os.OpenFile(s.Path, os.O_APPEND|os.O_WRONLY, 0o600)
@@ -98,14 +98,14 @@ func TestLatestSkipsEmptySessions(t *testing.T) {
 	t.Setenv("QI_SESSION_DIR", t.TempDir())
 	s1, _ := Create(CreateOptions{Cwd: "/p", Model: "m", Kind: Interactive})
 	s1.Message(llm.UserText("real work"), "m", nil)
-	s1.Message(llm.Message{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: "done"}}}, "m", nil)
+	s1.Message(llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: "done"}}}, "m", nil)
 	s1.Close()
 	s2, _ := Create(CreateOptions{Cwd: "/p", Model: "m", Kind: Interactive})
 	s2.Message(llm.UserText("asked but never answered"), "m", nil)
 	s2.Close()
 	s3, _ := Create(CreateOptions{Cwd: "/p", Model: "m", Kind: Headless})
 	s3.Message(llm.UserText("one-shot"), "m", nil)
-	s3.Message(llm.Message{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: "ok"}}}, "m", nil)
+	s3.Message(llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: "ok"}}}, "m", nil)
 	s3.Close()
 	now := time.Now()
 	for i, s := range []*Session{s1, s2, s3} {

@@ -123,7 +123,7 @@ func clipHistory(msgs []llm.Message) []llm.Message {
 }
 
 func cuttable(m llm.Message) bool {
-	if m.Role == "assistant" {
+	if m.Role == llm.RoleAssistant {
 		return true
 	}
 	for _, b := range m.Blocks {

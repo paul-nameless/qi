@@ -46,12 +46,12 @@ func (p *scriptProvider) request(n int) llm.Request {
 }
 
 func textReply(s string) llm.Message {
-	return llm.Message{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: s}}}
+	return llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: s}}}
 }
 
 func bashCall(id, command string) llm.Message {
 	in, _ := json.Marshal(map[string]string{"command": command})
-	return llm.Message{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockToolUse, ID: id, Name: "bash", Input: in}}}
+	return llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockToolUse, ID: id, Name: "bash", Input: in}}}
 }
 
 type capture struct {

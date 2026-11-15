@@ -36,8 +36,8 @@ func TestAnthropicStream(t *testing.T) {
 		Model: "claude-haiku-5-5", System: "sys", MaxTokens: 100, ReasoningEffort: "low", CacheTTL: "1h",
 		Messages: []Message{
 			UserText("hi"),
-			{Role: "assistant", Blocks: []Block{{Type: BlockToolUse, ID: "call:abc.1", Name: "bash", Input: json.RawMessage(`{"command":"ls"}`)}}},
-			{Role: "user", Blocks: []Block{{Type: BlockToolResult, ToolUseID: "call:abc.1", Text: "out", Images: []Block{{Type: BlockImage, MediaType: "image/png", Data: "AAAA"}}}}},
+			{Role: RoleAssistant, Blocks: []Block{{Type: BlockToolUse, ID: "call:abc.1", Name: "bash", Input: json.RawMessage(`{"command":"ls"}`)}}},
+			{Role: RoleUser, Blocks: []Block{{Type: BlockToolResult, ToolUseID: "call:abc.1", Text: "out", Images: []Block{{Type: BlockImage, MediaType: "image/png", Data: "AAAA"}}}}},
 		},
 	}
 	msg, u, err := a.Stream(context.Background(), req, func(Delta) {})
@@ -75,7 +75,7 @@ func TestAnthropicReplaysThinkingOnlyForSameModel(t *testing.T) {
 	a := NewAnthropic("", "k")
 	think := Block{Type: BlockReasoning, Raw: json.RawMessage(`{"type":"thinking","thinking":"x","signature":"s"}`), Model: "claude-opus-5-5"}
 	foreign := Block{Type: BlockReasoning, Raw: json.RawMessage(`{"type":"reasoning.encrypted","data":"y"}`), Model: "claude-opus-5-5"}
-	m := Message{Role: "assistant", Blocks: []Block{think, foreign, {Type: BlockText, Text: "a"}}}
+	m := Message{Role: RoleAssistant, Blocks: []Block{think, foreign, {Type: BlockText, Text: "a"}}}
 	if c := a.content(m, "claude-opus-5-5"); len(c) != 2 || c[0]["type"] != "thinking" {
 		t.Errorf("same model: %v", c)
 	}
