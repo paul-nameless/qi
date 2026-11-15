@@ -5,15 +5,20 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
+	"github.com/paul-nameless/qi/internal/config"
 	"github.com/paul-nameless/qi/internal/llm"
 	"github.com/paul-nameless/qi/internal/tools"
 	"github.com/paul-nameless/qi/internal/ui"
@@ -37,6 +42,7 @@ type Hooks struct {
 	Session    string
 	ReadOnly   func() bool
 	SkipPrompt bool
+	Info       func(string)
 }
 
 var claudeToolNames = map[string][]string{
@@ -47,30 +53,100 @@ var claudeToolNames = map[string][]string{
 	"subagent": {"Agent", "Task"},
 }
 
-func LoadHooks(projectDir string, files []string) *Hooks {
+type HookFile struct {
+	Path   string
+	events map[string][]hookMatcher
+}
+
+func LoadHooks(projectDir string, files []string) (*Hooks, error) {
+	parsed, err := ParseHookFiles(files)
+	if err != nil {
+		return nil, err
+	}
+	return NewHooks(projectDir, parsed), nil
+}
+
+func NewHooks(projectDir string, files []HookFile) *Hooks {
 	h := &Hooks{events: map[string][]hookMatcher{}, Cwd: projectDir}
-	seen := map[string]bool{}
 	for _, f := range files {
-		real, err := filepath.EvalSymlinks(f)
-		if err != nil || seen[real] {
-			continue
-		}
-		seen[real] = true
-		data, err := os.ReadFile(real)
-		if err != nil {
-			continue
-		}
-		var s struct {
-			Hooks map[string][]hookMatcher `json:"hooks"`
-		}
-		if json.Unmarshal(data, &s) != nil {
-			continue
-		}
-		for ev, ms := range s.Hooks {
+		for ev, ms := range f.events {
 			h.events[ev] = append(h.events[ev], ms...)
 		}
 	}
 	return h
+}
+
+func ParseHookFiles(files []string) ([]HookFile, error) {
+	var out []HookFile
+	seen := map[string]bool{}
+	for _, f := range files {
+		events, real, err := parseHookFile(f)
+		if errors.Is(err, fs.ErrNotExist) || seen[real] {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("hooks: %s: %s; fix it or remove it from hook_files", config.ShortHome(f), err)
+		}
+		seen[real] = true
+		out = append(out, HookFile{Path: f, events: events})
+	}
+	return out, nil
+}
+
+func parseHookFile(path string) (map[string][]hookMatcher, string, error) {
+	real, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return nil, "", pathProblem(err)
+	}
+	data, err := os.ReadFile(real)
+	if err != nil {
+		return nil, real, pathProblem(err)
+	}
+	var s struct {
+		Hooks map[string][]hookMatcher `json:"hooks"`
+	}
+	if err := json.Unmarshal(data, &s); err != nil {
+		return nil, real, jsonProblem(data, err)
+	}
+	return s.Hooks, real, nil
+}
+
+func pathProblem(err error) error {
+	var pe *fs.PathError
+	if errors.As(err, &pe) && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("cannot read: %w", pe.Err)
+	}
+	return err
+}
+
+func jsonProblem(data []byte, err error) error {
+	var syn *json.SyntaxError
+	var typ *json.UnmarshalTypeError
+	switch {
+	case errors.As(err, &syn):
+		return fmt.Errorf("invalid JSON at line %d", lineAt(data, syn.Offset))
+	case errors.As(err, &typ):
+		return fmt.Errorf("%q has the wrong shape at line %d: %s where %s is expected", typ.Field, lineAt(data, typ.Offset), typ.Value, jsonKind(typ.Type))
+	}
+	return fmt.Errorf("invalid JSON: %w", err)
+}
+
+func jsonKind(t reflect.Type) string {
+	switch t.Kind() {
+	case reflect.Slice, reflect.Array:
+		return "array"
+	case reflect.Map, reflect.Struct:
+		return "object"
+	case reflect.String:
+		return "string"
+	case reflect.Bool:
+		return "boolean"
+	}
+	return "number"
+}
+
+func lineAt(data []byte, offset int64) int {
+	return bytes.Count(data[:min(int(offset), len(data))], []byte("\n")) + 1
 }
 
 func (h *Hooks) Empty() bool {
@@ -165,14 +241,48 @@ func (h *Hooks) exec(ctx context.Context, c hookCmd, input []byte) hookOutcome {
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	err := cmd.Run()
-	code := 0
+	out := hookOutcome{code: exitCode(err), stdout: stdout.String(), stderr: stderr.String()}
+	if ctx.Err() == nil {
+		h.reportFailure(c, timeout, tctx.Err(), err, out)
+	}
+	return out
+}
+
+func exitCode(err error) int {
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
-		code = exitErr.ExitCode()
-	} else if err != nil {
-		code = 1
+		return exitErr.ExitCode()
 	}
-	return hookOutcome{code: code, stdout: stdout.String(), stderr: stderr.String()}
+	if err != nil {
+		return -1
+	}
+	return 0
+}
+
+func (h *Hooks) reportFailure(c hookCmd, timeout int, deadline, err error, o hookOutcome) {
+	var exitErr *exec.ExitError
+	var msg string
+	switch {
+	case errors.Is(deadline, context.DeadlineExceeded):
+		msg = fmt.Sprintf("timed out after %ds", timeout)
+	case err != nil && !errors.As(err, &exitErr):
+		msg = "failed to start: " + err.Error()
+	case o.code == 126 || o.code == 127:
+		msg = fmt.Sprintf("failed to start (exit %d)", o.code)
+	default:
+		return
+	}
+	if last := lastLine(o.stderr); last != "" {
+		msg += ": " + last
+	}
+	if h.Info != nil {
+		h.Info("hook " + strconv.Quote(c.Command) + " " + msg)
+	}
+}
+
+func lastLine(s string) string {
+	lines := strings.Split(strings.TrimSpace(s), "\n")
+	return strings.TrimSpace(lines[len(lines)-1])
 }
 
 func str(m map[string]any, keys ...string) string {

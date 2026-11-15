@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/paul-nameless/qi/internal/llm"
@@ -18,7 +20,11 @@ func writeHooks(t *testing.T, hooks string) *Hooks {
 	if err := os.WriteFile(p, []byte(`{"hooks":`+hooks+`}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	return LoadHooks(dir, []string{p, filepath.Join(dir, "missing.json")})
+	h, err := LoadHooks(dir, []string{p, filepath.Join(dir, "missing.json")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return h
 }
 
 func TestMatches(t *testing.T) {
@@ -132,7 +138,64 @@ func TestEmptyHooks(t *testing.T) {
 	if !h.Empty() {
 		t.Error("nil hooks not empty")
 	}
-	if blocked, _, _ := LoadHooks(t.TempDir(), nil).UserPromptSubmit(context.Background(), "x"); blocked {
+	if blocked, _, _ := NewHooks(t.TempDir(), nil).UserPromptSubmit(context.Background(), "x"); blocked {
 		t.Error("no hooks blocked a prompt")
+	}
+}
+
+func TestHookFileErrors(t *testing.T) {
+	dir := t.TempDir()
+	for name, body := range map[string]string{
+		"syntax.json": "{\n  \"hooks\": {\n    \"Stop\": [,]\n  }\n}",
+		"shape.json":  `{"hooks": {"Stop": [{"hooks": [{"command": "x", "timeout": "60"}]}]}}`,
+		"top.json":    `{"hooks": []}`,
+	} {
+		p := filepath.Join(dir, name)
+		os.WriteFile(p, []byte(body), 0o600)
+		_, err := LoadHooks(dir, []string{p})
+		if err == nil || !strings.Contains(err.Error(), "hooks: "+p+": ") || !strings.HasSuffix(err.Error(), "; fix it or remove it from hook_files") {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	_, err := LoadHooks(dir, []string{filepath.Join(dir, "syntax.json")})
+	if err == nil || !strings.Contains(err.Error(), "invalid JSON at line 3") {
+		t.Errorf("syntax error line: %v", err)
+	}
+	_, err = LoadHooks(dir, []string{filepath.Join(dir, "shape.json")})
+	if err == nil || !strings.Contains(err.Error(), `"hooks.Stop.0.hooks.0.timeout" has the wrong shape at line 1: string where number is expected`) {
+		t.Errorf("shape error: %v", err)
+	}
+	other := filepath.Join(dir, "other.json")
+	os.WriteFile(other, []byte(`{"model": "x", "permissions": {"allow": ["Bash"]}, "hooks": {"Stop": [{"hooks": [{"type": "command", "command": "true", "extra": 1}]}]}}`), 0o600)
+	h, err := LoadHooks(dir, []string{filepath.Join(dir, "missing.json"), other})
+	if err != nil || h.Empty() {
+		t.Errorf("unknown keys or a missing file broke loading: %v", err)
+	}
+	unreadable := filepath.Join(dir, "unreadable.json")
+	os.WriteFile(unreadable, []byte(`{}`), 0o000)
+	if f, openErr := os.Open(unreadable); openErr == nil {
+		f.Close()
+		t.Skip("running as root, permissions are not enforced")
+	}
+	if _, err := LoadHooks(dir, []string{unreadable}); err == nil || !strings.Contains(err.Error(), "cannot read: permission denied") {
+		t.Errorf("unreadable: %v", err)
+	}
+}
+
+func TestHookTimeoutAndStartFailureAreReported(t *testing.T) {
+	var lines []string
+	var mu sync.Mutex
+	h := writeHooks(t, `{"Stop":[{"hooks":[{"type":"command","command":"echo slow >&2; sleep 5","timeout":1},{"type":"command","command":"no-such-hook-binary"}]}]}`)
+	h.Info = func(s string) {
+		mu.Lock()
+		defer mu.Unlock()
+		lines = append(lines, s)
+	}
+	if blocked, _ := h.Stop(context.Background(), "", false); blocked {
+		t.Error("a failing hook blocked")
+	}
+	slices.Sort(lines)
+	if len(lines) != 2 || !strings.HasPrefix(lines[0], `hook "echo slow >&2; sleep 5" timed out after 1s: slow`) || !strings.HasPrefix(lines[1], `hook "no-such-hook-binary" failed to start (exit 127): `) {
+		t.Errorf("lines %q", lines)
 	}
 }

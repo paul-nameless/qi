@@ -258,3 +258,26 @@ func TestProfileSwitchKeepsMCPSetup(t *testing.T) {
 		t.Errorf("no restart hint: %q %v", r.noMCP(), err)
 	}
 }
+
+func TestMalformedHookFileFailsStartup(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("QI_CONFIG_DIR", filepath.Join(home, ".config", "qi"))
+	bad := filepath.Join(home, ".claude", "settings.json")
+	os.MkdirAll(filepath.Dir(bad), 0o700)
+	os.WriteFile(bad, []byte("{\"hooks\": {\"PreToolUse\": [}}"), 0o600)
+	cfgPath := filepath.Join(home, "config.json")
+	os.WriteFile(cfgPath, []byte(`{"api_key": "k", "base_url": "http://127.0.0.1:1"}`), 0o600)
+	err := run(options{query: "hi", configPath: cfgPath})
+	if err == nil || err.Error() != "hooks: ~/.claude/settings.json: invalid JSON at line 1; fix it or remove it from hook_files" {
+		t.Fatalf("startup with a malformed hook file: %v", err)
+	}
+	if entries, _ := os.ReadDir(filepath.Join(home, ".local", "share", "qi")); len(entries) > 0 {
+		t.Errorf("a failed start left files behind: %v", entries)
+	}
+	missing := filepath.Join(home, "missing.json")
+	h, err := loadHooks([]string{home}, []string{missing, "~/.claude/settings.local.json"}, true, devNullPrinter(t))
+	if err != nil || !h.Empty() {
+		t.Errorf("missing hook files: %v", err)
+	}
+}

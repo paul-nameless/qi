@@ -74,11 +74,14 @@ func run(o options) error {
 	if err != nil || cancelled {
 		return err
 	}
+	hooks, err := loadHooks(roots, cfg.HookFiles, headless, display)
+	if err != nil {
+		return err
+	}
 	if err := openSession(a, o, cfg, cwd, resume, headless, isSub); err != nil {
 		return err
 	}
 	defer a.Session.Close()
-	hooks := agent.LoadHooks(roots[0], hookFiles(roots, cfg.HookFiles, headless, display))
 	hooks.Session, hooks.SessionID, hooks.ReadOnly = a.Session.Path, a.Session.ID, a.ReadOnly
 	if !hooks.Empty() {
 		env.PreHook = hooks.PreToolUse
@@ -163,12 +166,21 @@ func resolveConfig(o options) (config.Config, error) {
 	return cfg, nil
 }
 
-func hookFiles(roots, configured []string, headless bool, display *ui.Printer) []string {
-	files, skipped := agent.SelectHookFiles(roots, configured, !headless, agent.AskTrust)
-	if skipped && headless && os.Getenv("QI_SUBAGENT") == "" {
-		display.Info("skipping untrusted project hooks in " + roots[0] + " (start qi interactively there once to trust them)")
+func loadHooks(roots, configured []string, headless bool, display *ui.Printer) (*agent.Hooks, error) {
+	parsed, err := agent.ParseHookFiles(agent.ExpandPaths(roots, configured))
+	if err != nil {
+		return nil, err
 	}
-	return files
+	files, skipped, err := agent.SelectHookFiles(roots[0], parsed, !headless, agent.AskTrust)
+	if err != nil {
+		display.Info(err.Error())
+	}
+	if skipped && headless && os.Getenv("QI_SUBAGENT") == "" {
+		display.Info("skipping untrusted or changed project hooks in " + roots[0] + " (start qi interactively there to review them)")
+	}
+	h := agent.NewHooks(roots[0], files)
+	h.Info = display.Info
+	return h, nil
 }
 
 func submitPrompt(ctx context.Context, a *agent.Agent, hooks *agent.Hooks, prompt string, images ...string) ([]llm.Block, error) {
