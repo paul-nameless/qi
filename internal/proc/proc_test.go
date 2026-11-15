@@ -88,3 +88,33 @@ func TestStop(t *testing.T) {
 		t.Errorf("stop before start: %v", err)
 	}
 }
+
+func TestSettleWaitsForEscalation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cmd, pidFile := startGroup(t, ctx, `sh -c 'trap "" TERM; echo $$ > "$1"; exec sleep 30' sh "$1" >/dev/null 2>&1 & wait`, 300*time.Millisecond)
+	child := childPid(t, pidFile)
+	cancel()
+	_ = cmd.Wait()
+	if syscall.Kill(child, 0) != nil {
+		t.Fatal("child ignoring SIGTERM died before the grace period; the test does not exercise escalation")
+	}
+	if !Settle(3 * time.Second) {
+		t.Fatal("escalation did not finish")
+	}
+	if !gone(child) {
+		t.Errorf("child %d still alive after Settle", child)
+	}
+}
+
+func TestStopKillsGroupMembersSynchronously(t *testing.T) {
+	cmd, pidFile := startGroup(t, context.Background(), `sh -c 'trap "" TERM; echo $$ > "$1"; exec sleep 30' sh "$1" >/dev/null 2>&1 &`, 300*time.Millisecond)
+	child := childPid(t, pidFile)
+	start := time.Now()
+	_ = Stop(cmd, 300*time.Millisecond)
+	if time.Since(start) < 250*time.Millisecond {
+		t.Error("Stop returned before the grace period although a group member ignores SIGTERM")
+	}
+	if !gone(child) {
+		t.Errorf("group member %d still alive after Stop returned", child)
+	}
+}

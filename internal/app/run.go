@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/paul-nameless/qi/internal/agent"
 	"github.com/paul-nameless/qi/internal/config"
 	"github.com/paul-nameless/qi/internal/llm"
 	"github.com/paul-nameless/qi/internal/mcp"
+	"github.com/paul-nameless/qi/internal/proc"
 	"github.com/paul-nameless/qi/internal/session"
 	"github.com/paul-nameless/qi/internal/tools"
 	"github.com/paul-nameless/qi/internal/ui"
@@ -31,7 +33,10 @@ type options struct {
 	version     string
 }
 
+const escalationWait = 6 * time.Second
+
 func run(o options) error {
+	defer proc.Settle(escalationWait)
 	cfg, err := resolveConfig(o)
 	if err != nil {
 		return err

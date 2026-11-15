@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -30,13 +31,29 @@ func Setup(cmd *exec.Cmd, mode Mode, grace time.Duration) {
 	cmd.WaitDelay = grace + time.Second
 }
 
+var escalations sync.WaitGroup
+
 func Terminate(pgid int, grace time.Duration) error {
 	err := syscall.Kill(-pgid, syscall.SIGTERM)
 	if errors.Is(err, syscall.ESRCH) {
 		return os.ErrProcessDone
 	}
-	go killAfter(pgid, grace)
+	escalations.Go(func() { killAfter(pgid, grace) })
 	return err
+}
+
+func Settle(limit time.Duration) bool {
+	done := make(chan struct{})
+	go func() {
+		escalations.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return true
+	case <-time.After(limit):
+		return false
+	}
 }
 
 func killAfter(pgid int, grace time.Duration) {
@@ -58,8 +75,17 @@ func Stop(cmd *exec.Cmd, grace time.Duration) error {
 	if cmd.Process == nil {
 		return nil
 	}
-	if err := Terminate(cmd.Process.Pid, grace); err != nil && !errors.Is(err, os.ErrProcessDone) {
+	pgid := cmd.Process.Pid
+	_ = syscall.Kill(-pgid, syscall.SIGTERM)
+	deadline := time.Now().Add(grace)
+	waited := make(chan error, 1)
+	go func() { waited <- cmd.Wait() }()
+	select {
+	case err := <-waited:
+		killAfter(pgid, time.Until(deadline))
 		return err
+	case <-time.After(grace):
+		_ = syscall.Kill(-pgid, syscall.SIGKILL)
+		return <-waited
 	}
-	return cmd.Wait()
 }

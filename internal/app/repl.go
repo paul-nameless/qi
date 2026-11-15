@@ -16,6 +16,7 @@ import (
 	"github.com/paul-nameless/qi/internal/config"
 	"github.com/paul-nameless/qi/internal/llm"
 	"github.com/paul-nameless/qi/internal/mcp"
+	"github.com/paul-nameless/qi/internal/proc"
 	"github.com/paul-nameless/qi/internal/session"
 	"github.com/paul-nameless/qi/internal/tools"
 	"github.com/paul-nameless/qi/internal/ui"
@@ -228,6 +229,7 @@ func (r *repl) shutdown() {
 	go func() {
 		defer close(done)
 		r.quit()
+		proc.Settle(time.Second)
 	}()
 	select {
 	case <-done:
