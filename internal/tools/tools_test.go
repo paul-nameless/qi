@@ -144,18 +144,18 @@ func TestReadPath(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "f.txt")
 	os.WriteFile(p, []byte("a\nb\nc\nd\n"), 0o600)
-	res := readPath(p, 2, 2)
+	res := readPath(p, 2, 2, nil)
 	if res.Text != "2\tb\n3\tc\n(lines 2-3 of 4; continue with offset=4)\n" {
 		t.Errorf("got %q", res.Text)
 	}
-	if res := readPath(p, 9, 0); !res.IsError {
+	if res := readPath(p, 9, 0, nil); !res.IsError {
 		t.Error("offset past end accepted")
 	}
 	os.WriteFile(filepath.Join(dir, "bin"), []byte{0, 1, 2}, 0o600)
-	if res := readPath(filepath.Join(dir, "bin"), 0, 0); res.Summary != "binary" {
+	if res := readPath(filepath.Join(dir, "bin"), 0, 0, nil); res.Summary != "binary" {
 		t.Errorf("binary: %+v", res)
 	}
-	if res := readPath("/dev/null", 0, 0); !res.IsError {
+	if res := readPath("/dev/null", 0, 0, nil); !res.IsError {
 		t.Error("device file accepted")
 	}
 }
@@ -222,7 +222,7 @@ func TestReadCapsOutputBytes(t *testing.T) {
 	p := filepath.Join(dir, "big.jsonl")
 	line := strings.Repeat("x", 1999) + "\n"
 	os.WriteFile(p, []byte(strings.Repeat(line, 2000)), 0o600)
-	res := readPath(p, 0, 0)
+	res := readPath(p, 0, 0, nil)
 	if len(res.Text) > maxReadOutput+5000 || !strings.Contains(res.Text, "of 2000; continue with offset=") {
 		t.Errorf("read returned %d bytes", len(res.Text))
 	}

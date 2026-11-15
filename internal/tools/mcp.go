@@ -2,7 +2,9 @@ package tools
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -83,10 +85,11 @@ func MCPTools(m *mcp.Manager) []*Tool {
 				case "text":
 					b.WriteString(c.Text + "\n")
 				case "image":
-					if imageTypes["."+strings.TrimPrefix(c.MimeType, "image/")] != "" && len(c.Data)*3/4 <= maxImageBytes {
-						images = append(images, llm.Block{Type: llm.BlockImage, MediaType: c.MimeType, Data: c.Data})
+					if img, err := mcpImage(c.MimeType, c.Data); err == nil {
+						images = append(images, img.block)
+						b.WriteString(img.note + "\n")
 					} else {
-						fmt.Fprintf(&b, "[image omitted: %s, %d bytes]\n", c.MimeType, len(c.Data)*3/4)
+						fmt.Fprintf(&b, "[image omitted: %s, %v]\n", c.MimeType, err)
 					}
 				default:
 					fmt.Fprintf(&b, "[%s content]\n", c.Type)
@@ -100,4 +103,18 @@ func MCPTools(m *mcp.Manager) []*Tool {
 		},
 	}
 	return []*Tool{search, call}
+}
+
+func mcpImage(mimeType, data string) (preparedImage, error) {
+	if imageTypes["."+strings.TrimPrefix(mimeType, "image/")] == "" {
+		return preparedImage{}, errors.New("unsupported image type")
+	}
+	if len(data)*3/4 > maxImageFile {
+		return preparedImage{}, fmt.Errorf("%d bytes is too large", len(data)*3/4)
+	}
+	raw, err := base64.StdEncoding.DecodeString(data)
+	if err != nil {
+		return preparedImage{}, fmt.Errorf("invalid base64: %w", err)
+	}
+	return prepareImage(raw, mimeType, "", nil)
 }

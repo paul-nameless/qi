@@ -44,7 +44,7 @@ func (a *Agent) ContextReport() string {
 			fmt.Fprintf(&b, "    %-28s %7s\n", fitName(s.name, 28), fmtTokens(s.tokens))
 		}
 	}
-	b.WriteString("estimated at 4 characters per token, " + fmtTokens(imageChars/4) + " per image")
+	b.WriteString("estimated at 4 characters per token; images from their size")
 	return b.String()
 }
 
@@ -110,9 +110,11 @@ func messagesRow(msgs []llm.Message) usageRow {
 					name = "other"
 				}
 				results[name] += len(b.Text)
-				images += len(b.Images) * imageChars
+				for _, img := range b.Images {
+					images += 4 * llm.ImageTokens(img)
+				}
 			case llm.BlockImage:
-				images += imageChars
+				images += 4 * llm.ImageTokens(b)
 			}
 		}
 	}

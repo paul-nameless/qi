@@ -3,11 +3,9 @@ package tools
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -20,7 +18,6 @@ import (
 const (
 	defaultReadLimit = 2000
 	maxLineLen       = 2000
-	maxImageBytes    = 5 << 20
 	maxReadBytes     = 20 << 20
 	maxReadOutput    = 60 << 10
 )
@@ -41,14 +38,15 @@ type readArgs struct {
 	FilePath string `json:"file_path"`
 	Offset   int    `json:"offset"`
 	Limit    int    `json:"limit"`
+	Crop     []int  `json:"crop"`
 }
 
 func Read() *Tool {
 	return &Tool{
 		Def: llm.ToolDef{
 			Name:        "read",
-			Description: "Read a file with line numbers (`N<tab>line`), a directory listing, or an image. Reads up to 2000 lines; use offset/limit for more.",
-			Schema:      json.RawMessage(`{"type":"object","properties":{"file_path":{"type":"string","description":"Path to the file or directory"},"offset":{"type":"integer","description":"1-based line number to start from"},"limit":{"type":"integer","description":"Maximum number of lines to read"}},"required":["file_path"]}`),
+			Description: "Read a file with line numbers (`N<tab>line`), a directory listing, or an image. Reads up to 2000 lines; use offset/limit for more. Images larger than 1568px are scaled down; use crop to see a region at full resolution.",
+			Schema:      json.RawMessage(`{"type":"object","properties":{"file_path":{"type":"string","description":"Path to the file or directory"},"offset":{"type":"integer","description":"1-based line number to start from"},"limit":{"type":"integer","description":"Maximum number of lines to read"},"crop":{"type":"array","items":{"type":"integer"},"description":"Images only: [x, y, width, height] in original pixels; returns that region at full resolution (scaled down only if larger than 1568px)"}},"required":["file_path"]}`),
 		},
 		Path: pathKey,
 		Label: func(env *Env, in json.RawMessage) string {
@@ -71,7 +69,7 @@ func Read() *Tool {
 				return errResult("file_path is required")
 			}
 			path := env.resolve(a.FilePath)
-			res := readPath(path, a.Offset, a.Limit)
+			res := readPath(path, a.Offset, a.Limit, a.Crop)
 			if !res.IsError {
 				env.files.remember(path)
 			}
@@ -80,7 +78,7 @@ func Read() *Tool {
 	}
 }
 
-func readPath(path string, offset, limit int) Result {
+func readPath(path string, offset, limit int, crop []int) Result {
 	st, err := os.Stat(path)
 	if err != nil {
 		return errResult("%v", err)
@@ -92,7 +90,10 @@ func readPath(path string, offset, limit int) Result {
 		return errResult("%s is not a regular file", path)
 	}
 	if mt := ImageType(path); mt != "" {
-		return readImage(path, mt, st.Size())
+		return readImage(path, mt, st.Size(), crop)
+	}
+	if len(crop) > 0 {
+		return errResult("crop only applies to images")
 	}
 	if st.Size() > maxReadBytes {
 		return errResult("file is %d MB; use bash (head, sed -n, rg) to read parts of it", st.Size()>>20)
@@ -165,43 +166,42 @@ func listDir(path string) Result {
 	return Result{Text: strings.Join(names, "\n") + more, Summary: fmt.Sprintf("%d entries", len(entries))}
 }
 
-func readImage(path, mediaType string, size int64) Result {
-	if size > maxImageBytes {
-		return errResult("image too large (%d bytes, max %d)", size, maxImageBytes)
-	}
-	f, err := os.Open(path)
+func readImage(path, mediaType string, size int64, crop []int) Result {
+	img, err := loadImage(path, mediaType, size, crop)
 	if err != nil {
 		return errResult("%v", err)
 	}
-	defer f.Close()
-	data, err := io.ReadAll(io.LimitReader(f, maxImageBytes+1))
-	if err != nil {
-		return errResult("%v", err)
-	}
-	if len(data) > maxImageBytes {
-		return errResult("image too large (max %d bytes)", maxImageBytes)
-	}
-	img := llm.Block{Type: llm.BlockImage, MediaType: mediaType, Data: base64.StdEncoding.EncodeToString(data)}
-	return Result{Text: fmt.Sprintf("image %s (%d bytes)", filepath.Base(path), size), Images: []llm.Block{img}, Summary: "image"}
+	return Result{Text: img.note, Images: []llm.Block{img.block}, Summary: "image"}
 }
 
-func LoadImage(path string) (llm.Block, error) {
+func loadImage(path, mediaType string, size int64, crop []int) (preparedImage, error) {
+	if size > maxImageFile {
+		return preparedImage{}, fmt.Errorf("image too large (%d MB, max %d MB)", size>>20, maxImageFile>>20)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return preparedImage{}, err
+	}
+	return prepareImage(data, mediaType, path, crop)
+}
+
+func LoadImage(path string) (llm.Block, string, error) {
 	mt := ImageType(path)
 	if mt == "" {
-		return llm.Block{}, errors.New("not an image")
+		return llm.Block{}, "", errors.New("not an image")
 	}
 	st, err := os.Stat(path)
 	if err != nil {
-		return llm.Block{}, err
+		return llm.Block{}, "", err
 	}
 	if !st.Mode().IsRegular() {
-		return llm.Block{}, errors.New("not a regular file")
+		return llm.Block{}, "", errors.New("not a regular file")
 	}
-	res := readImage(path, mt, st.Size())
-	if res.IsError {
-		return llm.Block{}, errors.New(res.Text)
+	img, err := loadImage(path, mt, st.Size(), nil)
+	if err != nil {
+		return llm.Block{}, "", err
 	}
-	return res.Images[0], nil
+	return img.block, img.note, nil
 }
 
 type writeArgs struct {

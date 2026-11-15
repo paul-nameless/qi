@@ -26,6 +26,21 @@ type Block struct {
 	Images    []Block         `json:"images,omitempty"`
 	MediaType string          `json:"media_type,omitempty"`
 	Data      string          `json:"data,omitempty"`
+	Width     int             `json:"width,omitempty"`
+	Height    int             `json:"height,omitempty"`
+	Source    string          `json:"source,omitempty"`
+}
+
+const (
+	DefaultImageTokens = 2000
+	MaxImageTokens     = 4784
+)
+
+func ImageTokens(b Block) int {
+	if b.Width <= 0 || b.Height <= 0 {
+		return DefaultImageTokens
+	}
+	return min(((b.Width+27)/28)*((b.Height+27)/28), MaxImageTokens)
 }
 
 type Message struct {

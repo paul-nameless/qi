@@ -1,13 +1,18 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"image"
+	"image/png"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/paul-nameless/aicode/internal/config"
 	"github.com/paul-nameless/aicode/internal/llm"
+	"github.com/paul-nameless/aicode/internal/session"
 	"github.com/paul-nameless/aicode/internal/tools"
 	"github.com/paul-nameless/aicode/internal/ui"
 )
@@ -122,5 +127,39 @@ func TestReloadRereadsInstructionsAndSkills(t *testing.T) {
 	r.reload()
 	if !strings.Contains(a.System, "rule two") || strings.Contains(a.System, "rule one") || len(r.skills) != 1 || !strings.Contains(a.System, "- s: does s") {
 		t.Errorf("second reload: skills %d, prompt %q", len(r.skills), a.System)
+	}
+}
+
+func TestPastedTempImagesAreKeptWithTheSession(t *testing.T) {
+	t.Setenv("AICODE_SESSION_DIR", t.TempDir())
+	a, _, _ := buildAgent(config.Config{Model: "m"}, options{}, t.TempDir(), nopProvider{}, devNullPrinter(t), true, false)
+	s, err := session.Create(a.Cwd, "", "m", "interactive", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	a.Session = s
+	src := filepath.Join(t.TempDir(), "Screenshot 1.png")
+	img := image.NewRGBA(image.Rect(0, 0, 40, 20))
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(src, buf.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	blocks := userBlocks(a, "look", []string{src})
+	if len(blocks) != 3 || blocks[1].Type != llm.BlockImage || blocks[1].Width != 40 {
+		t.Fatalf("blocks: %+v", blocks)
+	}
+	kept := blocks[1].Source
+	if !strings.HasPrefix(kept, strings.TrimSuffix(s.Path, ".jsonl")+"-images/") {
+		t.Fatalf("image not kept with the session: %s", kept)
+	}
+	if _, err := os.Stat(kept); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(blocks[2].Text, kept+" 40×20") {
+		t.Errorf("note: %q", blocks[2].Text)
 	}
 }

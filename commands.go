@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -174,7 +176,7 @@ func expandArgs(body, args string, positional bool) string {
 	return body
 }
 
-func userBlocks(cwd, text string) []llm.Block {
+func userBlocks(a *agent.Agent, text string, images []string) []llm.Block {
 	blocks := []llm.Block{{Type: llm.BlockText, Text: text}}
 	for _, tok := range pathTokens(text) {
 		if tools.ImageType(tok) == "" {
@@ -182,13 +184,53 @@ func userBlocks(cwd, text string) []llm.Block {
 		}
 		p := tok
 		if !filepath.IsAbs(p) {
-			p = filepath.Join(cwd, p)
+			p = filepath.Join(a.Cwd, p)
 		}
-		if img, err := tools.LoadImage(p); err == nil {
-			blocks = append(blocks, img)
+		if img, note, err := attachImage(a, p); err == nil {
+			blocks = append(blocks, img, note)
 		}
 	}
+	for _, p := range images {
+		img, note, err := attachImage(a, p)
+		if err != nil {
+			a.UI.Error("image " + p + ": " + err.Error())
+			continue
+		}
+		blocks = append(blocks, img, note)
+	}
 	return blocks
+}
+
+func attachImage(a *agent.Agent, path string) (llm.Block, llm.Block, error) {
+	img, note, err := tools.LoadImage(keepTempImage(a, path))
+	if err != nil {
+		return llm.Block{}, llm.Block{}, err
+	}
+	info := "attached " + filepath.Base(path)
+	if img.Width > 0 {
+		info += fmt.Sprintf(" (%d×%d)", img.Width, img.Height)
+	}
+	a.UI.Info(info)
+	return img, llm.Block{Type: llm.BlockText, Text: note}, nil
+}
+
+func keepTempImage(a *agent.Agent, path string) string {
+	tmp, err := filepath.EvalSymlinks(os.TempDir())
+	src, err2 := filepath.EvalSymlinks(path)
+	if a.Session == nil || err != nil || err2 != nil || !strings.HasPrefix(src, tmp+string(filepath.Separator)) {
+		return path
+	}
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return path
+	}
+	sum := sha256.Sum256(data)
+	dir := strings.TrimSuffix(a.Session.Path, ".jsonl") + "-images"
+	dst := filepath.Join(dir, hex.EncodeToString(sum[:6])+strings.ToLower(filepath.Ext(path)))
+	if os.MkdirAll(dir, 0o700) != nil || os.WriteFile(dst, data, 0o600) != nil {
+		return path
+	}
+	return dst
 }
 
 func imagePaths(cwd, text string) []string {

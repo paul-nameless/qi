@@ -186,19 +186,7 @@ func submitPrompt(ctx context.Context, a *agent.Agent, hooks *agent.Hooks, promp
 	if blocked {
 		return nil, fmt.Errorf("prompt blocked by hook: %s", reason)
 	}
-	blocks := userBlocks(a.Cwd, prompt)
-	for _, p := range images {
-		if img, err := tools.LoadImage(p); err == nil {
-			blocks = append(blocks, img)
-		} else {
-			a.UI.Error("image " + p + ": " + err.Error())
-		}
-	}
-	for _, b := range blocks[1:] {
-		if b.Type == llm.BlockImage {
-			a.UI.Info("attached image (" + b.MediaType + ")")
-		}
-	}
+	blocks := userBlocks(a, prompt, images)
 	if extra != "" {
 		blocks = append(blocks, llm.Block{Type: llm.BlockText, Text: "<hook-context>\n" + extra + "\n</hook-context>"})
 	}

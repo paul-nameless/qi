@@ -314,6 +314,7 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 				a.UI.Error("compaction failed: " + err.Error())
 			}
 		}
+		a.evictImages()
 		msg, usage, err := a.stream(ctx)
 		a.UI.EndBlock()
 		if err != nil && !overflowRetried && ctx.Err() == nil && contextTooLong(err) {
@@ -386,16 +387,16 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 	}
 }
 
-const imageChars = 8000
-
 func blockChars(blocks []llm.Block) int {
 	n := 0
 	for _, b := range blocks {
 		n += len(b.Text)
 		if b.Type == llm.BlockImage {
-			n += imageChars
+			n += 4 * llm.ImageTokens(b)
 		}
-		n += len(b.Images) * imageChars
+		for _, img := range b.Images {
+			n += 4 * llm.ImageTokens(img)
+		}
 	}
 	return n
 }
