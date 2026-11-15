@@ -54,7 +54,7 @@ func main() {
 	flag.Usage = usage
 	flag.Parse()
 	if *showVersion {
-		fmt.Println("qi", version)
+		fmt.Println("qi", buildVersion())
 		return
 	}
 	if *show != "" {
