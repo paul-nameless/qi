@@ -16,6 +16,7 @@ import (
 	"github.com/paul-nameless/qi/internal/llm"
 	"github.com/paul-nameless/qi/internal/mcp"
 	"github.com/paul-nameless/qi/internal/session"
+	"github.com/paul-nameless/qi/internal/tools"
 	"github.com/paul-nameless/qi/internal/ui"
 )
 
@@ -275,5 +276,13 @@ func TestMalformedHookFileFailsStartup(t *testing.T) {
 	h, err := loadHooks([]string{home}, []string{missing, "~/.claude/settings.local.json"}, true, devNullPrinter(t))
 	if err != nil || !h.Empty() {
 		t.Errorf("missing hook files: %v", err)
+	}
+}
+
+func TestNoSandboxWarning(t *testing.T) {
+	display, out := capturePrinter(t)
+	warnNoSandbox(display)
+	if got := out.String(); tools.HasSandbox() == strings.Contains(got, noSandboxNote) {
+		t.Errorf("sandbox %v, output %q", tools.HasSandbox(), got)
 	}
 }

@@ -3,6 +3,8 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/paul-nameless/qi/internal/llm"
 )
@@ -259,7 +262,7 @@ func TestBwrapExecDenyList(t *testing.T) {
 		t.Errorf("denied %q: want only the real sudo, no symlinked multi-call binary, no duplicates", got)
 	}
 	args := strings.Join(bwrapArgs("ls", "/tmp/x", []string{"/usr/bin/sudo"}), " ")
-	if args != "--ro-bind / / --dev /dev --proc /proc --bind /tmp/x /tmp/x --ro-bind /dev/null /usr/bin/sudo --die-with-parent bash -c ls" {
+	if args != "--ro-bind / / --dev /dev --proc /proc --bind /tmp/x /tmp/x --unshare-net --ro-bind /dev/null /usr/bin/sudo --die-with-parent bash -c ls" {
 		t.Errorf("bwrap args: %s", args)
 	}
 }
@@ -281,5 +284,88 @@ func TestLinuxSandboxDeniesExec(t *testing.T) {
 	}
 	if out, err := sandboxCmd(context.Background(), "ls /", allowed).CombinedOutput(); err != nil {
 		t.Errorf("ls failed under the sandbox: %v %s", err, out)
+	}
+}
+
+var escapePoCs = []string{
+	`printf -v 'a[$(touch PWNED1)]' x`,
+	`test -v 'a[$(touch PWNED2)]'`,
+	`printf -v PATH %s ./bin; ls`,
+	`printf -v GIT_CONFIG_VALUE_0 %s 'echo hi'; git status`,
+	`printf -v GOFLAGS %s -toolexec=sh; go vet .`,
+	`printf '%s' -v`,
+	`test 'a[$(touch PWNED9)]' -eq 1`,
+	"test 'a[`touch PWNED9b`]' -eq 1",
+	`test -R 'a[$(touch PWNED10)]'`,
+	`echo '$(touch PWNED13)'`,
+	`git branch -l --no-list zzbranch`,
+	`git branch --list --no-lis zzbranch`,
+	`go list -export -gcflags=-asmhdr=victim.txt .`,
+	`go list -debug-actiongraph=PWNED11 .`,
+	`go vet -debug-trace=/tmp/x .`,
+	`go vet -ldflags=-X=a .`,
+	`go list -asmflags=-x .`,
+	`go list -pkgdir=/tmp/p .`,
+	`go list -o x .`,
+	`go doc -cmd -u -http=:6060`,
+	`go env -w GOFLAGS=-x`,
+	`export PATH=./bin; ls`,
+	`read -r PATH; ls`,
+	`declare -x GOFLAGS=-x`,
+}
+
+func TestReadOnlyEscapePoCs(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "bin"), 0o755)
+	os.WriteFile(filepath.Join(dir, "bin", "ls"), []byte("#!/bin/sh\ntouch PWNED-ls\n"), 0o755)
+	os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module x\n\ngo 1.21\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "x.go"), []byte("package x\n"), 0o644)
+	env := &Env{Cwd: dir, ReadOnly: func() bool { return true }, SpillDir: t.TempDir()}
+	for _, c := range escapePoCs {
+		if err := CheckReadOnly(c, dir, nil); err == nil {
+			t.Errorf("%q accepted in read-only mode", c)
+		}
+		in, _ := json.Marshal(map[string]string{"command": c})
+		if res := runBash(context.Background(), env, in, nil); !res.IsError {
+			t.Errorf("%q ran: %s", c, res.Text)
+		}
+	}
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "PWNED") {
+			t.Errorf("escape created %s", e.Name())
+		}
+	}
+	for _, ok := range []string{"printf '%s\\n' a b", "test -f go.mod", "test -n abc", "echo hi", "go list -f '{{.Name}}' .", "go list -m -json all", "go vet -json ./...", "go doc -all fmt", "go env -json GOPATH", "git branch --list 'f*'"} {
+		if err := CheckReadOnly(ok, dir, nil); err != nil {
+			t.Errorf("%q rejected: %v", ok, err)
+		}
+	}
+}
+
+func TestSandboxDeniesNetwork(t *testing.T) {
+	if !HasSandbox() {
+		t.Skip("no OS sandbox")
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	got := make(chan bool, 1)
+	go func() {
+		c, err := ln.Accept()
+		if err == nil {
+			c.Close()
+		}
+		got <- err == nil
+	}()
+	allowed, _ := filepath.EvalSymlinks(t.TempDir())
+	port := ln.Addr().(*net.TCPAddr).Port
+	out, _ := sandboxCmd(context.Background(), fmt.Sprintf("echo x > /dev/tcp/127.0.0.1/%d", port), allowed).CombinedOutput()
+	select {
+	case <-got:
+		t.Errorf("sandboxed command reached the network: %s", out)
+	case <-time.After(300 * time.Millisecond):
 	}
 }

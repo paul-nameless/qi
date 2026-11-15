@@ -55,8 +55,16 @@ func (r *repl) prompt() string {
 func (r *repl) toggleMode() {
 	ro := !r.agent.ReadOnly()
 	r.agent.SetReadOnly(ro)
-	if ro && !tools.HasSandbox() {
-		r.display.Info("no usable OS sandbox (bubblewrap missing, or user namespaces blocked): read-only relies on the command allowlist only")
+	if ro {
+		warnNoSandbox(r.display)
+	}
+}
+
+const noSandboxNote = "no usable OS sandbox (bubblewrap missing, or user namespaces blocked): read-only relies on the command allowlist only"
+
+func warnNoSandbox(display notifier) {
+	if !tools.HasSandbox() {
+		display.Info(noSandboxNote)
 	}
 }
 
@@ -94,6 +102,9 @@ func (r *repl) run() error {
 	}
 	r.handleSignals()
 	r.banner()
+	if r.agent.ReadOnly() {
+		warnNoSandbox(r.display)
+	}
 
 	draft := ""
 	for {

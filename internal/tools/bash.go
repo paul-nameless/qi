@@ -98,7 +98,7 @@ func bashTimeout(requested, configured int) int {
 	return min(requested, 600)
 }
 
-const sandboxProfile = `(version 1)(allow default)(deny file-write*)(allow file-write* (literal "/dev/null") (literal "/dev/zero") (literal "/dev/tty") (literal "/dev/dtracehelper") (regex #"^/dev/fd/") (subpath (param "TMP")))(deny process-exec (literal "/usr/bin/osascript") (literal "/usr/bin/open") (literal "/bin/launchctl") (literal "/usr/bin/defaults") (literal "/usr/bin/security") (literal "/usr/bin/sudo") (literal "/usr/bin/shortcuts") (subpath (param "TMP")))`
+const sandboxProfile = `(version 1)(allow default)(deny file-write*)(allow file-write* (literal "/dev/null") (literal "/dev/zero") (literal "/dev/tty") (literal "/dev/dtracehelper") (regex #"^/dev/fd/") (subpath (param "TMP")))(deny network*)(deny process-exec (literal "/usr/bin/osascript") (literal "/usr/bin/open") (literal "/bin/launchctl") (literal "/usr/bin/defaults") (literal "/usr/bin/security") (literal "/usr/bin/sudo") (literal "/usr/bin/shortcuts") (subpath (param "TMP")))`
 
 func readOnlySandbox(ctx context.Context, command string) *exec.Cmd {
 	tmp, _ := filepath.EvalSymlinks(os.TempDir())
@@ -165,7 +165,7 @@ func deniedPaths(dirs, names []string) []string {
 }
 
 func bwrapArgs(command, tmp string, denied []string) []string {
-	args := []string{"--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--bind", tmp, tmp}
+	args := []string{"--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--bind", tmp, tmp, "--unshare-net"}
 	for _, p := range denied {
 		args = append(args, "--ro-bind", "/dev/null", p)
 	}

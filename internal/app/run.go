@@ -99,6 +99,9 @@ func run(o options) error {
 	}
 
 	if headless {
+		if a.ReadOnly() {
+			warnNoSandbox(display)
+		}
 		prompt, err := headlessPrompt(o.query, stdinPiped)
 		if err != nil {
 			return err

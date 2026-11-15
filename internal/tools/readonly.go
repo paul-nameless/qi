@@ -26,8 +26,24 @@ var forbiddenArgs = map[string][]string{
 	"file":       {"-C", "--compile"},
 	"git":        {"--output", "-O", "--open-files-in-pager", "--ext-diff", "--textconv"},
 	"git branch": {"-d", "-D", "-m", "-M", "-c", "-C", "-f", "-u", "--delete", "--move", "--copy", "--force", "--set-upstream-to", "--unset-upstream", "--edit-description", "--track", "--no-track", "--create-reflog"},
-	"go":         {"-toolexec", "-exec", "-vettool", "-modfile", "-overlay", "-mod", "-fix", "-http"},
-	"go env":     {"-w", "-u"},
+	"printf":     {"-v"},
+	"test":       {"-v", "-R"},
+}
+
+var goFlags = map[string][]string{
+	"go list":    {"f", "json", "m", "u", "versions", "retracted", "deps", "test", "e", "find", "compiled", "export", "tags"},
+	"go vet":     {"json", "c", "tags", "v"},
+	"go doc":     {"all", "c", "cmd", "short", "src", "u"},
+	"go env":     {"json", "changed"},
+	"go version": {"m", "v"},
+}
+
+var shellBuiltins = map[string]bool{"echo": true, "printf": true, "test": true, "type": true, "pwd": true, "true": true, "false": true}
+
+var assigningBuiltins = map[string]bool{
+	"declare": true, "typeset": true, "export": true, "local": true, "readonly": true, "read": true, "mapfile": true, "readarray": true,
+	"getopts": true, "let": true, "eval": true, "source": true, ".": true, "alias": true, "set": true, "shopt": true, "unset": true,
+	"enable": true, "builtin": true, "command": true, "exec": true, "trap": true, "hash": true, "cd": true, "pushd": true, "popd": true, "env": true,
 }
 
 var branchValueFlags = map[string]bool{"--contains": true, "--no-contains": true, "--merged": true, "--no-merged": true, "--points-at": true, "--sort": true, "--format": true}
@@ -39,36 +55,76 @@ func CheckReadOnly(command, cwd string, extra []string) error {
 		return err
 	}
 	for _, words := range segments {
-		for _, w := range words {
-			if err := checkGlob(w, cwd); err != nil {
-				return err
-			}
-		}
-		if isAssignment(words[0]) {
-			return errors.New("variable assignments are not allowed")
-		}
-		if strings.ContainsRune(words[0], '/') {
-			return fmt.Errorf("%q: run commands by name, not by path", words[0])
-		}
-		sub := words[0]
-		if len(words) > 1 {
-			sub += " " + words[1]
-		}
-		if !allowed(words, allow) {
-			return fmt.Errorf("%q is not in the read-only allowlist", sub)
-		}
-		for _, key := range []string{words[0], sub} {
-			for _, arg := range words[1:] {
-				if words[0] == "go" && strings.HasPrefix(arg, "--") {
-					arg = arg[1:]
-				}
-				if bad := forbiddenArg(arg, forbiddenArgs[key]); bad != "" {
-					return fmt.Errorf("%s %s can write or execute", words[0], bad)
-				}
-			}
-		}
-		if err := checkPositional(words, sub); err != nil {
+		if err := checkSegment(words, cwd, allow); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func checkSegment(words []string, cwd string, allow []string) error {
+	for _, w := range words {
+		if err := checkGlob(w, cwd); err != nil {
+			return err
+		}
+	}
+	if isAssignment(words[0]) || assigningBuiltins[words[0]] {
+		return errors.New("variable assignments are not allowed")
+	}
+	if strings.ContainsRune(words[0], '/') {
+		return fmt.Errorf("%q: run commands by name, not by path", words[0])
+	}
+	sub := words[0]
+	if len(words) > 1 {
+		sub += " " + words[1]
+	}
+	if !allowed(words, allow) {
+		return fmt.Errorf("%q is not in the read-only allowlist", sub)
+	}
+	if err := checkArgs(words, sub); err != nil {
+		return err
+	}
+	return checkPositional(words, sub)
+}
+
+func checkArgs(words []string, sub string) error {
+	if shellBuiltins[words[0]] {
+		for _, arg := range words[1:] {
+			if strings.ContainsAny(arg, "$`") {
+				return fmt.Errorf("%s arguments with $ or ` are not allowed in read-only mode", words[0])
+			}
+		}
+	}
+	if allowedFlags, ok := goFlags[sub]; ok {
+		return checkGoFlags(words[2:], sub, allowedFlags)
+	}
+	if words[0] == "go" {
+		return fmt.Errorf("%q is not in the read-only allowlist", sub)
+	}
+	for _, key := range []string{words[0], sub} {
+		for _, arg := range words[1:] {
+			if words[0] == "find" && strings.HasPrefix(arg, "--") {
+				arg = arg[1:]
+			}
+			if bad := forbiddenArg(arg, forbiddenArgs[key]); bad != "" {
+				return fmt.Errorf("%s %s can write or execute", words[0], bad)
+			}
+		}
+	}
+	return nil
+}
+
+func checkGoFlags(args []string, sub string, allowedFlags []string) error {
+	for _, arg := range args {
+		if arg == "--" {
+			return nil
+		}
+		if !strings.HasPrefix(arg, "-") {
+			continue
+		}
+		name, _, _ := strings.Cut(strings.TrimLeft(arg, "-"), "=")
+		if !slices.Contains(allowedFlags, name) {
+			return fmt.Errorf("%s -%s is not allowed in read-only mode", sub, name)
 		}
 	}
 	return nil
@@ -126,12 +182,25 @@ func checkPositional(words []string, sub string) error {
 		positional = append(positional, w)
 	}
 	switch {
-	case sub == "git branch" && len(positional) > 0 && !slices.Contains(words, "--list") && !slices.Contains(words, "-l"):
+	case sub == "git branch" && len(positional) > 0 && !branchListing(words[2:]):
 		return errors.New("git branch with a name creates a branch")
 	case words[0] == "uniq" && uniqHasFiles(words[1:]):
 		return errors.New("uniq is allowed only in pipes, without file arguments")
 	}
 	return nil
+}
+
+func branchListing(args []string) bool {
+	listing := false
+	for _, a := range args {
+		switch {
+		case strings.HasPrefix(a, "--no-l"):
+			return false
+		case a == "-l" || a == "--list" || a == "--lis" || a == "--li":
+			listing = true
+		}
+	}
+	return listing
 }
 
 func uniqHasFiles(args []string) bool {
