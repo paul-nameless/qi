@@ -12,6 +12,7 @@ import (
 	"github.com/paul-nameless/qi/internal/llm"
 	"github.com/paul-nameless/qi/internal/mcp"
 	"github.com/paul-nameless/qi/internal/mcp/mcptest"
+	"github.com/paul-nameless/qi/internal/testenv"
 )
 
 func TestMain(m *testing.M) {
@@ -19,7 +20,7 @@ func TestMain(m *testing.M) {
 		mcptest.Serve(os.Stdin, os.Stdout)
 		return
 	}
-	os.Exit(m.Run())
+	os.Exit(testenv.Run(m))
 }
 
 func fakeMCP(srv config.MCPServer) config.MCPServer {

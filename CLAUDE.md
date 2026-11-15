@@ -12,6 +12,7 @@ Minimal Go coding agent for the terminal.
 - `internal/ui` termios, key decoder, line editor, printer with status line, `markdown.go` streaming markdown styling of answers (TTY only; `table.go` aligns tables, `width.go` display width)
 - `internal/session` append-only JSONL sessions; `Load`/`Entries` are read-only (`Open` repairs the file for appending), `List` summarizes a directory's sessions
 - `internal/mcp` stdio MCP client (lazy start, tool search, per-server `tools`/`exclude_tools` globs from `config/mcp.go` enforced in the Manager: hidden tools never listed or called); exposed as `tool_search`/`mcp_call` in `internal/tools/mcp.go` (compact listing past 10 tools, never cut by the output cap), `/mcp` in `internal/app/commands.go`; subagents get the parent's `mcp` as JSON in `QI_MCP` (unset on read, replaces the config's); `mcptest` is the fake server the tests run
+- `internal/testenv` shared `TestMain` (`testenv.Run`) for config, agent, app and tools: clears `QI_*`, `GIT_*`, API keys and `PAGER`, points `QI_CONFIG_DIR`/`QI_SESSION_DIR` at a temp dir; use it in new test packages
 
 ## Commands
 - Build: `go build -o qi .`
