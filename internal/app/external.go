@@ -234,7 +234,7 @@ func (r *repl) runTTY(cmd *exec.Cmd) error {
 
 func (r *repl) view(key, command, content, ext string) error {
 	if !r.toolOn(command) {
-		return fmt.Errorf("%s is off (%s not found)", key, firstWord(command))
+		return fmt.Errorf("%s is off (%s not found)", key, missingTool(command, r.agent.Config().Picker))
 	}
 	vars := map[string]string{}
 	var stdin io.Reader = strings.NewReader(content)
@@ -254,12 +254,17 @@ func (r *repl) view(key, command, content, ext string) error {
 	return nil
 }
 
-func firstWord(command string) string {
-	f := strings.Fields(command)
-	if len(f) == 0 {
-		return "command"
+func missingTool(command, picker string) string {
+	if strings.Contains(command, "{picker}") && !toolAvailable(picker, "") {
+		command = picker
 	}
-	return f[0]
+	if name := firstCommand(strings.ReplaceAll(command, "{picker}", picker)); name != "" {
+		return name
+	}
+	if f := strings.Fields(command); len(f) > 0 {
+		return f[0]
+	}
+	return "command"
 }
 
 func (r *repl) toolOn(command string) bool {
@@ -286,12 +291,16 @@ func (r *repl) configInfo() string {
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "Config: %s\nExternal tools:", path)
+	picker := r.agent.Config().Picker
 	for _, kv := range r.toolKeys() {
-		state := "on "
+		state, note := "on ", ""
 		if !r.toolOn(kv[1]) {
 			state = "off"
+			if strings.TrimSpace(kv[1]) != "off" {
+				note = "  (" + missingTool(kv[1], picker) + " not found)"
+			}
 		}
-		fmt.Fprintf(&b, "\n  %-15s %s  %s", kv[0], state, tools.OneLine(kv[1], 90))
+		fmt.Fprintf(&b, "\n  %-15s %s  %s%s", kv[0], state, tools.OneLine(kv[1], 90), note)
 	}
 	return b.String()
 }

@@ -218,3 +218,24 @@ func TestListFiles(t *testing.T) {
 		t.Errorf("file picker gets the list on stdin: %q %v", got, ok)
 	}
 }
+
+func TestMissingToolNamesTheResolvedCommand(t *testing.T) {
+	cases := []struct{ command, picker, want string }{
+		{"{picker} --with-nth=2..", "no-such-fzf-xyz --height=40%", "no-such-fzf-xyz"},
+		{"no-such-pager-xyz -R", "cat", "no-such-pager-xyz"},
+		{"FOO=1 no-such-copy-xyz", "cat", "no-such-copy-xyz"},
+		{"", "cat", "command"},
+	}
+	for _, c := range cases {
+		if got := missingTool(c.command, c.picker); got != c.want {
+			t.Errorf("missingTool(%q, %q) = %q, want %q", c.command, c.picker, got, c.want)
+		}
+	}
+	r := &repl{agent: newTestAgent(t, config.Config{Picker: "no-such-fzf-xyz --height=40%", SessionPicker: "{picker} --nth=1"}), opts: options{configPath: "/x/c.json"}}
+	if got := r.configInfo(); !strings.Contains(got, "session_picker  off  {picker} --nth=1  (no-such-fzf-xyz not found)") {
+		t.Errorf("config info:\n%s", got)
+	}
+	if _, err := pickSession(runPlain, r.agent.Config(), t.TempDir(), ""); err == nil || !strings.Contains(err.Error(), "session_picker is off (no-such-fzf-xyz not found)") {
+		t.Errorf("session picker error: %v", err)
+	}
+}

@@ -68,7 +68,7 @@ func (r *repl) copyAnswer(args string) error {
 	}
 	cmd := r.agent.Config().CopyCmd
 	if !r.toolOn(cmd) {
-		return fmt.Errorf("copy_cmd is off (%s not found)", firstWord(cmd))
+		return fmt.Errorf("copy_cmd is off (%s not found)", missingTool(cmd, r.agent.Config().Picker))
 	}
 	if _, err := runQuiet(cmd, r.agent.Config().Picker, nil, text); err != nil {
 		return fmt.Errorf("copy_cmd: %w", err)

@@ -59,7 +59,7 @@ func sessionItems(cwd, current string) []pickItem {
 
 func pickSession(run runner, cfg config.Config, cwd, current string) (string, error) {
 	if !toolAvailable(cfg.SessionPicker, cfg.Picker) {
-		return "", fmt.Errorf("session_picker is off (%s not found); pass a session id: /resume <id>, ids are in %s", firstWord(cfg.SessionPicker), session.Dir(cwd))
+		return "", fmt.Errorf("session_picker is off (%s not found); pass a session id: /resume <id>, ids are in %s", missingTool(cfg.SessionPicker, cfg.Picker), session.Dir(cwd))
 	}
 	items := sessionItems(cwd, current)
 	if len(items) == 0 {
