@@ -53,13 +53,9 @@ func Dir(cwd string) string {
 	name := strings.NewReplacer("/", "-", "\\", "-", ":", "", ".", "-").Replace(cwd)
 	dir := filepath.Join(base, name)
 	old := filepath.Join(base, strings.Trim(strings.NewReplacer("/", "-", "\\", "-", ":", "").Replace(cwd), "-"))
-	if _, done := migrated.LoadOrStore(dir, true); !done {
-		migrate(old, dir)
-	}
+	migrate(old, dir)
 	return dir
 }
-
-var migrated sync.Map
 
 func migrate(old, dir string) {
 	if old == dir {

@@ -32,7 +32,8 @@ type command struct {
 	help    string
 	short   string
 	alias   bool
-	run     func(r *repl, args string) (text string, quit bool)
+	quit    bool
+	run     func(r *repl, args string)
 	pickArg func(r *repl) (text string, submit bool)
 }
 
@@ -40,48 +41,25 @@ var commandList []command
 
 func init() {
 	commandList = []command{
-		{name: "help", help: "this help", short: "show commands", run: info(func(*repl) string { return helpText() })},
-		{name: "keys", help: "key bindings", short: "show key bindings", run: info(func(*repl) string { return keysText })},
-		{name: "config", help: "config file and external tools", short: "show the config file and external tools", run: info((*repl).configInfo)},
-		{name: "clear", help: "start a new session", short: "start a new session", run: action((*repl).clear)},
-		{name: "context", help: "show what takes space in the context", short: "show what takes space in the context", run: info(func(r *repl) string { return r.agent.ContextReport() })},
-		{name: "reload", help: "re-read skills, commands and CLAUDE.md files (rebuilds the cached prompt)", short: "re-read skills, commands and CLAUDE.md files", run: action((*repl).reload)},
-		{name: "compact", args: "[focus]", help: "summarize the conversation to free context (optional focus for the summary)", short: "summarize the conversation to free context", run: withArgs((*repl).compact)},
-		{name: "resume", args: "[id]", help: "switch to another session of this directory (picker without id)", short: "switch to another session", run: withArgs(func(r *repl, args string) { r.report(r.resume(args)) })},
-		{name: "history", help: "open the whole conversation in the pager", short: "open the conversation in the pager", run: action(func(r *repl) { r.report(r.showHistory()) })},
-		{name: "copy", args: "[code]", help: "copy the last answer (or its last code block) to the clipboard", short: "copy the last answer to the clipboard", run: withArgs(func(r *repl, args string) { r.report(r.copyAnswer(args)) })},
-		{name: "model", args: "[name]", help: "show or switch the model (switching loses the prompt cache)", short: "switch the model", run: withArgs((*repl).model), pickArg: func(r *repl) (string, bool) { return r.pickArg("model", r.modelItems()) }},
-		{name: "profile", args: "[name]", help: "show or switch the profile", short: "switch the profile", run: withArgs((*repl).profile), pickArg: (*repl).pickProfile},
-		{name: "effort", args: "[level]", help: "show or switch the reasoning effort (default, none, low, medium, high, xhigh, max)", short: "switch the reasoning effort", run: withArgs((*repl).effort), pickArg: func(r *repl) (string, bool) { return r.pickArg("effort", r.effortItems()) }},
-		{name: "skills", help: "list skills (/<skill-name> [args] runs one)", short: "pick a skill", run: info((*repl).skillList), pickArg: (*repl).pickSkill},
-		{name: "mcp", help: "start MCP servers and show their status and enabled tools", short: "show MCP servers and their enabled tools", run: action((*repl).showMCP)},
-		{name: "exit", help: "quit", short: "quit", run: quit},
-		{name: "quit", alias: true, run: quit},
+		{name: "help", help: "this help", short: "show commands", run: func(r *repl, _ string) { r.display.Info(helpText()) }},
+		{name: "keys", help: "key bindings", short: "show key bindings", run: func(r *repl, _ string) { r.display.Info(keysText) }},
+		{name: "config", help: "config file and external tools", short: "show the config file and external tools", run: func(r *repl, _ string) { r.display.Info(r.configInfo()) }},
+		{name: "clear", help: "start a new session", short: "start a new session", run: func(r *repl, _ string) { r.clear() }},
+		{name: "context", help: "show what takes space in the context", short: "show what takes space in the context", run: func(r *repl, _ string) { r.display.Info(r.agent.ContextReport()) }},
+		{name: "reload", help: "re-read skills, commands and CLAUDE.md files (rebuilds the cached prompt)", short: "re-read skills, commands and CLAUDE.md files", run: func(r *repl, _ string) { r.reload() }},
+		{name: "compact", args: "[focus]", help: "summarize the conversation to free context (optional focus for the summary)", short: "summarize the conversation to free context", run: (*repl).compact},
+		{name: "resume", args: "[id]", help: "switch to another session of this directory (picker without id)", short: "switch to another session", run: func(r *repl, args string) { r.report(r.resume(args)) }},
+		{name: "history", help: "open the whole conversation in the pager", short: "open the conversation in the pager", run: func(r *repl, _ string) { r.report(r.showHistory()) }},
+		{name: "copy", args: "[code]", help: "copy the last answer (or its last code block) to the clipboard", short: "copy the last answer to the clipboard", run: func(r *repl, args string) { r.report(r.copyAnswer(args)) }},
+		{name: "model", args: "[name]", help: "show or switch the model (switching loses the prompt cache)", short: "switch the model", run: (*repl).model, pickArg: func(r *repl) (string, bool) { return r.pickArg("model", r.modelItems()) }},
+		{name: "profile", args: "[name]", help: "show or switch the profile", short: "switch the profile", run: (*repl).profile, pickArg: (*repl).pickProfile},
+		{name: "effort", args: "[level]", help: "show or switch the reasoning effort (default, none, low, medium, high, xhigh, max)", short: "switch the reasoning effort", run: (*repl).effort, pickArg: func(r *repl) (string, bool) { return r.pickArg("effort", r.effortItems()) }},
+		{name: "skills", help: "list skills (/<skill-name> [args] runs one)", short: "pick a skill", run: func(r *repl, _ string) { r.display.Info(r.skillList()) }, pickArg: (*repl).pickSkill},
+		{name: "mcp", help: "start MCP servers and show their status and enabled tools", short: "show MCP servers and their enabled tools", run: func(r *repl, _ string) { r.showMCP() }},
+		{name: "exit", help: "quit", short: "quit", quit: true},
+		{name: "quit", alias: true, quit: true},
 	}
 }
-
-func info(text func(*repl) string) func(*repl, string) (string, bool) {
-	return func(r *repl, _ string) (string, bool) {
-		r.display.Info(text(r))
-		return "", false
-	}
-}
-
-func action(fn func(*repl)) func(*repl, string) (string, bool) {
-	return func(r *repl, _ string) (string, bool) {
-		fn(r)
-		return "", false
-	}
-}
-
-func withArgs(fn func(*repl, string)) func(*repl, string) (string, bool) {
-	return func(r *repl, args string) (string, bool) {
-		fn(r, args)
-		return "", false
-	}
-}
-
-func quit(*repl, string) (string, bool) { return "", true }
 
 func findCommand(name string) *command {
 	for i := range commandList {
@@ -123,7 +101,11 @@ func (r *repl) handleInput(line string) (string, bool) {
 	}
 	args = strings.TrimSpace(args)
 	if c := findCommand(name); c != nil {
-		return c.run(r, args)
+		if c.quit {
+			return "", true
+		}
+		c.run(r, args)
+		return "", false
 	}
 	text, err := r.expand(name, args)
 	switch {

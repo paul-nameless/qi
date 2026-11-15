@@ -202,7 +202,7 @@ func (r *Registry) Execute(ctx context.Context, env *Env, calls []llm.Block, ui 
 
 func (r *Registry) runOne(ctx context.Context, env *Env, call llm.Block, ui UI) llm.Block {
 	t := r.byKey[call.Name]
-	label := toolLabel(t, env, call)
+	label := Label(t, env, call)
 	ui.ToolStart(call.ID, label)
 	res := r.invoke(ctx, env, t, call, ui)
 	line := label
@@ -213,11 +213,7 @@ func (r *Registry) runOne(ctx context.Context, env *Env, call llm.Block, ui UI) 
 	return llm.Block{Type: llm.BlockToolResult, ToolUseID: call.ID, Text: res.Text, IsError: res.IsError, Images: res.Images}
 }
 
-func (r *Registry) Label(env *Env, call llm.Block) string {
-	return toolLabel(r.byKey[call.Name], env, call)
-}
-
-func toolLabel(t *Tool, env *Env, call llm.Block) (label string) {
+func Label(t *Tool, env *Env, call llm.Block) (label string) {
 	label = call.Name
 	defer func() {
 		if recover() != nil {

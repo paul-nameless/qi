@@ -368,10 +368,10 @@ func (e *Editor) external(text string) (string, error) {
 
 func (e *Editor) RunTTY(cmd *exec.Cmd) error {
 	if cmd.Stdin == nil {
-		cmd.Stdin = orStd(e.T.in, os.Stdin)
+		cmd.Stdin = os.Stdin
 	}
 	if cmd.Stdout == nil {
-		cmd.Stdout = orStd(e.T.out, os.Stdout)
+		cmd.Stdout = os.Stdout
 	}
 	cmd.Stderr = os.Stderr
 	e.P.Raw("\r\x1b[K")

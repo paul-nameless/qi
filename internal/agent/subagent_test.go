@@ -61,7 +61,7 @@ func TestSubagentReadsJSONEntries(t *testing.T) {
 }
 
 func TestSubagentFailureKeepsStderrTail(t *testing.T) {
-	r := &SubagentRunner{ReadOnly: func() bool { return false }, Cwd: t.TempDir(), Exe: fakeChild(t, "", "qi: config: bad key\n", 1)}
+	r := &SubagentRunner{ReadOnly: func() bool { return false }, Label: func(b llm.Block) string { return b.Name }, Cwd: t.TempDir(), Exe: fakeChild(t, "", "qi: config: bad key\n", 1)}
 	_, err := r.Run(context.Background(), tools.SubagentTask{Prompt: "x", Model: "m"}, func(string) {})
 	if err == nil || !strings.Contains(err.Error(), "exit status 1") || !strings.Contains(err.Error(), "qi: config: bad key") {
 		t.Errorf("err %v", err)

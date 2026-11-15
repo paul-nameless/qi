@@ -77,7 +77,7 @@ func (r *repl) modeName() string {
 }
 
 func (r *repl) run() error {
-	t, err := ui.OpenTerminal(os.Stdin, os.Stdout)
+	t, err := ui.OpenTerminal()
 	if err != nil {
 		return fmt.Errorf("terminal: %w", err)
 	}

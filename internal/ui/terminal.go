@@ -56,7 +56,7 @@ type Key struct {
 
 type Terminal struct {
 	fd       int
-	in, out  *os.File
+	out      *os.File
 	wakeR    int
 	wakeW    int
 	wake     chan struct{}
@@ -77,8 +77,8 @@ func IsTerminal(f *os.File) bool {
 	return err == nil
 }
 
-func OpenTerminal(in, out *os.File) (*Terminal, error) {
-	fd := int(in.Fd())
+func OpenTerminal() (*Terminal, error) {
+	fd := int(os.Stdin.Fd())
 	orig, err := unix.IoctlGetTermios(fd, ioctlGetTermios)
 	if err != nil {
 		return nil, err
@@ -88,7 +88,7 @@ func OpenTerminal(in, out *os.File) (*Terminal, error) {
 		return nil, err
 	}
 	_ = unix.SetNonblock(p[0], true)
-	t := &Terminal{fd: fd, in: in, out: out, wakeR: p[0], wakeW: p[1], wake: make(chan struct{}, 1), orig: orig, Keys: make(chan Key, 256), raw: make(chan []byte, 64), pauseAck: make(chan struct{}, 1), synced: make(chan struct{}, 1)}
+	t := &Terminal{fd: fd, out: os.Stdout, wakeR: p[0], wakeW: p[1], wake: make(chan struct{}, 1), orig: orig, Keys: make(chan Key, 256), raw: make(chan []byte, 64), pauseAck: make(chan struct{}, 1), synced: make(chan struct{}, 1)}
 	if err := t.applyMode(); err != nil {
 		t.closeWake()
 		return nil, err
@@ -118,13 +118,6 @@ func (t *Terminal) Restore() {
 		_ = unix.IoctlSetTermios(t.fd, ioctlSetTermios, t.orig)
 		t.interrupt()
 	})
-}
-
-func orStd(f, std *os.File) *os.File {
-	if f == nil {
-		return std
-	}
-	return f
 }
 
 func (t *Terminal) interrupt() {

@@ -129,7 +129,7 @@ func (r *SubagentRunner) readEntries(rd io.Reader, progress func(string)) (strin
 			continue
 		}
 		for _, call := range e.Message.ToolUses() {
-			progress(r.label(call))
+			progress(r.Label(call))
 		}
 		answer = strings.TrimSpace(e.Message.Text())
 	}
@@ -138,13 +138,6 @@ func (r *SubagentRunner) readEntries(rd io.Reader, progress func(string)) (strin
 		_, _ = io.Copy(io.Discard, rd)
 	}
 	return answer, err
-}
-
-func (r *SubagentRunner) label(call llm.Block) string {
-	if r.Label == nil {
-		return call.Name
-	}
-	return r.Label(call)
 }
 
 func lastLines(rd io.Reader, n int) []string {

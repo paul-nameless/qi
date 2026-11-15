@@ -156,7 +156,7 @@ func TestIDs(t *testing.T) {
 	}
 }
 
-func TestDirMigratesLegacyNameOnce(t *testing.T) {
+func TestDirMigratesLegacyName(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("QI_SESSION_DIR", base)
 	legacy := filepath.Join(base, "Users-x-a.b")
@@ -166,16 +166,6 @@ func TestDirMigratesLegacyNameOnce(t *testing.T) {
 	dir := Dir("/Users/x/a.b")
 	if _, err := os.Stat(dir); err != nil || dir == legacy {
 		t.Fatalf("legacy dir not renamed to %s: %v", dir, err)
-	}
-	if err := os.Remove(dir); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(legacy, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	Dir("/Users/x/a.b")
-	if _, err := os.Stat(legacy); err != nil {
-		t.Error("migration ran again on a later call")
 	}
 }
 

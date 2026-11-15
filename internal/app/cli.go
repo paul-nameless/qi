@@ -102,29 +102,22 @@ func newFlagSet(c *cliArgs, out io.Writer) *flag.FlagSet {
 	return fs
 }
 
-var (
-	flagAliases  = map[string]string{"v": "version"}
-	optionalArgs = map[string]string{"r": "[id]"}
-)
-
 func usage(fs *flag.FlagSet) {
 	out := fs.Output()
 	fmt.Fprintln(out, "Usage: qi [flags]")
 	var rows [][2]string
 	width := 0
 	fs.VisitAll(func(f *flag.Flag) {
-		if _, alias := flagAliases[f.Name]; alias {
+		if f.Name == "v" {
 			return
 		}
 		arg, help := flag.UnquoteUsage(f)
-		if opt, ok := optionalArgs[f.Name]; ok {
-			arg = opt
-		}
 		name := "-" + f.Name
-		for short, long := range flagAliases {
-			if long == f.Name {
-				name = "-" + short + ", " + name
-			}
+		switch f.Name {
+		case "r":
+			arg = "[id]"
+		case "version":
+			name = "-v, -version"
 		}
 		if arg != "" {
 			name += " " + arg

@@ -240,9 +240,12 @@ func buildAgent(cfg config.Config, o options, cwd string, p llm.Provider, displa
 }
 
 func toolLabels(cwd string, toolset []*tools.Tool) func(llm.Block) string {
-	labels := tools.NewRegistry(toolset...)
+	byName := map[string]*tools.Tool{}
+	for _, t := range toolset {
+		byName[t.Def.Name] = t
+	}
 	env := &tools.Env{Cwd: cwd}
-	return func(call llm.Block) string { return labels.Label(env, call) }
+	return func(call llm.Block) string { return tools.Label(byName[call.Name], env, call) }
 }
 
 func newProvider(cfg config.Config, key string) llm.Provider {
