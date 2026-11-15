@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/paul-nameless/aicode/internal/llm"
@@ -85,7 +86,7 @@ func MCPTools(m *mcp.Manager) []*Tool {
 				case "text":
 					b.WriteString(c.Text + "\n")
 				case "image":
-					if img, err := mcpImage(c.MimeType, c.Data); err == nil {
+					if img, err := mcpImage(env, c.MimeType, c.Data); err == nil {
 						images = append(images, img.block)
 						b.WriteString(img.note + "\n")
 					} else {
@@ -105,7 +106,7 @@ func MCPTools(m *mcp.Manager) []*Tool {
 	return []*Tool{search, call}
 }
 
-func mcpImage(mimeType, data string) (preparedImage, error) {
+func mcpImage(env *Env, mimeType, data string) (preparedImage, error) {
 	if imageTypes["."+strings.TrimPrefix(mimeType, "image/")] == "" {
 		return preparedImage{}, errors.New("unsupported image type")
 	}
@@ -116,5 +117,17 @@ func mcpImage(mimeType, data string) (preparedImage, error) {
 	if err != nil {
 		return preparedImage{}, fmt.Errorf("invalid base64: %w", err)
 	}
-	return prepareImage(raw, mimeType, "", nil)
+	return prepareImage(raw, mimeType, env.saveImage(raw, mimeType), nil)
+}
+
+func (e *Env) saveImage(data []byte, mimeType string) string {
+	path := e.spill("")
+	if strings.HasPrefix(path, "(") {
+		return ""
+	}
+	dst := strings.TrimSuffix(path, ".txt") + "." + strings.TrimPrefix(mimeType, "image/")
+	if os.Rename(path, dst) != nil || os.WriteFile(dst, data, 0o600) != nil {
+		return ""
+	}
+	return dst
 }

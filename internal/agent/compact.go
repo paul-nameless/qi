@@ -227,6 +227,7 @@ func (a *Agent) compact(ctx context.Context, opts compactOpts) error {
 	if len(a.Messages) == 0 {
 		return errors.New("nothing to compact")
 	}
+	a.evictImages()
 	before := a.ContextTokens()
 	threshold := opts.threshold
 	if threshold == 0 {

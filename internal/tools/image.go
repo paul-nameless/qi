@@ -11,6 +11,7 @@ import (
 	"image/jpeg"
 	"image/png"
 	"math"
+	"sync"
 
 	"github.com/paul-nameless/aicode/internal/llm"
 )
@@ -19,10 +20,12 @@ const (
 	maxImageEdge      = 1568
 	maxImageSent      = 3_750_000
 	maxImageFile      = 50 << 20
-	maxImagePixels    = 50_000_000
+	maxImagePixels    = 40_000_000
 	jpegFallbackBytes = 500 << 10
 	jpegQuality       = 85
 )
+
+var decodeMu sync.Mutex
 
 type preparedImage struct {
 	block llm.Block
@@ -41,15 +44,10 @@ func prepareImage(data []byte, mediaType, source string, crop []int) (preparedIm
 		return preparedImage{newImageBlock(data, mediaType, source, 0, 0), fmt.Sprintf("%s (%d bytes)", imageLabel(source), len(data))}, nil
 	}
 	w, h := cfg.Width, cfg.Height
-	region := image.Rect(0, 0, w, h)
-	if len(crop) > 0 {
-		if len(crop) != 4 || crop[2] <= 0 || crop[3] <= 0 {
-			return preparedImage{}, errors.New("crop must be [x, y, width, height] with a positive width and height")
-		}
-		region = image.Rect(crop[0], crop[1], crop[0]+crop[2], crop[1]+crop[3]).Intersect(region)
-		if region.Empty() {
-			return preparedImage{}, fmt.Errorf("crop [%d, %d, %d, %d] is outside the %d×%d image", crop[0], crop[1], crop[2], crop[3], w, h)
-		}
+	mediaType = "image/" + format
+	region, err := cropRegion(crop, w, h)
+	if err != nil {
+		return preparedImage{}, err
 	}
 	if len(crop) == 0 && max(w, h) <= maxImageEdge && len(data) <= maxImageSent {
 		return preparedImage{newImageBlock(data, mediaType, source, w, h), fmt.Sprintf("%s %d×%d", imageLabel(source), w, h)}, nil
@@ -57,13 +55,15 @@ func prepareImage(data []byte, mediaType, source string, crop []int) (preparedIm
 	if w*h > maxImagePixels {
 		return preparedImage{}, fmt.Errorf("image is %d×%d, too large to decode (max %d pixels)", w, h, maxImagePixels)
 	}
+	decodeMu.Lock()
+	defer decodeMu.Unlock()
 	img, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
 		return preparedImage{}, fmt.Errorf("decode image: %w", err)
 	}
 	dw, dh := fitEdge(region.Dx(), region.Dy(), maxImageEdge)
 	small := resizeArea(toRGBA(img, region), dw, dh)
-	out, outType, err := encodeImage(small, format == "jpeg")
+	out, outType, err := encodeImage(small, format == "jpeg", len(crop) == 0)
 	if err != nil {
 		return preparedImage{}, err
 	}
@@ -73,12 +73,25 @@ func prepareImage(data []byte, mediaType, source string, crop []int) (preparedIm
 	return preparedImage{newImageBlock(out, outType, source, dw, dh), imageNote(source, w, h, region, crop, dw, dh)}, nil
 }
 
+func cropRegion(crop []int, w, h int) (image.Rectangle, error) {
+	if len(crop) == 0 {
+		return image.Rect(0, 0, w, h), nil
+	}
+	if len(crop) != 4 || crop[0] < 0 || crop[1] < 0 || crop[2] <= 0 || crop[3] <= 0 {
+		return image.Rectangle{}, errors.New("crop must be [x, y, width, height] with x, y ≥ 0 and a positive width and height")
+	}
+	x, y := crop[0], crop[1]
+	if x >= w || y >= h {
+		return image.Rectangle{}, fmt.Errorf("crop starts at %d,%d, outside the %d×%d image", x, y, w, h)
+	}
+	return image.Rect(x, y, x+min(crop[2], w-x), y+min(crop[3], h-y)), nil
+}
+
 func newImageBlock(data []byte, mediaType, source string, w, h int) llm.Block {
 	return llm.Block{Type: llm.BlockImage, MediaType: mediaType, Data: base64.StdEncoding.EncodeToString(data), Width: w, Height: h, Source: source}
 }
 
 func imageNote(source string, w, h int, region image.Rectangle, crop []int, dw, dh int) string {
-	scale := float64(dw) / float64(region.Dx())
 	head := fmt.Sprintf("%s %d×%d", imageLabel(source), w, h)
 	if len(crop) > 0 {
 		head = fmt.Sprintf("region x=%d y=%d %d×%d of %s (%d×%d)", region.Min.X, region.Min.Y, region.Dx(), region.Dy(), imageLabel(source), w, h)
@@ -86,7 +99,16 @@ func imageNote(source string, w, h int, region image.Rectangle, crop []int, dw, 
 	if dw == region.Dx() && dh == region.Dy() {
 		return head + ", full resolution"
 	}
-	return fmt.Sprintf("%s, sent as %d×%d (scale %.2f: divide coordinates in it by %.2f for original pixels; pass crop [x, y, width, height] in original pixels to see a region at full resolution)", head, dw, dh, scale, scale)
+	k := float64(region.Dx()) / float64(dw)
+	point := fmt.Sprintf("(x×%.4f, y×%.4f)", k, k)
+	if len(crop) > 0 {
+		point = fmt.Sprintf("(%d + x×%.4f, %d + y×%.4f)", region.Min.X, k, region.Min.Y, k)
+	}
+	note := fmt.Sprintf("%s, sent as %d×%d; a point (x, y) in it is %s in the original", head, dw, dh, point)
+	if source != "" {
+		note += "; pass crop [x, y, width, height] in original pixels to see a region at full resolution"
+	}
+	return note
 }
 
 func imageLabel(source string) string {
@@ -113,7 +135,7 @@ func toRGBA(img image.Image, region image.Rectangle) *image.RGBA {
 	return dst
 }
 
-func encodeImage(img *image.RGBA, preferJPEG bool) ([]byte, string, error) {
+func encodeImage(img *image.RGBA, preferJPEG, allowJPEG bool) ([]byte, string, error) {
 	var buf bytes.Buffer
 	if preferJPEG {
 		if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: jpegQuality}); err != nil {
@@ -124,7 +146,7 @@ func encodeImage(img *image.RGBA, preferJPEG bool) ([]byte, string, error) {
 	if err := png.Encode(&buf, img); err != nil {
 		return nil, "", fmt.Errorf("encode png: %w", err)
 	}
-	if buf.Len() <= jpegFallbackBytes || !img.Opaque() {
+	if !allowJPEG || buf.Len() <= jpegFallbackBytes || !img.Opaque() {
 		return buf.Bytes(), "image/png", nil
 	}
 	var jb bytes.Buffer

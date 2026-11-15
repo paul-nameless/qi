@@ -211,13 +211,16 @@ func attachImage(a *agent.Agent, path string) (llm.Block, llm.Block, error) {
 		info += fmt.Sprintf(" (%d×%d)", img.Width, img.Height)
 	}
 	a.UI.Info(info)
-	return img, llm.Block{Type: llm.BlockText, Text: note}, nil
+	return img, llm.Block{Type: llm.BlockText, Text: "<attached-image>" + note + "</attached-image>"}, nil
 }
 
 func keepTempImage(a *agent.Agent, path string) string {
 	tmp, err := filepath.EvalSymlinks(os.TempDir())
 	src, err2 := filepath.EvalSymlinks(path)
 	if a.Session == nil || err != nil || err2 != nil || !strings.HasPrefix(src, tmp+string(filepath.Separator)) {
+		return path
+	}
+	if st, err := os.Stat(src); err != nil || !st.Mode().IsRegular() || st.Size() > 50<<20 {
 		return path
 	}
 	data, err := os.ReadFile(src)

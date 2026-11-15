@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -86,5 +87,51 @@ func TestOverflowClipRemovesPastedImages(t *testing.T) {
 	}
 	if n, _ := imageLoad(msgs); n != 1 {
 		t.Error("clipping must not change the history")
+	}
+}
+
+func TestEvictImagesKeepsTheNewestMessage(t *testing.T) {
+	a := newAgent(t, &fakeProvider{})
+	big := strings.Repeat("A", 6<<20)
+	var imgs []llm.Block
+	for i := 0; i < 5; i++ {
+		imgs = append(imgs, llm.Block{Type: llm.BlockImage, Data: big, Source: fmt.Sprintf("b%d.webp", i)})
+	}
+	a.Messages = []llm.Message{
+		{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockToolUse, ID: "x", Name: "read", Input: json.RawMessage(`{}`)}}},
+		{Role: "user", Blocks: []llm.Block{{Type: llm.BlockToolResult, ToolUseID: "x", Text: "images", Images: imgs}}},
+	}
+	a.evictImages()
+	if n, _ := imageLoad(a.Messages); n != 5 {
+		t.Errorf("images of the newest message were evicted: %d left", n)
+	}
+}
+
+func TestEvictImagesBySize(t *testing.T) {
+	a := newAgent(t, &fakeProvider{})
+	for i := 0; i < 30; i++ {
+		r := imageRound(i)
+		r[1].Blocks[0].Images[0].Data = strings.Repeat("A", 1<<20)
+		a.Messages = append(a.Messages, r...)
+	}
+	a.evictImages()
+	n, size := imageLoad(a.Messages)
+	if size > keepImageData || n != keepImageData>>20 {
+		t.Errorf("after size eviction: %d images, %d bytes", n, size)
+	}
+}
+
+func TestCompactionEvictsImagesFirst(t *testing.T) {
+	p := &fakeProvider{replies: []llm.Message{{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: "summary"}}}}}
+	a := newAgent(t, p)
+	for i := 0; i < 130; i++ {
+		a.Messages = append(a.Messages, imageRound(i)...)
+	}
+	a.Messages = append(a.Messages, llm.Message{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: "ok"}}})
+	if err := a.Compact(context.Background(), ""); err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := imageLoad(p.requests[0]); n > maxImages {
+		t.Errorf("summary request carried %d images", n)
 	}
 }

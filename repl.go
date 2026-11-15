@@ -456,7 +456,7 @@ func firstLines(s string, n int) string {
 func queuedText(blocks []llm.Block) string {
 	var parts []string
 	for _, b := range blocks {
-		if b.Type == llm.BlockText && !strings.HasPrefix(b.Text, "<hook-context>") {
+		if b.Type == llm.BlockText && !strings.HasPrefix(b.Text, "<hook-context>") && !strings.HasPrefix(b.Text, "<attached-image>") {
 			parts = append(parts, b.Text)
 		}
 	}

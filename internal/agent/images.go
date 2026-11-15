@@ -44,7 +44,7 @@ func (a *Agent) evictImages() {
 		return
 	}
 	removed, first := 0, -1
-	for i := 0; i < len(a.Messages) && (count > keepImages || size > keepImageData); i++ {
+	for i := 0; i < len(a.Messages)-1 && (count > keepImages || size > keepImageData); i++ {
 		m, n, s := dropImages(a.Messages[i], count-keepImages, size-keepImageData)
 		if n == 0 {
 			continue
@@ -55,11 +55,15 @@ func (a *Agent) evictImages() {
 			first = i
 		}
 	}
-	for i := first + 1; first >= 0 && i < len(a.Messages); i++ {
+	if first < 0 {
+		return
+	}
+	for i := first + 1; i < len(a.Messages); i++ {
 		if a.Messages[i].Role == "assistant" {
 			a.Messages[i] = withoutReasoning(a.Messages[i])
 		}
 	}
+	a.SetContextTokens(a.EstimateTokens())
 	a.UI.Info(fmt.Sprintf("removed the %d oldest images from the context (over %d images or %d MB)", removed, maxImages, maxImageData>>20))
 }
 

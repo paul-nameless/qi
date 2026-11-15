@@ -7,6 +7,7 @@ import (
 	"image/color"
 	"image/jpeg"
 	"image/png"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -62,7 +63,7 @@ func TestPrepareImageScalesLargeImages(t *testing.T) {
 	if r, g, bl, _ := got.At(700, 500).RGBA(); r>>8 != 10 || g>>8 != 120 || bl>>8 != 200 {
 		t.Errorf("colour changed to %d,%d,%d", r>>8, g>>8, bl>>8)
 	}
-	if !strings.Contains(img.note, "2800×1800, sent as 1568×1008 (scale 0.56") || !strings.Contains(img.note, "crop") {
+	if !strings.Contains(img.note, "2800×1800, sent as 1568×1008; a point (x, y) in it is (x×1.7857, y×1.7857) in the original; pass crop") {
 		t.Errorf("note: %s", img.note)
 	}
 }
@@ -108,8 +109,21 @@ func TestPrepareImageCropsAtFullResolution(t *testing.T) {
 	if _, err := prepareImage(data, "image/png", "shot.png", []int{5000, 0, 10, 10}); err == nil {
 		t.Error("crop outside the image should fail")
 	}
-	if _, err := prepareImage(data, "image/png", "shot.png", []int{0, 0, 10}); err == nil {
-		t.Error("crop with three numbers should fail")
+	for _, bad := range [][]int{{0, 0, 10}, {-1, 0, 10, 10}, {math.MaxInt, 0, 1, 1}, {0, 0, math.MaxInt, 0}} {
+		if _, err := prepareImage(data, "image/png", "shot.png", bad); err == nil {
+			t.Errorf("crop %v should fail", bad)
+		}
+	}
+	wide, err := prepareImage(data, "image/png", "shot.png", []int{1000, 100, 1800, 1000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(wide.note, "region x=1000 y=100 1800×1000") || !strings.Contains(wide.note, "(1000 + x×1.1480, 100 + y×1.1480)") || wide.block.MediaType != "image/png" {
+		t.Errorf("scaled crop note: %s (%s)", wide.note, wide.block.MediaType)
+	}
+	edge, err := prepareImage(data, "image/png", "shot.png", []int{2700, 1700, math.MaxInt, math.MaxInt})
+	if err != nil || edge.block.Width != 100 || edge.block.Height != 100 {
+		t.Errorf("crop past the edge should clamp: %v %dx%d", err, edge.block.Width, edge.block.Height)
 	}
 }
 
@@ -180,5 +194,29 @@ func TestReadToolCropsImages(t *testing.T) {
 	os.WriteFile(txt, []byte("x\n"), 0o600)
 	if res := readPath(txt, 0, 0, []int{0, 0, 1, 1}); !res.IsError {
 		t.Error("crop on a text file should fail")
+	}
+}
+
+func TestMCPImagesGetAPath(t *testing.T) {
+	env := &Env{Cwd: t.TempDir(), SpillDir: t.TempDir()}
+	data := base64.StdEncoding.EncodeToString(testPNG(t, 3000, 1500, solid(color.RGBA{0, 0, 0, 255})))
+	img, err := mcpImage(env, "image/png", data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := img.block.Source
+	if !strings.HasSuffix(src, ".png") || !strings.Contains(img.note, src) || !strings.Contains(img.note, "crop") {
+		t.Fatalf("source %q note %q", src, img.note)
+	}
+	if res := readPath(src, 0, 0, []int{0, 0, 10, 10}); res.IsError || res.Images[0].Width != 10 {
+		t.Errorf("saved MCP image can't be cropped: %s", res.Text)
+	}
+}
+
+func TestPrepareImageUsesRealFormat(t *testing.T) {
+	data := testPNG(t, 10, 10, solid(color.RGBA{0, 0, 0, 255}))
+	img, err := prepareImage(data, "image/jpeg", "fake.jpg", nil)
+	if err != nil || img.block.MediaType != "image/png" {
+		t.Errorf("media type %q, err %v", img.block.MediaType, err)
 	}
 }
