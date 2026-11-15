@@ -186,24 +186,31 @@ func TestTurnRunsToolsAndPrintsStats(t *testing.T) {
 	}
 }
 
+func waitFor(t *testing.T, cond func() bool) {
+	deadline := time.Now().Add(3 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatal("condition not reached")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 func TestTurnQueuesTypedMessages(t *testing.T) {
 	var r *repl
+	var out capture
 	p := &scriptProvider{reply: func(_ context.Context, n int, _ llm.Request) (llm.Message, error) {
 		if n == 0 {
 			for _, c := range "also this" {
 				r.editor.T.Keys <- ui.Key{Kind: ui.KeyRune, Rune: c}
 			}
 			r.editor.T.Keys <- ui.Key{Kind: ui.KeyEnter}
-			deadline := time.Now().Add(3 * time.Second)
-			for len(r.editor.T.Keys) > 0 && time.Now().Before(deadline) {
-				time.Sleep(5 * time.Millisecond)
-			}
-			time.Sleep(50 * time.Millisecond)
+			waitFor(t, func() bool { return strings.Contains(out.String(), "queued: also this") })
 			return bashCall("c1", "true"), nil
 		}
 		return textReply("ok"), nil
 	}}
-	r, out := testRepl(t, config.Config{Model: "m"}, p)
+	r, out = testRepl(t, config.Config{Model: "m"}, p)
 	r.turn(func(context.Context) ([]llm.Block, error) {
 		return []llm.Block{{Type: llm.BlockText, Text: "go"}}, nil
 	}, "")
@@ -354,10 +361,11 @@ func withStdio(t *testing.T, fn func()) string {
 
 func headlessConfig(t *testing.T, url string) string {
 	home := t.TempDir()
+	t.Chdir(t.TempDir())
 	t.Setenv("HOME", home)
 	t.Setenv("QI_SESSION_DIR", filepath.Join(home, "sessions"))
 	path := filepath.Join(home, "config.json")
-	data := fmt.Sprintf(`{"api": "anthropic", "base_url": %q, "api_key": "k", "model": "claude-haiku-5-5", "builtin_skills": false}`, url)
+	data := fmt.Sprintf(`{"api": "anthropic", "base_url": %q, "api_key": "k", "model": "claude-haiku-5-5", "builtin_skills": false, "instruction_files": ["none.md"], "skill_dirs": ["none"], "hook_files": ["none.json"]}`, url)
 	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 		t.Fatal(err)
 	}

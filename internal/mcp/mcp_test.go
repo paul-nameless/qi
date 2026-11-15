@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -218,5 +219,27 @@ func TestCloseDuringStart(t *testing.T) {
 	m.Close()
 	if err := m.Start(context.Background(), "fake"); err == nil || !strings.Contains(err.Error(), "shutting down") {
 		t.Errorf("start after close: %v", err)
+	}
+}
+
+func TestConcurrentCallsStartOneServer(t *testing.T) {
+	fake, _ := fakeServer(t, config.MCPServer{})
+	spawns := filepath.Join(t.TempDir(), "spawns")
+	srv := fake
+	srv.Command, srv.Args = "sh", []string{"-c", `echo spawn >> "$0"; exec "$1"`, spawns, fake.Command}
+	m := NewManager(map[string]config.MCPServer{"fake": srv})
+	defer m.Close()
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Go(func() {
+			if _, err := m.Call(context.Background(), "fake", "echo", json.RawMessage(`{"text":"x"}`)); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	wg.Wait()
+	data, _ := os.ReadFile(spawns)
+	if n := strings.Count(string(data), "spawn"); n != 1 {
+		t.Errorf("%d server processes started for concurrent calls", n)
 	}
 }

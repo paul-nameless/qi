@@ -340,3 +340,96 @@ func TestContextReport(t *testing.T) {
 		t.Errorf("empty rows should be left out:\n%s", got)
 	}
 }
+
+func toolResultOf(t *testing.T, a *Agent, p *fakeProvider, cmd string) string {
+	p.mu.Lock()
+	for len(p.replies) < len(p.requests) {
+		p.replies = append(p.replies, llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: "done"}}})
+	}
+	p.replies = append(p.replies[:len(p.requests)], toolCall("c", cmd))
+	p.mu.Unlock()
+	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "go"}}); err != nil {
+		t.Fatal(err)
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	last := p.requests[len(p.requests)-1]
+	return last[len(last)-1].Blocks[0].Text
+}
+
+func TestReconfigureUpdatesBashAllowlistAndTimeout(t *testing.T) {
+	p := &fakeProvider{}
+	a := newAgent(t, p)
+	a.SetReadOnly(true)
+	if got := toolResultOf(t, a, p, "uname"); !strings.Contains(got, "not in the read-only allowlist") {
+		t.Fatalf("uname before reconfigure: %q", got)
+	}
+	cfg := a.Config()
+	cfg.ReadOnlyAllow = []string{"uname"}
+	a.Reconfigure(cfg, p)
+	if got := toolResultOf(t, a, p, "uname"); strings.Contains(got, "read-only mode") {
+		t.Errorf("uname after allowing it: %q", got)
+	}
+	a.SetReadOnly(false)
+	cfg.BashTimeout = 1
+	a.Reconfigure(cfg, p)
+	if got := toolResultOf(t, a, p, "sleep 5"); !strings.Contains(got, "timed out after 1s") {
+		t.Errorf("bash timeout after reconfigure: %q", got)
+	}
+}
+
+func TestAccessorsDuringTurn(t *testing.T) {
+	inTurn, release := make(chan struct{}), make(chan struct{})
+	p := &fakeProvider{onCall: func(n int) {
+		if n == 0 {
+			close(inTurn)
+			<-release
+		}
+	}}
+	a := newAgent(t, p)
+	turnDone := make(chan struct{})
+	go func() {
+		defer close(turnDone)
+		_, _, _ = a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "go"}})
+	}()
+	<-inTurn
+	reads := make(chan struct{})
+	go func() {
+		defer close(reads)
+		_ = a.Config()
+		_ = a.Session()
+		_ = a.System()
+		_ = a.ContextTokens()
+		_ = a.Model()
+		a.SetContextTokens(5)
+		a.Queue([]llm.Block{{Type: llm.BlockText, Text: "q"}})
+	}()
+	select {
+	case <-reads:
+	case <-time.After(2 * time.Second):
+		t.Fatal("mu-only accessors blocked behind the turn")
+	}
+	writes := make(chan string, 2)
+	go func() {
+		a.SetEffort("low")
+		writes <- "effort"
+	}()
+	go func() {
+		a.Reconfigure(a.Config(), p)
+		writes <- "reconfigure"
+	}()
+	select {
+	case w := <-writes:
+		t.Fatalf("%s did not wait for the turn", w)
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(release)
+	<-turnDone
+	for range 2 {
+		select {
+		case <-writes:
+		case <-time.After(2 * time.Second):
+			t.Fatal("writer still blocked after the turn")
+		}
+	}
+}

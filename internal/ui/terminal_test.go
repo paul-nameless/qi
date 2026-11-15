@@ -187,3 +187,53 @@ func TestReadLoopEOF(t *testing.T) {
 		t.Fatal("no EOF")
 	}
 }
+
+func TestSuspendResumeRestore(t *testing.T) {
+	tm, w := pipeTerminal(t)
+	out, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { out.Close() })
+	tm.out, tm.orig, tm.synced = out, &unix.Termios{}, make(chan struct{}, 1)
+	go tm.readLoop()
+	go tm.decodeLoop()
+	w.Write([]byte("a"))
+	if k := <-tm.Keys; k.Rune != 'a' {
+		t.Fatalf("key %+v", k)
+	}
+	tm.Suspend()
+	w.Write([]byte("b"))
+	select {
+	case k := <-tm.Keys:
+		t.Fatalf("read while suspended: %+v", k)
+	case <-time.After(50 * time.Millisecond):
+	}
+	tm.Resume()
+	select {
+	case k := <-tm.Keys:
+		if k.Rune != 'b' {
+			t.Fatalf("after resume: %+v", k)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("no input after Resume")
+	}
+	tm.Restore()
+	deadline := time.After(time.Second)
+	for {
+		select {
+		case _, ok := <-tm.raw:
+			if ok {
+				continue
+			}
+			select {
+			case k := <-tm.Keys:
+				t.Errorf("key after Restore: %+v", k)
+			case <-time.After(50 * time.Millisecond):
+			}
+			return
+		case <-deadline:
+			t.Fatal("read loop kept running after Restore")
+		}
+	}
+}
