@@ -16,6 +16,7 @@ import (
 
 	"github.com/paul-nameless/qi/internal/llm"
 	"github.com/paul-nameless/qi/internal/tools"
+	"github.com/paul-nameless/qi/internal/ui"
 )
 
 type hookCmd struct {
@@ -139,6 +140,7 @@ func (h *Hooks) run(ctx context.Context, event, tool string, payload map[string]
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			defer ui.CleanupOnPanic()
 			out[i] = h.exec(ctx, c, input)
 		}()
 	}

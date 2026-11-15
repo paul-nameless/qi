@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -168,47 +169,78 @@ func (r *Registry) Execute(ctx context.Context, env *Env, calls []llm.Block, ui 
 }
 
 func (r *Registry) runOne(ctx context.Context, env *Env, call llm.Block, ui UI) llm.Block {
-	t, ok := r.byKey[call.Name]
-	label := call.Name
-	if ok && t.Label != nil {
-		label = t.Label(env, call.Input)
-	}
+	t := r.byKey[call.Name]
+	label := toolLabel(t, env, call)
 	ui.ToolStart(call.ID, label)
-	var res Result
-	switch {
-	case ctx.Err() != nil:
-		res = errResult("interrupted by user")
-	case !ok:
-		res = errResult("unknown tool %q", call.Name)
-	case llm.InvalidArgs(call.Input):
-		res = errResult("invalid JSON arguments: %s", string(call.Input))
-	default:
-		if env.PreHook != nil {
-			block, reason, input := env.PreHook(ctx, call)
-			if block {
-				res = errResult("blocked by hook: %s", reason)
-				break
-			}
-			if input != nil {
-				call.Input = rewrapInput(call, input)
-			}
-		}
-		res = t.Run(ctx, env, call.Input, func(s string) { ui.ToolProgress(call.ID, s) })
-		if ctx.Err() != nil && !res.IsError {
-			res.Text += "\n[interrupted by user]"
-		}
-		if env.PostHook != nil {
-			if extra := env.PostHook(ctx, call, res); extra != "" {
-				res.Text += "\n" + extra
-			}
-		}
-	}
+	res := r.invoke(ctx, env, t, call, ui)
 	line := label
 	if res.Summary != "" {
 		line += " · " + OneLine(res.Summary, 80)
 	}
 	ui.ToolDone(call.ID, !res.IsError, line)
 	return llm.Block{Type: llm.BlockToolResult, ToolUseID: call.ID, Text: res.Text, IsError: res.IsError, Images: res.Images}
+}
+
+func toolLabel(t *Tool, env *Env, call llm.Block) (label string) {
+	label = call.Name
+	defer func() {
+		if recover() != nil {
+			label = call.Name
+		}
+	}()
+	if t != nil && t.Label != nil {
+		label = t.Label(env, call.Input)
+	}
+	return label
+}
+
+func (r *Registry) invoke(ctx context.Context, env *Env, t *Tool, call llm.Block, ui UI) (res Result) {
+	defer func() {
+		if p := recover(); p != nil {
+			res = errResult("tool %s panicked: %v at %s", call.Name, p, panicSite())
+		}
+	}()
+	switch {
+	case ctx.Err() != nil:
+		return errResult("interrupted by user")
+	case t == nil:
+		return errResult("unknown tool %q", call.Name)
+	case llm.InvalidArgs(call.Input):
+		return errResult("invalid JSON arguments: %s", string(call.Input))
+	}
+	if env.PreHook != nil {
+		block, reason, input := env.PreHook(ctx, call)
+		if block {
+			return errResult("blocked by hook: %s", reason)
+		}
+		if input != nil {
+			call.Input = rewrapInput(call, input)
+		}
+	}
+	res = t.Run(ctx, env, call.Input, func(s string) { ui.ToolProgress(call.ID, s) })
+	if ctx.Err() != nil && !res.IsError {
+		res.Text += "\n[interrupted by user]"
+	}
+	if env.PostHook != nil {
+		if extra := env.PostHook(ctx, call, res); extra != "" {
+			res.Text += "\n" + extra
+		}
+	}
+	return res
+}
+
+func panicSite() string {
+	pcs := make([]uintptr, 32)
+	frames := runtime.CallersFrames(pcs[:runtime.Callers(3, pcs)])
+	for {
+		f, more := frames.Next()
+		if !strings.HasPrefix(f.Function, "runtime.") {
+			return fmt.Sprintf("%s (%s:%d)", f.Function, filepath.Base(f.File), f.Line)
+		}
+		if !more {
+			return "unknown location"
+		}
+	}
 }
 
 func OneLine(s string, max int) string {

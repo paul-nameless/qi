@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -290,5 +291,53 @@ func TestStaleFileGuard(t *testing.T) {
 	}
 	if res := run("write", `{"file_path":"g.txt","content":"new\n"}`); res.IsError {
 		t.Errorf("create: %+v", res)
+	}
+}
+
+type doneUI struct {
+	nopUI
+	mu   sync.Mutex
+	done map[string]bool
+}
+
+func (u *doneUI) ToolDone(id string, ok bool, _ string) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.done[id] = ok
+}
+
+func TestPanickingToolBecomesErrorResult(t *testing.T) {
+	ok := func(name string) *Tool {
+		return &Tool{Def: llm.ToolDef{Name: name}, Run: func(context.Context, *Env, json.RawMessage, func(string)) Result {
+			return Result{Text: name + " ran"}
+		}}
+	}
+	boom := &Tool{Def: llm.ToolDef{Name: "boom"}, Run: func(context.Context, *Env, json.RawMessage, func(string)) Result {
+		panic(errors.New("boom"))
+	}}
+	r := NewRegistry(ok("fine"), ok("write"), boom)
+	for _, names := range [][]string{{"boom", "fine"}, {"write", "boom", "fine"}} {
+		calls := make([]llm.Block, len(names))
+		for i, n := range names {
+			calls[i] = llm.Block{ID: fmt.Sprint(i), Name: n, Input: json.RawMessage(`{}`)}
+		}
+		ui := &doneUI{done: map[string]bool{}}
+		res := r.Execute(context.Background(), &Env{Cwd: t.TempDir()}, calls, ui)
+		for i, n := range names {
+			b := res[i]
+			if b.ToolUseID != calls[i].ID || b.Type != llm.BlockToolResult {
+				t.Fatalf("%v: result %d missing: %+v", names, i, b)
+			}
+			if _, seen := ui.done[calls[i].ID]; !seen {
+				t.Errorf("%v: %s never reported done", names, n)
+			}
+			if n == "boom" {
+				if !b.IsError || !strings.Contains(b.Text, "panicked: boom") || !strings.Contains(b.Text, "tools_test.go:") {
+					t.Errorf("%v: panic result %q", names, b.Text)
+				}
+			} else if b.IsError || b.Text != n+" ran" {
+				t.Errorf("%v: %s after the panic: %+v", names, n, b)
+			}
+		}
 	}
 }

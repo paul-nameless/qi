@@ -325,6 +325,7 @@ func (p *Printer) startTicker() {
 	p.stopTick = make(chan struct{})
 	stop := p.stopTick
 	go func() {
+		defer CleanupOnPanic()
 		t := time.NewTicker(100 * time.Millisecond)
 		defer t.Stop()
 		for {

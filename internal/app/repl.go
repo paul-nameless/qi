@@ -73,12 +73,7 @@ func (r *repl) run() error {
 	}
 	r.term = t
 	defer t.Restore()
-	defer func() {
-		if p := recover(); p != nil {
-			t.Restore()
-			panic(p)
-		}
-	}()
+	defer ui.CleanupOnPanic()
 	hist := filepath.Join(config.Home(), ".local", "share", "qi", "history")
 	r.editor = ui.NewEditor(t, r.display, hist)
 	r.editor.OnToggle = func() string {
@@ -150,6 +145,7 @@ func (r *repl) handleSignals() {
 	ch := make(chan os.Signal, 4)
 	signal.Notify(ch, os.Interrupt, syscall.SIGTSTP, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT)
 	go func() {
+		defer ui.CleanupOnPanic()
 		for s := range ch {
 			switch s {
 			case os.Interrupt:
@@ -257,6 +253,7 @@ func (r *repl) turn(prepare func(context.Context) ([]llm.Block, error), draft st
 		collectCtx, stopCollect := context.WithCancel(context.Background())
 		draftCh := make(chan string, 1)
 		go func() {
+			defer ui.CleanupOnPanic()
 			draftCh <- r.editor.Collect(collectCtx, draft, ui.Steer{
 				OnQueue: func(s string) {
 					blocks, err := submitPrompt(ctx, r.agent, r.hooks, s)
@@ -309,6 +306,7 @@ func (r *repl) armIdle() {
 	r.idleGen++
 	gen := r.idleGen
 	r.idle = time.AfterFunc(ttl-5*time.Minute, func() {
+		defer ui.CleanupOnPanic()
 		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 		defer cancel()
 		r.mu.Lock()

@@ -83,6 +83,7 @@ func OpenTerminal() (*Terminal, error) {
 		return nil, err
 	}
 	os.Stdout.WriteString(modesOn)
+	OnCrash(t.Restore)
 	go t.readLoop()
 	go t.decodeLoop()
 	return t, nil
