@@ -137,12 +137,17 @@ func (r *repl) compact(focus string) {
 }
 
 func (r *repl) switchThen(args string, switchTo func(string) error, show func() string) {
-	if args != "" {
-		if err := switchTo(args); err != nil {
-			r.display.Error(err.Error())
-		}
+	if args == "" {
+		r.display.Info(show())
+		return
 	}
-	r.display.Info(show())
+	if err := switchTo(args); err != nil {
+		r.display.Error(err.Error())
+		r.display.Info(show())
+		return
+	}
+	summary, _, _ := strings.Cut(show(), "\n")
+	r.display.Info(summary)
 }
 
 func (r *repl) model(args string) { r.switchThen(args, r.switchModel, r.modelList) }
