@@ -225,6 +225,7 @@ func (r *repl) shutdown() {
 			r.term.Restore()
 		}
 	}
+	r.display.EndLine()
 	os.Exit(1)
 }
 

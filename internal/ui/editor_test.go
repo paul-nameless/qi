@@ -332,3 +332,23 @@ func TestLoadHistoryCapsAndSkipsBadLines(t *testing.T) {
 		t.Errorf("duplicate or blank entry added: %d", len(e.history))
 	}
 }
+
+func TestEndLine(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "out")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	p := NewPrinter(f)
+	p.EndLine()
+	p.Text("partial")
+	p.EndLine()
+	p.EndLine()
+	p.mu.Lock()
+	p.EndLine()
+	p.mu.Unlock()
+	data, _ := os.ReadFile(f.Name())
+	if string(data) != "partial\n\n" {
+		t.Errorf("output %q", data)
+	}
+}

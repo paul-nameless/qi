@@ -395,6 +395,18 @@ func (p *Printer) ClearFooter() {
 	p.clearFooter()
 }
 
+func (p *Printer) EndLine() {
+	if !p.mu.TryLock() {
+		_, _ = p.out.WriteString("\n")
+		return
+	}
+	defer p.mu.Unlock()
+	if p.footerShown || !p.atLineStart {
+		_, _ = p.out.WriteString("\n")
+		p.footerShown, p.atLineStart = false, true
+	}
+}
+
 func (p *Printer) Raw(s string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
