@@ -38,7 +38,6 @@ const (
 	KeyHistory
 	keyFocusIn
 	keyFocusOut
-	keyFocusSupported
 )
 
 const (
@@ -60,7 +59,7 @@ type Terminal struct {
 	pauseAck chan struct{}
 	raw      chan []byte
 	closed   atomic.Bool
-	focus    atomic.Int32
+	away     atomic.Bool
 	child    atomic.Bool
 	once     sync.Once
 }
@@ -80,7 +79,7 @@ func OpenTerminal() (*Terminal, error) {
 	if err := t.applyMode(); err != nil {
 		return nil, err
 	}
-	os.Stdout.WriteString(modesOn + "\x1b[?1004$p")
+	os.Stdout.WriteString(modesOn)
 	go t.readLoop()
 	go t.decodeLoop()
 	return t, nil
@@ -217,11 +216,9 @@ func (t *Terminal) decodeLoop() {
 func (t *Terminal) trackFocus(k KeyKind) bool {
 	switch k {
 	case keyFocusIn:
-		t.focus.Store(1)
+		t.away.Store(false)
 	case keyFocusOut:
-		t.focus.Store(2)
-	case keyFocusSupported:
-		t.focus.CompareAndSwap(0, 1)
+		t.away.Store(true)
 	default:
 		return false
 	}
@@ -232,8 +229,8 @@ func (t *Terminal) ChildRunning() bool {
 	return t.child.Load()
 }
 
-func (t *Terminal) Focused() bool {
-	return t.focus.Load() == 1
+func (t *Terminal) Away() bool {
+	return t.away.Load()
 }
 
 func normalizePaste(s string) string {
@@ -393,8 +390,6 @@ func csiKey(seq string) Key {
 		return Key{Kind: keyFocusIn}
 	case "O":
 		return Key{Kind: keyFocusOut}
-	case "?1004;1$y", "?1004;2$y":
-		return Key{Kind: keyFocusSupported}
 	}
 	return Key{Kind: -1}
 }

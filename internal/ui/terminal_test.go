@@ -66,48 +66,22 @@ func TestSanitize(t *testing.T) {
 	}
 }
 
-func TestFocusSupportReply(t *testing.T) {
-	tm := &Terminal{raw: make(chan []byte, 8), Keys: make(chan Key, 64)}
-	go tm.decodeLoop()
-	tm.raw <- []byte("\x1b[?1004;0$yb\x1b[?1004;1$ya")
-	for _, want := range "ba" {
-		if k := <-tm.Keys; k.Rune != want {
-			t.Fatalf("got %+v", k)
-		}
-	}
-	if !tm.Focused() {
-		t.Error("terminal that supports focus reporting should start focused")
-	}
-}
-
 func TestFocusEvents(t *testing.T) {
 	tm := &Terminal{raw: make(chan []byte, 8), Keys: make(chan Key, 64)}
 	go tm.decodeLoop()
-	if tm.Focused() {
-		t.Fatal("focused before any event")
+	if tm.Away() {
+		t.Fatal("away before any event")
 	}
-	tm.raw <- []byte("\x1b[Ia\x1b[O")
-	k := <-tm.Keys
-	if k.Kind != KeyRune || k.Rune != 'a' {
-		t.Errorf("focus events leaked as keys: %+v", k)
+	tm.raw <- []byte("\x1b[Oa")
+	if k := <-tm.Keys; k.Kind != KeyRune || k.Rune != 'a' {
+		t.Errorf("focus event leaked as a key: %+v", k)
 	}
-	deadline := time.Now().Add(time.Second)
-	for tm.focus.Load() != 2 && time.Now().Before(deadline) {
-		time.Sleep(5 * time.Millisecond)
+	if !tm.Away() {
+		t.Error("not away after focus-out")
 	}
-	if tm.Focused() {
-		t.Error("still focused after focus-out")
-	}
-	tm.raw <- []byte("\x1b[?1004;2$y")
-	time.Sleep(20 * time.Millisecond)
-	if tm.Focused() {
-		t.Error("support reply overrode a real focus-out")
-	}
-	tm.raw <- []byte("\x1b[I")
-	for !tm.Focused() && time.Now().Before(deadline) {
-		time.Sleep(5 * time.Millisecond)
-	}
-	if !tm.Focused() {
-		t.Error("not focused after focus-in")
+	tm.raw <- []byte("\x1b[Ib")
+	<-tm.Keys
+	if tm.Away() {
+		t.Error("still away after focus-in")
 	}
 }

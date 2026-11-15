@@ -27,20 +27,14 @@ func waitFile(t *testing.T, path string) string {
 
 func TestNotifyTurn(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "n")
-	cfg := config.Config{NotifyCmd: "printf '%s|%s\\n' {title} {msg} >> " + out, NotifyAfter: "1s"}
+	cfg := config.Config{NotifyCmd: "printf '%s|%s\\n' {title} {msg} >> " + out}
 	r := &repl{agent: newTestAgent(t, cfg), display: devNullPrinter(t)}
-	r.notifyTurn("short", nil, 500*time.Millisecond)
-	r.notifyTurn("it's done\nsecond line", nil, 2*time.Second)
+	r.notifyTurn("no terminal", nil, time.Minute)
+	notifyAsync(cfg, r.agent.Cwd, turnMessage("it's done\nsecond line", nil, 2*time.Second), r.display)
 	got := waitFile(t, out)
 	want := "aicode · " + filepath.Base(r.agent.Cwd) + "|done in 2s: it's done second line\n"
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
-	}
-}
-
-func TestShouldNotify(t *testing.T) {
-	if !shouldNotify(30*time.Second, 20*time.Second, false) || shouldNotify(30*time.Second, 20*time.Second, true) || shouldNotify(time.Second, 20*time.Second, false) {
-		t.Error("shouldNotify")
 	}
 }
 
@@ -73,9 +67,6 @@ func TestTurnMessage(t *testing.T) {
 	}
 	if got := turnMessage(strings.Repeat("x", 300), nil, time.Second); len([]rune(got)) > 140 {
 		t.Errorf("not shortened: %d", len(got))
-	}
-	if notifyAfter(config.Config{NotifyAfter: "bad"}) != 20*time.Second {
-		t.Error("bad notify_after should fall back to 20s")
 	}
 }
 

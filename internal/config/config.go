@@ -64,7 +64,6 @@ type Config struct {
 	MCP             map[string]MCPServer `yaml:"mcp"`
 	Picker          string               `yaml:"picker"`
 	NotifyCmd       string               `yaml:"notify_cmd"`
-	NotifyAfter     string               `yaml:"notify_after"`
 	FilePicker      string               `yaml:"file_picker"`
 	HistoryPicker   string               `yaml:"history_picker"`
 	SessionPicker   string               `yaml:"session_picker"`
@@ -306,7 +305,6 @@ func (c *Config) applyDefaults() {
 func (c *Config) toolDefaults() {
 	mac := runtime.GOOS == "darwin"
 	setDefault(&c.NotifyCmd, pick(mac, "terminal-notifier -title {title} -message {msg}", "notify-send {title} {msg}"))
-	setDefault(&c.NotifyAfter, "20s")
 	setDefault(&c.HistoryPicker, "{picker}")
 	setDefault(&c.SessionPicker, `{picker} --with-nth=2.. --nth=.. --preview '"$AICODE_BIN" -show {1}' --preview-window=right,60%`)
 	setDefault(&c.Pager, os.Getenv("PAGER"))

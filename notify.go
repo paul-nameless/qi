@@ -24,14 +24,6 @@ func notifyAsync(cfg config.Config, cwd, msg string, ui infoer) {
 	}()
 }
 
-func notifyAfter(cfg config.Config) time.Duration {
-	d, err := time.ParseDuration(cfg.NotifyAfter)
-	if err != nil {
-		return 20 * time.Second
-	}
-	return d
-}
-
 func turnMessage(final string, err error, took time.Duration) string {
 	took = took.Round(time.Second)
 	if err != nil {
@@ -43,12 +35,8 @@ func turnMessage(final string, err error, took time.Duration) string {
 	return fmt.Sprintf("done in %s", took)
 }
 
-func shouldNotify(took, after time.Duration, focused bool) bool {
-	return took >= after && !focused
-}
-
 func (r *repl) notifyTurn(final string, err error, took time.Duration) {
-	if !shouldNotify(took, notifyAfter(r.agent.Cfg), r.term != nil && r.term.Focused()) {
+	if r.term == nil || !r.term.Away() {
 		return
 	}
 	notifyAsync(r.agent.Cfg, r.agent.Cwd, turnMessage(final, err, took), r.display)
