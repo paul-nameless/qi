@@ -3,7 +3,6 @@ package llm
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -214,123 +213,131 @@ func (a *Anthropic) Stream(ctx context.Context, req Request, onDelta func(Delta)
 		return Message{}, Usage{}, err
 	}
 	defer resp.Body.Close()
+	return runStream(resp.Body, &anthropicStream{model: req.Model, onDelta: onDelta})
+}
 
-	var blocks []*anthBlock
-	var usage anthUsage
-	stop := ""
-	done := false
-	err = readSSE(resp.Body, func(ev sseEvent) error {
-		var e anthEvent
-		if err := json.Unmarshal(ev.Data, &e); err != nil {
-			return fmt.Errorf("decode stream event: %w", err)
+type anthropicStream struct {
+	model   string
+	onDelta func(Delta)
+	blocks  []*anthBlock
+	usage   anthUsage
+	stop    string
+	done    bool
+}
+
+func (s *anthropicStream) handle(ev sseEvent) error {
+	var e anthEvent
+	if err := json.Unmarshal(ev.Data, &e); err != nil {
+		return fmt.Errorf("decode stream event: %w", err)
+	}
+	switch e.Type {
+	case "message_start":
+		s.usage = e.Message.Usage
+	case "content_block_start":
+		s.startBlock(e)
+	case "content_block_delta":
+		s.delta(e)
+	case "message_delta":
+		s.messageDelta(e)
+	case "message_stop":
+		s.done = true
+		return errStreamDone
+	case "error":
+		if e.Error != nil {
+			return &StreamError{Type: e.Error.Type, Message: e.Error.Message}
 		}
-		switch e.Type {
-		case "message_start":
-			usage = e.Message.Usage
-		case "content_block_start":
-			var raw map[string]any
-			_ = json.Unmarshal(e.ContentBlock, &raw)
-			kind, _ := raw["type"].(string)
-			for len(blocks) <= e.Index {
-				blocks = append(blocks, nil)
-			}
-			b := &anthBlock{kind: kind, raw: raw}
-			if t, ok := raw["text"].(string); ok {
-				b.text.WriteString(t)
-			}
-			blocks[e.Index] = b
-		case "content_block_delta":
-			if e.Index >= len(blocks) || blocks[e.Index] == nil {
-				return nil
-			}
-			b := blocks[e.Index]
-			switch e.Delta.Type {
-			case "text_delta":
-				b.text.WriteString(e.Delta.Text)
-				onDelta(Delta{Kind: DeltaText, Text: e.Delta.Text})
-			case "thinking_delta":
-				b.text.WriteString(e.Delta.Thinking)
-				onDelta(Delta{Kind: DeltaReasoning, Text: e.Delta.Thinking})
-			case "signature_delta":
-				b.sig.WriteString(e.Delta.Signature)
-			case "input_json_delta":
-				b.input.WriteString(e.Delta.PartialJSON)
-			}
-		case "message_delta":
-			if e.Delta.StopReason != "" {
-				stop = e.Delta.StopReason
-			}
-			if e.Usage != nil {
-				usage.OutputTokens = e.Usage.OutputTokens
-				if e.Usage.InputTokens > 0 {
-					usage.InputTokens = e.Usage.InputTokens
-				}
-				if e.Usage.CacheReadTokens > 0 {
-					usage.CacheReadTokens = e.Usage.CacheReadTokens
-				}
-				if e.Usage.CacheCreationTokens > 0 {
-					usage.CacheCreationTokens = e.Usage.CacheCreationTokens
-				}
-			}
-		case "message_stop":
-			done = true
-			return errStreamDone
-		case "error":
-			if e.Error != nil {
-				return &StreamError{Type: e.Error.Type, Message: e.Error.Message}
-			}
-			return &StreamError{}
-		}
-		return nil
-	})
+		return &StreamError{}
+	}
+	return nil
+}
+
+func (s *anthropicStream) startBlock(e anthEvent) {
+	var raw map[string]any
+	_ = json.Unmarshal(e.ContentBlock, &raw)
+	kind, _ := raw["type"].(string)
+	for len(s.blocks) <= e.Index {
+		s.blocks = append(s.blocks, nil)
+	}
+	b := &anthBlock{kind: kind, raw: raw}
+	if t, ok := raw["text"].(string); ok {
+		b.text.WriteString(t)
+	}
+	s.blocks[e.Index] = b
+}
+
+func (s *anthropicStream) delta(e anthEvent) {
+	if e.Index >= len(s.blocks) || s.blocks[e.Index] == nil {
+		return
+	}
+	b := s.blocks[e.Index]
+	switch e.Delta.Type {
+	case "text_delta":
+		b.text.WriteString(e.Delta.Text)
+		s.onDelta(Delta{Kind: DeltaText, Text: e.Delta.Text})
+	case "thinking_delta":
+		b.text.WriteString(e.Delta.Thinking)
+		s.onDelta(Delta{Kind: DeltaReasoning, Text: e.Delta.Thinking})
+	case "signature_delta":
+		b.sig.WriteString(e.Delta.Signature)
+	case "input_json_delta":
+		b.input.WriteString(e.Delta.PartialJSON)
+	}
+}
+
+func (s *anthropicStream) messageDelta(e anthEvent) {
+	if e.Delta.StopReason != "" {
+		s.stop = e.Delta.StopReason
+	}
+	if e.Usage == nil {
+		return
+	}
+	s.usage.OutputTokens = e.Usage.OutputTokens
+	if e.Usage.InputTokens > 0 {
+		s.usage.InputTokens = e.Usage.InputTokens
+	}
+	if e.Usage.CacheReadTokens > 0 {
+		s.usage.CacheReadTokens = e.Usage.CacheReadTokens
+	}
+	if e.Usage.CacheCreationTokens > 0 {
+		s.usage.CacheCreationTokens = e.Usage.CacheCreationTokens
+	}
+}
+
+func (s *anthropicStream) result() (Message, Usage, streamEnd) {
 	u := Usage{
-		Input:      usage.InputTokens + usage.CacheReadTokens + usage.CacheCreationTokens,
-		Output:     usage.OutputTokens,
-		CacheRead:  usage.CacheReadTokens,
-		CacheWrite: usage.CacheCreationTokens,
-	}
-	if err != nil && err != errStreamDone {
-		return Message{}, u, streamErr(resp.Body, err)
-	}
-	if !done {
-		return Message{}, u, ErrIncomplete
-	}
-	if stop == "refusal" {
-		return Message{}, u, errors.New("the model declined to answer (stop_reason: refusal)")
+		Input:      s.usage.InputTokens + s.usage.CacheReadTokens + s.usage.CacheCreationTokens,
+		Output:     s.usage.OutputTokens,
+		CacheRead:  s.usage.CacheReadTokens,
+		CacheWrite: s.usage.CacheCreationTokens,
 	}
 	msg := Message{Role: "assistant"}
-	for i, b := range blocks {
-		if b == nil {
-			continue
-		}
-		switch b.kind {
-		case "text":
-			if b.text.Len() > 0 {
-				msg.Blocks = append(msg.Blocks, Block{Type: BlockText, Text: b.text.String()})
-			}
-		case "thinking":
-			raw, _ := json.Marshal(map[string]any{"type": "thinking", "thinking": b.text.String(), "signature": b.sig.String()})
-			msg.Blocks = append(msg.Blocks, Block{Type: BlockReasoning, Raw: raw, Model: req.Model})
-		case "redacted_thinking":
-			raw, _ := json.Marshal(b.raw)
-			msg.Blocks = append(msg.Blocks, Block{Type: BlockReasoning, Raw: raw, Model: req.Model})
-		case "tool_use":
-			id, _ := b.raw["id"].(string)
-			if id == "" {
-				id = fmt.Sprintf("toolu_%d", i)
-			}
-			name, _ := b.raw["name"].(string)
-			msg.Blocks = append(msg.Blocks, Block{Type: BlockToolUse, ID: id, Name: name, Input: normalizeArgs(b.input.String())})
+	for i, b := range s.blocks {
+		if b != nil {
+			msg.Blocks = append(msg.Blocks, b.block(i, s.model)...)
 		}
 	}
-	if len(msg.ToolUses()) == 0 && msg.Text() == "" {
-		if stop == "max_tokens" {
-			return Message{}, u, errors.New("the response hit max_tokens before producing any text")
+	return msg, u, streamEnd{complete: s.done, cutOff: s.stop == "max_tokens", refused: s.stop == "refusal"}
+}
+
+func (b *anthBlock) block(i int, model string) []Block {
+	switch b.kind {
+	case "text":
+		if b.text.Len() > 0 {
+			return []Block{{Type: BlockText, Text: b.text.String()}}
 		}
-		return Message{}, u, errors.New("the model returned an empty response")
+	case "thinking":
+		raw, _ := json.Marshal(map[string]any{"type": "thinking", "thinking": b.text.String(), "signature": b.sig.String()})
+		return []Block{{Type: BlockReasoning, Raw: raw, Model: model}}
+	case "redacted_thinking":
+		raw, _ := json.Marshal(b.raw)
+		return []Block{{Type: BlockReasoning, Raw: raw, Model: model}}
+	case "tool_use":
+		id, _ := b.raw["id"].(string)
+		if id == "" {
+			id = fmt.Sprintf("toolu_%d", i)
+		}
+		name, _ := b.raw["name"].(string)
+		return []Block{{Type: BlockToolUse, ID: id, Name: name, Input: normalizeArgs(b.input.String())}}
 	}
-	if stop == "max_tokens" {
-		msg.Blocks = append(msg.Blocks, Block{Type: BlockText, Text: "\n" + CutOffMarker})
-	}
-	return msg, u, nil
+	return nil
 }

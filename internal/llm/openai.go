@@ -3,7 +3,6 @@ package llm
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 )
@@ -178,22 +177,26 @@ func (o *OpenAI) buildBody(req Request) map[string]any {
 	return body
 }
 
+type oaToolDelta struct {
+	Index    *int   `json:"index"`
+	ID       string `json:"id"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
+}
+
+type oaDelta struct {
+	Content          *string           `json:"content"`
+	Reasoning        *string           `json:"reasoning"`
+	ReasoningContent *string           `json:"reasoning_content"`
+	ReasoningDetails []json.RawMessage `json:"reasoning_details"`
+	ToolCalls        []oaToolDelta     `json:"tool_calls"`
+}
+
 type oaChunk struct {
 	Choices []struct {
-		Delta struct {
-			Content          *string           `json:"content"`
-			Reasoning        *string           `json:"reasoning"`
-			ReasoningContent *string           `json:"reasoning_content"`
-			ReasoningDetails []json.RawMessage `json:"reasoning_details"`
-			ToolCalls        []struct {
-				Index    *int   `json:"index"`
-				ID       string `json:"id"`
-				Function struct {
-					Name      string `json:"name"`
-					Arguments string `json:"arguments"`
-				} `json:"function"`
-			} `json:"tool_calls"`
-		} `json:"delta"`
+		Delta        oaDelta `json:"delta"`
 		FinishReason *string `json:"finish_reason"`
 	} `json:"choices"`
 	Usage *struct {
@@ -238,104 +241,105 @@ func (o *OpenAI) Stream(ctx context.Context, req Request, onDelta func(Delta)) (
 		return Message{}, Usage{}, err
 	}
 	defer resp.Body.Close()
+	return runStream(resp.Body, &openAIStream{model: req.Model, onDelta: onDelta})
+}
 
-	var text strings.Builder
-	var slots []*callSlot
-	var details reasoningMerger
-	var usage Usage
-	finish := ""
-	done := false
-	err = readSSE(resp.Body, func(ev sseEvent) error {
-		if string(ev.Data) == "[DONE]" {
-			done = true
-			return errStreamDone
-		}
-		var ch oaChunk
-		if err := json.Unmarshal(ev.Data, &ch); err != nil {
-			return fmt.Errorf("decode stream chunk: %w", err)
-		}
-		if ch.Error != nil {
-			return &StreamError{Code: errorCode(ch.Error.Code), Message: ch.Error.Message}
-		}
-		if ch.Usage != nil {
-			usage = Usage{
-				Input:      ch.Usage.PromptTokens,
-				Output:     ch.Usage.CompletionTokens,
-				CacheRead:  ch.Usage.PromptTokensDetails.CachedTokens,
-				CacheWrite: ch.Usage.PromptTokensDetails.CacheWriteTokens,
-				Cost:       ch.Usage.Cost,
-			}
-		}
-		for _, c := range ch.Choices {
-			if c.FinishReason != nil && *c.FinishReason != "" {
-				finish = *c.FinishReason
-			}
-			d := c.Delta
-			reasoningShown := false
-			for _, r := range []*string{d.Reasoning, d.ReasoningContent} {
-				if r != nil && *r != "" {
-					onDelta(Delta{Kind: DeltaReasoning, Text: *r})
-					reasoningShown = true
-					break
-				}
-			}
-			for _, raw := range d.ReasoningDetails {
-				if t := details.add(raw); t != "" && !reasoningShown {
-					onDelta(Delta{Kind: DeltaReasoning, Text: t})
-				}
-			}
-			if d.Content != nil && *d.Content != "" {
-				text.WriteString(*d.Content)
-				onDelta(Delta{Kind: DeltaText, Text: *d.Content})
-			}
-			for _, tc := range d.ToolCalls {
-				slot := findSlot(slots, tc.Index, tc.ID)
-				if slot == nil {
-					idx := len(slots)
-					if tc.Index != nil {
-						idx = *tc.Index
-					}
-					slot = &callSlot{index: idx, id: tc.ID}
-					slots = append(slots, slot)
-				}
-				if slot.name == "" {
-					slot.name = tc.Function.Name
-				}
-				slot.args.WriteString(tc.Function.Arguments)
-			}
-		}
-		return nil
-	})
-	if err != nil && err != errStreamDone {
-		return Message{}, usage, streamErr(resp.Body, err)
+type openAIStream struct {
+	model   string
+	onDelta func(Delta)
+	text    strings.Builder
+	slots   []*callSlot
+	details reasoningMerger
+	usage   Usage
+	finish  string
+	done    bool
+}
+
+func (s *openAIStream) handle(ev sseEvent) error {
+	if string(ev.Data) == "[DONE]" {
+		s.done = true
+		return errStreamDone
 	}
-	if !done && finish == "" {
-		return Message{}, usage, ErrIncomplete
+	var ch oaChunk
+	if err := json.Unmarshal(ev.Data, &ch); err != nil {
+		return fmt.Errorf("decode stream chunk: %w", err)
 	}
+	if ch.Error != nil {
+		return &StreamError{Code: errorCode(ch.Error.Code), Message: ch.Error.Message}
+	}
+	if ch.Usage != nil {
+		s.usage = Usage{
+			Input:      ch.Usage.PromptTokens,
+			Output:     ch.Usage.CompletionTokens,
+			CacheRead:  ch.Usage.PromptTokensDetails.CachedTokens,
+			CacheWrite: ch.Usage.PromptTokensDetails.CacheWriteTokens,
+			Cost:       ch.Usage.Cost,
+		}
+	}
+	for _, c := range ch.Choices {
+		if c.FinishReason != nil && *c.FinishReason != "" {
+			s.finish = *c.FinishReason
+		}
+		s.delta(c.Delta)
+	}
+	return nil
+}
+
+func (s *openAIStream) delta(d oaDelta) {
+	reasoningShown := false
+	for _, r := range []*string{d.Reasoning, d.ReasoningContent} {
+		if r != nil && *r != "" {
+			s.onDelta(Delta{Kind: DeltaReasoning, Text: *r})
+			reasoningShown = true
+			break
+		}
+	}
+	for _, raw := range d.ReasoningDetails {
+		if t := s.details.add(raw); t != "" && !reasoningShown {
+			s.onDelta(Delta{Kind: DeltaReasoning, Text: t})
+		}
+	}
+	if d.Content != nil && *d.Content != "" {
+		s.text.WriteString(*d.Content)
+		s.onDelta(Delta{Kind: DeltaText, Text: *d.Content})
+	}
+	for _, tc := range d.ToolCalls {
+		s.toolCall(tc)
+	}
+}
+
+func (s *openAIStream) toolCall(tc oaToolDelta) {
+	slot := findSlot(s.slots, tc.Index, tc.ID)
+	if slot == nil {
+		idx := len(s.slots)
+		if tc.Index != nil {
+			idx = *tc.Index
+		}
+		slot = &callSlot{index: idx, id: tc.ID}
+		s.slots = append(s.slots, slot)
+	}
+	if slot.name == "" {
+		slot.name = tc.Function.Name
+	}
+	slot.args.WriteString(tc.Function.Arguments)
+}
+
+func (s *openAIStream) result() (Message, Usage, streamEnd) {
 	msg := Message{Role: "assistant"}
-	for _, raw := range details.result() {
-		msg.Blocks = append(msg.Blocks, Block{Type: BlockReasoning, Raw: raw, Model: req.Model})
+	for _, raw := range s.details.result() {
+		msg.Blocks = append(msg.Blocks, Block{Type: BlockReasoning, Raw: raw, Model: s.model})
 	}
-	if text.Len() > 0 {
-		msg.Blocks = append(msg.Blocks, Block{Type: BlockText, Text: text.String()})
+	if s.text.Len() > 0 {
+		msg.Blocks = append(msg.Blocks, Block{Type: BlockText, Text: s.text.String()})
 	}
-	for i, s := range slots {
-		id := s.id
+	for i, slot := range s.slots {
+		id := slot.id
 		if id == "" {
 			id = fmt.Sprintf("call_%d", i)
 		}
-		msg.Blocks = append(msg.Blocks, Block{Type: BlockToolUse, ID: id, Name: s.name, Input: normalizeArgs(s.args.String())})
+		msg.Blocks = append(msg.Blocks, Block{Type: BlockToolUse, ID: id, Name: slot.name, Input: normalizeArgs(slot.args.String())})
 	}
-	if text.Len() == 0 && len(slots) == 0 {
-		if finish == "length" {
-			return Message{}, usage, errors.New("the response hit max_tokens before producing any text")
-		}
-		return Message{}, usage, errors.New("the model returned an empty response")
-	}
-	if finish == "length" {
-		msg.Blocks = append(msg.Blocks, Block{Type: BlockText, Text: "\n" + CutOffMarker})
-	}
-	return msg, usage, nil
+	return msg, s.usage, streamEnd{complete: s.done || s.finish != "", cutOff: s.finish == "length"}
 }
 
 func findSlot(slots []*callSlot, index *int, id string) *callSlot {
