@@ -27,7 +27,7 @@ go install github.com/paul-nameless/qi@latest
 
 ## Configure
 
-`~/.config/qi/config.json`:
+`~/.config/qi/config.json` (`$XDG_CONFIG_HOME/qi` when set, or `$QI_CONFIG_DIR`; sessions go to `~/.local/share/qi`, or `$XDG_DATA_HOME/qi`):
 
 ```json
 {

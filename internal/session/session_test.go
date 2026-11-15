@@ -177,3 +177,16 @@ func TestDirMigratesLegacyNameOnce(t *testing.T) {
 		t.Error("migration ran again on a later call")
 	}
 }
+
+func TestSessionDirFollowsXDGDataHome(t *testing.T) {
+	data := t.TempDir()
+	t.Setenv("QI_SESSION_DIR", "")
+	t.Setenv("XDG_DATA_HOME", data)
+	if got := Dir("/p"); got != filepath.Join(data, "qi", "sessions", "-p") {
+		t.Errorf("dir %q", got)
+	}
+	t.Setenv("QI_SESSION_DIR", "/s")
+	if got := Dir("/p"); got != "/s/-p" {
+		t.Errorf("QI_SESSION_DIR does not win: %q", got)
+	}
+}

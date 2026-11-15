@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/paul-nameless/qi/internal/config"
 )
@@ -84,9 +85,9 @@ func newFlagSet(c *cliArgs, out io.Writer) *flag.FlagSet {
 	o := &c.opts
 	fs.StringVar(&o.query, "q", "", "run one `prompt` without the interactive UI and print the answer")
 	fs.BoolVar(&o.cont, "c", false, "continue the last session in this directory")
-	fs.StringVar(&o.profile, "p", "", "profile `name` from \"profiles\" in the config, or ~/.config/qi/<name>.json")
+	fs.StringVar(&o.profile, "p", "", "profile `name` from \"profiles\" in the config, or "+filepath.Join(config.ShortHome(config.Dir()), "<name>.json"))
 	fs.StringVar(&o.provider, "provider", "", "provider `name` override (from \"providers\" in the config)")
-	fs.StringVar(&o.configPath, "config", "", "JSON config `file` (default ~/.config/qi/config.json)")
+	fs.StringVar(&o.configPath, "config", "", "JSON config `file` (default "+config.ShortHome(config.DefaultPath())+")")
 	fs.StringVar(&o.model, "model", "", "`model` override")
 	fs.StringVar(&o.effort, "effort", "", "reasoning `effort` override")
 	fs.BoolVar(&o.readOnly, "read-only", false, "start in read-only mode")

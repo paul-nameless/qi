@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-var cleared = []string{"OPENAI_API_KEY", "OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "PAGER"}
+var cleared = []string{"OPENAI_API_KEY", "OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "PAGER", "XDG_CONFIG_HOME", "XDG_DATA_HOME"}
 
 func Clean() {
 	for _, kv := range os.Environ() {

@@ -46,7 +46,7 @@ type Session struct {
 func Dir(cwd string) string {
 	base := os.Getenv("QI_SESSION_DIR")
 	if base == "" {
-		base = filepath.Join(config.Home(), ".local", "share", "qi", "sessions")
+		base = filepath.Join(config.DataDir(), "sessions")
 	}
 	name := strings.NewReplacer("/", "-", "\\", "-", ":", "", ".", "-").Replace(cwd)
 	dir := filepath.Join(base, name)

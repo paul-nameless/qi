@@ -9,7 +9,7 @@ qi is the agent you are running in. Its settings are JSON files.
 
 ## Files
 
-- `~/.config/qi/config.json`: the main config (the directory is `$QI_CONFIG_DIR` when set). `qi -config path.json` uses another file.
+- `~/.config/qi/config.json`: the main config. The directory is `$QI_CONFIG_DIR` when set, else `$XDG_CONFIG_HOME/qi` when `XDG_CONFIG_HOME` is set; `~/.config/qi` below means that directory. `qi -config path.json` uses another file. Sessions live in `$QI_SESSION_DIR`, else `$XDG_DATA_HOME/qi/sessions`, else `~/.local/share/qi/sessions`.
 - Profiles live under `profiles` in the config, or in their own file `~/.config/qi/<name>.json` (selected with `-p name`; `-p` also takes a path).
 - Related files that are not JSON config: hooks in `~/.config/qi/settings.json` (Claude Code settings format), skills in `~/.config/qi/skills/<name>/SKILL.md`, commands in `~/.config/qi/commands/*.md`.
 - `schema.json` next to this file is the JSON Schema (draft 2020-12) for every key: types, allowed values, defaults and what each key does. Read it before adding a key you are not sure about.

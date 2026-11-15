@@ -76,7 +76,7 @@ func (r *repl) run() error {
 	defer t.Restore()
 	ui.OnCrash(r.closeResources)
 	defer ui.CleanupOnPanic()
-	hist := filepath.Join(config.Home(), ".local", "share", "qi", "history")
+	hist := filepath.Join(config.DataDir(), "history")
 	r.editor = ui.NewEditor(t, r.display, hist)
 	r.editor.OnToggle = func() string {
 		r.toggleMode()

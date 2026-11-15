@@ -130,3 +130,28 @@ func TestDefaultCacheTTL(t *testing.T) {
 		}
 	}
 }
+
+func TestXDGDirs(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	cases := []struct {
+		qi, xdgConfig, xdgData string
+		dir, data              string
+	}{
+		{"", "", "", filepath.Join(home, ".config", "qi"), filepath.Join(home, ".local", "share", "qi")},
+		{"", "/x/conf", "/x/data", "/x/conf/qi", "/x/data/qi"},
+		{"", "relative", "relative", filepath.Join(home, ".config", "qi"), filepath.Join(home, ".local", "share", "qi")},
+		{"/q", "/x/conf", "/x/data", "/q", "/x/data/qi"},
+	}
+	for _, c := range cases {
+		t.Setenv("QI_CONFIG_DIR", c.qi)
+		t.Setenv("XDG_CONFIG_HOME", c.xdgConfig)
+		t.Setenv("XDG_DATA_HOME", c.xdgData)
+		if got := Dir(); got != c.dir {
+			t.Errorf("%+v: Dir() = %q", c, got)
+		}
+		if got := DataDir(); got != c.data {
+			t.Errorf("%+v: DataDir() = %q", c, got)
+		}
+	}
+}

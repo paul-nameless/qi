@@ -85,7 +85,18 @@ func Dir() string {
 	if d := os.Getenv("QI_CONFIG_DIR"); d != "" {
 		return d
 	}
-	return filepath.Join(Home(), ".config", "qi")
+	return filepath.Join(xdgDir("XDG_CONFIG_HOME", ".config"), "qi")
+}
+
+func DataDir() string {
+	return filepath.Join(xdgDir("XDG_DATA_HOME", filepath.Join(".local", "share")), "qi")
+}
+
+func xdgDir(env, fallback string) string {
+	if d := os.Getenv(env); filepath.IsAbs(d) {
+		return d
+	}
+	return filepath.Join(Home(), fallback)
 }
 
 func Home() string {
