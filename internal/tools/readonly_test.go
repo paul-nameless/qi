@@ -272,10 +272,24 @@ func TestBwrapExecDenyList(t *testing.T) {
 	}
 }
 
-func TestLinuxSandboxDeniesExec(t *testing.T) {
-	if runtime.GOOS != "linux" || !HasSandbox() {
-		t.Skip("needs the Linux bwrap sandbox")
+func requireLinuxSandbox(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("Linux only")
 	}
+	if _, err := exec.LookPath("bwrap"); err != nil {
+		t.Skip("bwrap not installed")
+	}
+	if HasSandbox() {
+		return
+	}
+	if err := exec.Command("unshare", "-U", "true").Run(); err != nil {
+		t.Skipf("user namespaces unavailable (unshare -U true: %v)", err)
+	}
+	t.Fatal("bwrap is installed and user namespaces work, but HasSandbox() is false")
+}
+
+func TestLinuxSandboxDeniesExec(t *testing.T) {
+	requireLinuxSandbox(t)
 	denied := execDenied()
 	if len(denied) == 0 {
 		t.Skip("none of the denied binaries is installed")
