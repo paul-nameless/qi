@@ -3,6 +3,7 @@ package session
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -208,5 +209,33 @@ func TestTeeMatchesFile(t *testing.T) {
 	data, _ = os.ReadFile(s.Path)
 	if !bytes.HasSuffix(data, later.Bytes()) || bytes.Count(later.Bytes(), []byte("\n")) != 1 {
 		t.Errorf("tee after open: %s", later.Bytes())
+	}
+}
+
+func TestSessionLock(t *testing.T) {
+	t.Setenv("QI_SESSION_DIR", t.TempDir())
+	s, err := Create(CreateOptions{Cwd: "/p", Model: "m", Kind: Interactive})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = Open(s.Path)
+	want := fmt.Sprintf("session %s is open in another qi (pid %d)", s.ID, os.Getpid())
+	if err == nil || err.Error() != want {
+		t.Fatalf("second open: %v, want %q", err, want)
+	}
+	if _, err := Create(CreateOptions{Cwd: "/p", ID: s.ID, Model: "m"}); err == nil {
+		t.Error("create with the id of an open session succeeded")
+	}
+	if _, err := Entries(s.Path); err != nil {
+		t.Errorf("reading an open session: %v", err)
+	}
+	s.Close()
+	r, _, err := Open(s.Path)
+	if err != nil {
+		t.Fatalf("open after close: %v", err)
+	}
+	r.Close()
+	if _, err := os.Stat(pidFile(s.Path)); err == nil {
+		t.Error("pid file left after close")
 	}
 }

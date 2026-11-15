@@ -133,6 +133,10 @@ func Create(o CreateOptions) (*Session, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create session file: %w", err)
 	}
+	if err := lock(f, path, id); err != nil {
+		f.Close()
+		return nil, err
+	}
 	s := &Session{Path: path, ID: id, f: f, tee: o.Tee}
 	if err := s.write(Entry{Type: "meta", Version: Version, Cwd: o.Cwd, Model: o.Model, Kind: o.Kind}); err != nil {
 		f.Close()
@@ -266,11 +270,16 @@ func Open(path string) (*Session, Loaded, error) {
 	if err != nil {
 		return nil, ld, fmt.Errorf("open session for append: %w", err)
 	}
-	if err := endWithNewline(wf); err != nil {
+	id := strings.TrimSuffix(filepath.Base(path), ".jsonl")
+	if err := lock(wf, path, id); err != nil {
 		wf.Close()
 		return nil, ld, err
 	}
-	id := strings.TrimSuffix(filepath.Base(path), ".jsonl")
+	if err := endWithNewline(wf); err != nil {
+		unlock(wf, path)
+		wf.Close()
+		return nil, ld, err
+	}
 	return &Session{Path: path, ID: id, f: wf, last: ld.LastID}, ld, nil
 }
 
@@ -378,6 +387,7 @@ func (s *Session) Close() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.f != nil {
+		unlock(s.f, s.Path)
 		s.f.Close()
 		s.f = nil
 	}
