@@ -411,7 +411,7 @@ func (r *repl) turn(prepare func(context.Context) ([]llm.Block, error), draft st
 		r.display.Error(err.Error())
 	}
 	if stats.Requests > 0 {
-		r.display.Info(stats.String(r.agent.ContextShort()))
+		r.display.Info(stats.String(r.agent.ContextShort(), time.Since(start), time.Now()))
 	}
 	return draft
 }

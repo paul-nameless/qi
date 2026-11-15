@@ -78,9 +78,10 @@ func runHeadless(a *agent.Agent, display *ui.Printer, hooks *agent.Hooks, prompt
 	if err != nil {
 		return err
 	}
+	start := time.Now()
 	final, stats, err := a.Turn(ctx, blocks)
 	display.EndBlock()
-	display.Info(stats.String(a.ContextShort()) + " · " + resourceUsage())
+	display.Info(stats.String(a.ContextShort(), time.Since(start), time.Now()) + " · " + resourceUsage())
 	if err != nil || jsonOut {
 		return err
 	}

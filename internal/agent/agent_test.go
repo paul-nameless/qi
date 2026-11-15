@@ -434,9 +434,15 @@ func TestAccessorsDuringTurn(t *testing.T) {
 	}
 }
 
-func TestTurnStatsUsesBannerContextFormat(t *testing.T) {
+func TestTurnStatsLine(t *testing.T) {
 	s := TurnStats{Requests: 1, Usage: llm.Usage{Input: 8300, CacheRead: 4731, Output: 80}}
-	if got := s.String(usageOf(8400, 1000000, true)); got != "1 req · in 8.3k (57% cached) · out 80 · 8.4k/1M (0.8%)" {
+	done := time.Date(2026, 11, 15, 21, 11, 5, 0, time.Local)
+	if got := s.String(usageOf(8400, 1000000, true), 11400*time.Millisecond, done); got != "1 req · 8.4k/1M (0.8%) · cooked for 11s · done 21:11" {
 		t.Errorf("stats %q", got)
+	}
+	for d, want := range map[time.Duration]string{400 * time.Millisecond: "0s", 65 * time.Second: "1m 5s", 3*time.Hour + 4*time.Minute: "3h 4m"} {
+		if got := fmtElapsed(d); got != want {
+			t.Errorf("fmtElapsed(%v) = %q, want %q", d, got, want)
+		}
 	}
 }

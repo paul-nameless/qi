@@ -177,7 +177,7 @@ func TestTurnRunsToolsAndPrintsStats(t *testing.T) {
 		t.Errorf("draft %q cancelled %v", draft, r.lastCancelled)
 	}
 	got := out.String()
-	if !strings.Contains(got, "✓ bash echo hi") || !strings.Contains(got, "2 req · in 200") {
+	if !strings.Contains(got, "✓ bash echo hi") || !strings.Contains(got, "2 req · 110 · cooked for ") {
 		t.Errorf("output:\n%s", got)
 	}
 	results := p.request(1).Messages

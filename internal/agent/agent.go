@@ -319,8 +319,8 @@ type TurnStats struct {
 	Usage    llm.Usage
 }
 
-func (s TurnStats) String(context string) string {
-	return fmt.Sprintf("%d req · in %s%s · out %s · %s", s.Requests, fmtTokens(s.Usage.Input), cachedPct(s.Usage), fmtTokens(s.Usage.Output), context)
+func (s TurnStats) String(context string, elapsed time.Duration, done time.Time) string {
+	return fmt.Sprintf("%d req · %s · cooked for %s · done %s", s.Requests, context, fmtElapsed(elapsed), done.Format("15:04"))
 }
 
 func cachedPct(u llm.Usage) string {
@@ -328,6 +328,17 @@ func cachedPct(u llm.Usage) string {
 		return ""
 	}
 	return fmt.Sprintf(" (%d%% cached)", u.CacheRead*100/u.Input)
+}
+
+func fmtElapsed(d time.Duration) string {
+	d = d.Round(time.Second)
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	case d < time.Hour:
+		return fmt.Sprintf("%dm %ds", int(d.Minutes()), int(d.Seconds())%60)
+	}
+	return fmt.Sprintf("%dh %dm", int(d.Hours()), int(d.Minutes())%60)
 }
 
 func (a *Agent) ContextUsage() string {
