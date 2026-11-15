@@ -7,11 +7,15 @@ import (
 	"io"
 	"os"
 	"slices"
+	"strconv"
+	"strings"
 )
 
 const Env = "FAKE_MCP"
 
 const CallLogEnv = "FAKE_MCP_CALLS"
+
+const BulkEnv = "FAKE_MCP_BULK"
 
 var page1 = []string{"list_issues", "get_issue", "delete_issue"}
 
@@ -69,7 +73,20 @@ func listTools(params json.RawMessage) map[string]any {
 	if p.Cursor == "" {
 		return map[string]any{"tools": toolDefs(page1), "nextCursor": "page2"}
 	}
-	return map[string]any{"tools": toolDefs(page2)}
+	return map[string]any{"tools": append(toolDefs(page2), bulkTools()...)}
+}
+
+func bulkTools() []any {
+	n, _ := strconv.Atoi(os.Getenv(BulkEnv))
+	var defs []any
+	for i := range n {
+		props := map[string]any{}
+		for j := range 8 {
+			props[fmt.Sprintf("field_%d", j)] = map[string]any{"type": "string", "description": strings.Repeat("padding ", 4)}
+		}
+		defs = append(defs, map[string]any{"name": fmt.Sprintf("bulk_%03d", i), "description": fmt.Sprintf("Bulk tool number %d", i), "inputSchema": map[string]any{"type": "object", "properties": props}})
+	}
+	return defs
 }
 
 func toolDefs(names []string) []any {
@@ -87,7 +104,7 @@ func callTool(params json.RawMessage) (map[string]any, error) {
 	}
 	_ = json.Unmarshal(params, &p)
 	logCall(p.Name)
-	if !slices.Contains(page1, p.Name) && !slices.Contains(page2, p.Name) {
+	if !slices.Contains(page1, p.Name) && !slices.Contains(page2, p.Name) && !strings.HasPrefix(p.Name, "bulk_") {
 		return nil, fmt.Errorf("fake server: no tool %s", p.Name)
 	}
 	return map[string]any{"content": []any{map[string]any{"type": "text", "text": fmt.Sprintf("%s:%v", p.Name, p.Arguments["text"])}}}, nil

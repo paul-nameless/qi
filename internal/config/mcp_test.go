@@ -1,7 +1,8 @@
 package config
 
 import (
-	"slices"
+	"os"
+	"reflect"
 	"testing"
 )
 
@@ -16,6 +17,11 @@ func TestMCPToolEnabled(t *testing.T) {
 		{MCPServer{ExcludeTools: []string{"delete_*"}}, []string{"read_note"}, []string{"delete_note"}},
 		{MCPServer{Tools: []string{"*_note"}, ExcludeTools: []string{"delete_*"}}, []string{"write_note"}, []string{"delete_note", "purge_all"}},
 		{MCPServer{Tools: []string{"get_?ssue", "[lr]ist_*"}}, []string{"get_issue", "list_x", "rist_y"}, []string{"get_iissue", "mist_x"}},
+		{MCPServer{ExcludeTools: []string{"*delete*"}}, []string{"admin/list_users"}, []string{"admin/delete_user", "a/b/delete"}},
+		{MCPServer{Tools: []string{"admin/*"}}, []string{"admin/x", "admin/x/y"}, []string{"user/x"}},
+		{MCPServer{Tools: []string{"get_?"}}, []string{"get_/"}, []string{"get_ab"}},
+		{MCPServer{ExcludeTools: []string{"delete_*"}}, []string{"Delete_note", "DELETE_NOTE"}, []string{"delete_note"}},
+		{MCPServer{Tools: []string{"[^d]*"}}, []string{"read_note"}, []string{"delete_note"}},
 	}
 	for _, c := range cases {
 		for _, n := range c.enabled {
@@ -31,19 +37,30 @@ func TestMCPToolEnabled(t *testing.T) {
 	}
 }
 
-func TestMCPExactTools(t *testing.T) {
-	cases := []struct {
-		srv  MCPServer
-		want []string
-	}{
-		{MCPServer{}, nil},
-		{MCPServer{Tools: []string{"get_issue", "list_issues"}}, []string{"get_issue", "list_issues"}},
-		{MCPServer{Tools: []string{"get_issue", "list_*"}}, nil},
-		{MCPServer{Tools: []string{"get_issue", "delete_issue"}, ExcludeTools: []string{"delete_*"}}, []string{"get_issue"}},
+func TestMCPFromEnv(t *testing.T) {
+	want := map[string]MCPServer{"gh": {Command: "gh"}, "notes": {Command: "notes", Env: map[string]string{"K": "v"}, Tools: []string{"*_note"}, ExcludeTools: []string{"delete_*"}}}
+	raw, err := EncodeMCP(want)
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, c := range cases {
-		if got := c.srv.ExactTools(); !slices.Equal(got, c.want) {
-			t.Errorf("%+v: got %v, want %v", c.srv, got, c.want)
-		}
+	t.Setenv(MCPEnv, raw)
+	got, ok, err := MCPFromEnv()
+	if err != nil || !ok || !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %+v %v %v", got, ok, err)
+	}
+	if _, set := os.LookupEnv(MCPEnv); set {
+		t.Error("env var left for child processes")
+	}
+	if _, ok, _ := MCPFromEnv(); ok {
+		t.Error("unset env var reported as set")
+	}
+	empty, _ := EncodeMCP(nil)
+	t.Setenv(MCPEnv, empty)
+	if got, ok, err := MCPFromEnv(); err != nil || !ok || len(got) != 0 {
+		t.Errorf("empty: %+v %v %v", got, ok, err)
+	}
+	t.Setenv(MCPEnv, `{"x": {"command": "x", "tools": ["[a"]}}`)
+	if _, _, err := MCPFromEnv(); err == nil {
+		t.Error("invalid pattern accepted")
 	}
 }

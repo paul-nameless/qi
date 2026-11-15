@@ -78,7 +78,7 @@ func main() {
 }
 
 func run(o options) error {
-	cfg, err := config.Resolve(o.configPath, o.profile, o.provider, o.model, o.effort)
+	cfg, err := resolveConfig(o)
 	if err != nil {
 		return err
 	}
@@ -196,6 +196,21 @@ func run(o options) error {
 	return r.run()
 }
 
+func resolveConfig(o options) (config.Config, error) {
+	parentMCP, fromParent, err := config.MCPFromEnv()
+	if err != nil {
+		return config.Config{}, err
+	}
+	cfg, err := config.Resolve(o.configPath, o.profile, o.provider, o.model, o.effort)
+	if err != nil {
+		return cfg, err
+	}
+	if fromParent && os.Getenv("AICODE_SUBAGENT") != "" {
+		cfg.MCP = parentMCP
+	}
+	return cfg, nil
+}
+
 func hookFiles(roots, configured []string, headless bool, display *ui.Printer) []string {
 	files, skipped := agent.SelectHookFiles(roots, configured, !headless, agent.AskTrust)
 	if skipped && headless && os.Getenv("AICODE_SUBAGENT") == "" {
@@ -256,7 +271,7 @@ func buildAgent(cfg config.Config, o options, cwd string, p llm.Provider, displa
 	toolset := []*tools.Tool{tools.Read(), tools.Write(), tools.Edit(), tools.Bash()}
 	var runner *agent.SubagentRunner
 	if !isSub {
-		runner = &agent.SubagentRunner{ConfigPath: o.configPath, Profile: cfg.Profile, Provider: cfg.Provider, ReadOnly: a.ReadOnly, Cwd: cwd}
+		runner = &agent.SubagentRunner{ConfigPath: o.configPath, Profile: cfg.Profile, Provider: cfg.Provider, ReadOnly: a.ReadOnly, Cwd: cwd, MCP: cfg.MCP}
 		a.Env.Subagent = runner.Run
 		toolset = append(toolset, tools.Subagent(cfg.Model, cfg.SubagentModels, cfg.SubagentEfforts))
 	}

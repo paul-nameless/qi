@@ -1,10 +1,14 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/paul-nameless/aicode/internal/config"
 	"github.com/paul-nameless/aicode/internal/mcp"
 )
 
@@ -38,16 +42,42 @@ func TestPathTokens(t *testing.T) {
 
 func TestMCPReport(t *testing.T) {
 	got := mcpReport([]mcp.Status{
-		{Name: "broken", State: "failed", Err: errors.New("start mcp server broken: no such file")},
-		{Name: "github", State: "started", Tools: []string{"get_issue", "list_issues"}, Hidden: 40},
-		{Name: "idle", State: "not started"},
-		{Name: "notes", State: "started"},
-	})
+		{Name: "broken", State: mcp.Failed, Err: errors.New("start mcp server broken: no such file")},
+		{Name: "github", State: mcp.Started, Tools: []string{"get_issue", "list_issues"}, Hidden: 40},
+		{Name: "idle", State: mcp.NotStarted},
+		{Name: "notes", State: mcp.Started},
+		{Name: "slow", State: mcp.NotStarted},
+		{Name: "stopped", State: mcp.NotStarted},
+	}, map[string]error{"slow": context.DeadlineExceeded, "stopped": context.Canceled})
 	want := "broken: failed: start mcp server broken: no such file\n" +
 		"github: started · 2 tools: get_issue, list_issues · 40 hidden\n" +
 		"idle: not started\n" +
-		"notes: started · 0 tools"
+		"notes: started · 0 tools\n" +
+		"slow: timed out\n" +
+		"stopped: cancelled"
 	if got != want {
 		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestStartMCPReportsTimeoutsAndErrors(t *testing.T) {
+	m := mcp.NewManager(map[string]config.MCPServer{
+		"broken": {Command: "/nonexistent/mcp-server"},
+		"slow":   {Command: "sleep", Args: []string{"30"}},
+	})
+	defer m.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	var started []string
+	errs := startMCP(ctx, m, func(s string) { started = append(started, s) })
+	got := mcpReport(m.Status(), errs)
+	if !reflect.DeepEqual(started, []string{"starting broken…", "starting slow…"}) {
+		t.Errorf("progress: %q", started)
+	}
+	if !strings.Contains(got, "broken: failed: start mcp server broken") || !strings.Contains(got, "slow: timed out") {
+		t.Errorf("report:\n%s", got)
+	}
+	if errs := startMCP(ctx, m, func(string) {}); !errors.Is(errs["broken"], context.DeadlineExceeded) {
+		t.Errorf("expired context: %v", errs)
 	}
 }

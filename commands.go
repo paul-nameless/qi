@@ -136,34 +136,51 @@ func (r *repl) showMCP() {
 		r.display.Info("no MCP servers configured (add \"mcp\" to " + r.configFile() + ")")
 		return
 	}
+	var errs map[string]error
 	_ = r.cancellable(func(ctx context.Context) error {
-		for _, name := range r.mcp.Names() {
-			if ctx.Err() != nil {
-				break
-			}
-			_ = r.mcp.Start(ctx, name)
-		}
+		errs = startMCP(ctx, r.mcp, r.display.Info)
 		return nil
 	})
-	r.display.Info(mcpReport(r.mcp.Status()))
+	r.display.Info(mcpReport(r.mcp.Status(), errs))
 }
 
-func mcpReport(servers []mcp.Status) string {
+func startMCP(ctx context.Context, m *mcp.Manager, info func(string)) map[string]error {
+	errs := map[string]error{}
+	for _, name := range m.Names() {
+		if ctx.Err() != nil {
+			errs[name] = ctx.Err()
+			continue
+		}
+		info("starting " + name + "…")
+		if err := m.Start(ctx, name); err != nil {
+			errs[name] = err
+		}
+	}
+	return errs
+}
+
+func mcpReport(servers []mcp.Status, errs map[string]error) string {
 	lines := make([]string, len(servers))
 	for i, s := range servers {
-		lines[i] = mcpLine(s)
+		lines[i] = mcpLine(s, errs[s.Name])
 	}
 	return strings.Join(lines, "\n")
 }
 
-func mcpLine(s mcp.Status) string {
-	if s.Err != nil {
+func mcpLine(s mcp.Status, startErr error) string {
+	switch {
+	case errors.Is(startErr, context.Canceled):
+		return s.Name + ": cancelled"
+	case errors.Is(startErr, context.DeadlineExceeded):
+		return s.Name + ": timed out"
+	case startErr != nil:
+		return fmt.Sprintf("%s: failed: %v", s.Name, startErr)
+	case s.Err != nil:
 		return fmt.Sprintf("%s: failed: %v", s.Name, s.Err)
+	case s.State != mcp.Started:
+		return s.Name + ": " + s.State.String()
 	}
-	if s.State == "not started" {
-		return s.Name + ": not started"
-	}
-	line := fmt.Sprintf("%s: %s · %d tools", s.Name, s.State, len(s.Tools))
+	line := fmt.Sprintf("%s: started · %d tools", s.Name, len(s.Tools))
 	if len(s.Tools) > 0 {
 		line += ": " + strings.Join(s.Tools, ", ")
 	}

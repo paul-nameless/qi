@@ -134,6 +134,7 @@ func TestValidateMirrorsSchema(t *testing.T) {
 		`{"mcp": {"gh": {"args": ["stdio"]}}}`:                                {`key "mcp.gh"`, "command is required"},
 		`{"mcp": {"gh": {"command": "gh", "tools": ["list_[a"]}}}`:            {`key "mcp.gh.tools.0"`, `invalid glob pattern "list_[a"`},
 		`{"mcp": {"gh": {"command": "gh", "exclude_tools": ["ok", ""]}}}`:     {`key "mcp.gh.exclude_tools.1"`, "empty pattern"},
+		`{"mcp": {"gh": {"command": "gh", "tools": []}}}`:                     {`key "mcp.gh.tools"`, "omit the key to allow all tools"},
 		`{"profiles": {"p": {"api": "nope"}}, "default_profile": "p"}`:        {`profile "p"`, `key "api"`},
 	}
 	for in, parts := range cases {

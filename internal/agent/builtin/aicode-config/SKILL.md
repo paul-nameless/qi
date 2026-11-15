@@ -37,6 +37,8 @@ When a change takes effect in a running session:
 - `skill_dirs`, `instruction_files`, `builtin_skills`: `/profile <name>`, then `/reload` to rebuild the system prompt.
 - `mcp`, `hook_files`, `read_only`: only after restarting aicode.
 
+`mcp.<name>.tools` and `mcp.<name>.exclude_tools` limit which MCP tools the agent can see and call. They are the user's decision: change them only when the user asks. Subagents keep the MCP setup their parent started with, so a change never applies to a running session or its subagents. It is a guard rail, not a sandbox, since `bash` can still run anything.
+
 ## Secrets
 
 - Treat `api_key` values and every value under `mcp.<name>.env` as secrets: never print, copy or move them, and never put one in a file that did not have it. Prefer `api_key_shell` (for example `"pass show openrouter-api-key | head -n 1"`) over `api_key`.

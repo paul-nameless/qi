@@ -82,7 +82,11 @@ MCP servers start on first use. Their tools never enter the tool list directly: 
 }
 ```
 
-A tool is enabled when `tools` is empty or one of its patterns matches, and no `exclude_tools` pattern matches. Hidden tools never show in `tool_search`, and `mcp_call` refuses them without contacting the server. When `tools` is up to 12 exact names, they are listed in the `tool_search` description so the agent can call them without searching. `/mcp` starts the servers and shows each one's status, enabled tools and the number hidden. Subagents load the same config, so the same filters apply.
+A tool is enabled when `tools` is unset or one of its patterns matches, and no `exclude_tools` pattern matches. Patterns match the whole name and are case-sensitive: `*` is any run of characters (including `/`), `?` one character, `[a-z]` a class and `[^a-z]` a negated one. An empty `tools` list is an error; omit the key to allow every tool.
+
+Hidden tools never show in `tool_search`; results say how many tools are disabled so the agent doesn't hunt for another way. `mcp_call` refuses them without contacting the server. `tool_search` with `server` lists that server's tools (names and descriptions only past 10, with schemas for a query). `/mcp` starts the servers and shows each one's status, enabled tools and the number hidden.
+
+Subagents get the parent's MCP setup at launch, so editing the config mid-session doesn't widen it for them. This is a guard rail against the model calling the wrong tool, not a sandbox: `bash` can still run anything the server's credentials allow. Known limitation: aicode reads each server's tool list once and ignores `tools/list_changed`.
 
 ## Use
 

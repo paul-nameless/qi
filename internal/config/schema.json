@@ -265,12 +265,13 @@
           "type": "string"
         },
         "tools": {
-          "description": "Tools the agent may find and call, as glob patterns matched against the tool name (path.Match: * any run of characters, ? one character, [a-z] a class). Empty or unset: every tool. Up to 12 exact names (no glob characters) are also listed in the tool_search description.",
+          "description": "Tools the agent may find and call, as glob patterns matched against the whole tool name: * any run of characters (including /), ? one character, [a-z] a class, [^a-z] a negated class, \\ escapes. Matching is case-sensitive. Unset: every tool; an empty list is an error.",
           "type": "array",
+          "minItems": 1,
           "items": { "type": "string", "minLength": 1 }
         },
         "exclude_tools": {
-          "description": "Tools to hide even when tools matches them, as glob patterns like tools. Hidden tools never show in tool_search and mcp_call refuses them.",
+          "description": "Tools to hide even when tools matches them, as glob patterns like tools. Hidden tools never show in tool_search and mcp_call refuses them. Subagents get the parent's MCP setup, so editing the config mid-session does not widen it for them.",
           "type": "array",
           "items": { "type": "string", "minLength": 1 }
         }

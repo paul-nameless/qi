@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/paul-nameless/aicode/internal/llm"
@@ -24,17 +25,16 @@ type mcpCallArgs struct {
 	Arguments json.RawMessage `json:"arguments"`
 }
 
-const maxListedTools = 12
+const (
+	maxSchemaTools  = 10
+	maxListingBytes = 24000
+	maxListingLines = 350
+)
 
 func serverLines(m *mcp.Manager) string {
 	var b strings.Builder
 	for _, n := range m.Names() {
-		srv := m.Server(n)
-		line := srv.Description
-		if names := srv.ExactTools(); len(names) > 0 && len(srv.Tools) <= maxListedTools {
-			line = strings.TrimSpace(line + " (tools: " + strings.Join(names, ", ") + ")")
-		}
-		fmt.Fprintf(&b, "\n- %s: %s", n, line)
+		fmt.Fprintf(&b, "\n- %s: %s", n, m.Description(n))
 	}
 	return b.String()
 }
@@ -65,31 +65,100 @@ func toolSearch(m *mcp.Manager) *Tool {
 }
 
 func runToolSearch(ctx context.Context, env *Env, m *mcp.Manager, a toolSearchArgs) Result {
-	var found []mcp.Tool
-	var errs []error
+	a.Query = strings.TrimSpace(a.Query)
+	var l mcp.Listing
 	switch {
 	case a.Server != "":
-		tools, err := m.ServerTools(ctx, a.Server, a.Query)
-		if err != nil {
+		var err error
+		if l, err = m.ServerTools(ctx, a.Server, a.Query); err != nil {
 			return errResult("%v", err)
 		}
-		found = tools
-	case strings.TrimSpace(a.Query) != "":
-		found, errs = m.Search(ctx, a.Query, 10)
+	case a.Query != "":
+		l = m.Search(ctx, a.Query)
 	default:
 		return errResult("give query, server or both")
 	}
+	text, shown := formatListing(a, l)
+	summary := fmt.Sprintf("%d tools", shown)
+	if shown < len(l.Tools) {
+		summary = fmt.Sprintf("%d of %d tools", shown, len(l.Tools))
+	}
+	return Result{Text: env.capOutput(text), Summary: summary}
+}
+
+func formatListing(a toolSearchArgs, l mcp.Listing) (string, int) {
+	compact := a.Server != "" && a.Query == "" && len(l.Tools) > maxSchemaTools
+	entries := schemaEntries(l.Tools)
+	if compact {
+		entries = compactEntries(l.Tools)
+	}
 	var b strings.Builder
-	for _, t := range found {
-		fmt.Fprintf(&b, "server: %s\ntool: %s\ndescription: %s\ninput schema: %s\n\n", t.Server, t.Name, OneLine(t.Description, 400), string(t.InputSchema))
+	shown := fitEntries(&b, entries)
+	switch {
+	case compact:
+		fmt.Fprintf(&b, "shown %d of %d; call tool_search with server and query=<tool name> for its input schema\n", shown, len(l.Tools))
+	case shown < len(l.Tools):
+		fmt.Fprintf(&b, "shown %d of %d matching tools; refine the query to see the others\n", shown, len(l.Tools))
+	case len(l.Tools) == 0:
+		b.WriteString(emptyListing(a, l) + "\n")
 	}
-	for _, e := range errs {
-		fmt.Fprintf(&b, "error: %v\n", e)
+	writeNotices(&b, l)
+	return strings.TrimRight(b.String(), "\n"), shown
+}
+
+func schemaEntries(tools []mcp.Tool) []string {
+	entries := make([]string, 0, maxSchemaTools)
+	for _, t := range tools[:min(len(tools), maxSchemaTools)] {
+		entries = append(entries, fmt.Sprintf("server: %s\ntool: %s\ndescription: %s\ninput schema: %s\n\n", t.Server, t.Name, OneLine(t.Description, 400), string(t.InputSchema)))
 	}
-	if b.Len() == 0 {
-		return Result{Text: "no matching tools; try other keywords", Summary: "no matches"}
+	return entries
+}
+
+func compactEntries(tools []mcp.Tool) []string {
+	entries := make([]string, len(tools))
+	for i, t := range tools {
+		entries[i] = fmt.Sprintf("- %s: %s\n", t.Name, OneLine(t.Description, 150))
 	}
-	return Result{Text: env.capOutput(b.String()), Summary: fmt.Sprintf("%d tools", len(found))}
+	if len(tools) > 0 {
+		entries[0] = "server: " + tools[0].Server + "\n" + entries[0]
+	}
+	return entries
+}
+
+func fitEntries(b *strings.Builder, entries []string) int {
+	lines := 0
+	for i, e := range entries {
+		lines += strings.Count(e, "\n")
+		if i > 0 && (b.Len()+len(e) > maxListingBytes || lines > maxListingLines) {
+			return i
+		}
+		b.WriteString(e)
+	}
+	return len(entries)
+}
+
+func emptyListing(a toolSearchArgs, l mcp.Listing) string {
+	if a.Server != "" && a.Query == "" {
+		return fmt.Sprintf("server %q has no enabled tools", a.Server)
+	}
+	if len(l.Errs) > 0 {
+		return "no tools found"
+	}
+	return "no matching tools; try other keywords"
+}
+
+func writeNotices(b *strings.Builder, l mcp.Listing) {
+	servers := make([]string, 0, len(l.Hidden))
+	for s := range l.Hidden {
+		servers = append(servers, s)
+	}
+	sort.Strings(servers)
+	for _, s := range servers {
+		fmt.Fprintf(b, "server %q: %d more tools on this server are disabled by the user; don't try to work around this.\n", s, l.Hidden[s])
+	}
+	for _, e := range l.Errs {
+		fmt.Fprintf(b, "error: %v\n", e)
+	}
 }
 
 func MCPTools(m *mcp.Manager) []*Tool {

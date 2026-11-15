@@ -7,6 +7,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -162,5 +163,43 @@ func TestPastedTempImagesAreKeptWithTheSession(t *testing.T) {
 	}
 	if !strings.Contains(blocks[2].Text, kept+" 40×20") {
 		t.Errorf("note: %q", blocks[2].Text)
+	}
+}
+
+func TestSubagentKeepsParentMCPFilters(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("AICODE_CONFIG_DIR", dir)
+	parent := map[string]config.MCPServer{"notes": {Command: "notes", Tools: []string{"*_note"}, ExcludeTools: []string{"delete_*"}}}
+	path := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(path, []byte(`{"mcp": {"notes": {"command": "notes"}, "extra": {"command": "extra"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, runner, _ := buildAgent(config.Config{Model: "m", MCP: parent}, options{}, dir, nopProvider{}, devNullPrinter(t), true, false)
+	env, err := runner.Env()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fromParent := ""
+	for _, kv := range env {
+		if v, ok := strings.CutPrefix(kv, config.MCPEnv+"="); ok {
+			fromParent = v
+		}
+	}
+	t.Setenv(config.MCPEnv, fromParent)
+	t.Setenv("AICODE_SUBAGENT", "1")
+	cfg, err := resolveConfig(options{configPath: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(cfg.MCP, parent) || cfg.MCP["notes"].ToolEnabled("delete_note") {
+		t.Errorf("subagent mcp: %+v", cfg.MCP)
+	}
+	if _, set := os.LookupEnv(config.MCPEnv); set {
+		t.Error(config.MCPEnv + " left for tools and MCP servers")
+	}
+	t.Setenv(config.MCPEnv, fromParent)
+	t.Setenv("AICODE_SUBAGENT", "")
+	if cfg, _ := resolveConfig(options{configPath: path}); len(cfg.MCP) != 2 {
+		t.Errorf("top-level agent took %s: %+v", config.MCPEnv, cfg.MCP)
 	}
 }

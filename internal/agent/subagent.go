@@ -10,6 +10,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/paul-nameless/aicode/internal/config"
 )
 
 type SubagentRunner struct {
@@ -18,6 +20,15 @@ type SubagentRunner struct {
 	Provider   string
 	ReadOnly   func() bool
 	Cwd        string
+	MCP        map[string]config.MCPServer
+}
+
+func (r *SubagentRunner) Env() ([]string, error) {
+	servers, err := config.EncodeMCP(r.MCP)
+	if err != nil {
+		return nil, err
+	}
+	return append(os.Environ(), "AICODE_SUBAGENT=1", config.MCPEnv+"="+servers), nil
 }
 
 func (r *SubagentRunner) args(prompt, model, provider, effort string) []string {
@@ -50,9 +61,13 @@ func (r *SubagentRunner) Run(parent context.Context, prompt, model, provider, ef
 	if err != nil {
 		return "", err
 	}
+	env, err := r.Env()
+	if err != nil {
+		return "", err
+	}
 	cmd := exec.CommandContext(ctx, exe, r.args(prompt, model, provider, effort)...)
 	cmd.Dir = r.Cwd
-	cmd.Env = append(os.Environ(), "AICODE_SUBAGENT=1")
+	cmd.Env = env
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	cmd.Cancel = func() error { return syscall.Kill(cmd.Process.Pid, syscall.SIGTERM) }
 	cmd.WaitDelay = 5 * time.Second

@@ -252,8 +252,8 @@ func (m *Manager) Names() []string {
 	return names
 }
 
-func (m *Manager) Server(name string) config.MCPServer {
-	return m.servers[name]
+func (m *Manager) Description(name string) string {
+	return m.servers[name].Description
 }
 
 func (m *Manager) server(name string) (config.MCPServer, error) {
@@ -303,60 +303,79 @@ func (m *Manager) get(ctx context.Context, name string) (*client, error) {
 	return c, nil
 }
 
-func (m *Manager) Search(ctx context.Context, query string, limit int) ([]Tool, []error) {
-	var all []Tool
-	var errs []error
+type Listing struct {
+	Tools  []Tool
+	Hidden map[string]int
+	Errs   []error
+}
+
+func (l *Listing) add(c *client, query string) {
+	l.Tools = append(l.Tools, rank(c.tools, query)...)
+	if c.hidden > 0 {
+		l.Hidden[c.name] = c.hidden
+	}
+}
+
+func (m *Manager) Search(ctx context.Context, query string) Listing {
+	l := Listing{Hidden: map[string]int{}}
 	for _, name := range m.Names() {
 		c, err := m.get(ctx, name)
 		if err != nil {
-			errs = append(errs, err)
+			l.Errs = append(l.Errs, err)
 			continue
 		}
-		all = append(all, c.tools...)
+		l.add(c, query)
 	}
-	return rank(all, query, limit), errs
+	l.Tools = rank(l.Tools, query)
+	return l
 }
 
-func (m *Manager) ServerTools(ctx context.Context, server, query string) ([]Tool, error) {
+func (m *Manager) ServerTools(ctx context.Context, server, query string) (Listing, error) {
 	c, err := m.get(ctx, server)
 	if err != nil {
-		return nil, err
+		return Listing{}, err
 	}
-	if strings.TrimSpace(query) == "" {
-		return slices.Clone(c.tools), nil
-	}
-	return rank(c.tools, query, len(c.tools)), nil
+	l := Listing{Hidden: map[string]int{}}
+	l.add(c, query)
+	return l, nil
 }
 
-func rank(tools []Tool, query string, limit int) []Tool {
+func rank(tools []Tool, query string) []Tool {
 	words := strings.Fields(strings.ToLower(query))
+	if len(words) == 0 {
+		return slices.Clone(tools)
+	}
 	type scored struct {
 		t     Tool
 		score int
 	}
 	var out []scored
 	for _, t := range tools {
-		name := strings.ToLower(t.Server + " " + t.Name)
-		desc := strings.ToLower(t.Description)
-		score := 0
-		for _, w := range words {
-			if strings.Contains(name, w) {
-				score += 3
-			}
-			if strings.Contains(desc, w) {
-				score++
-			}
-		}
-		if score > 0 || len(words) == 0 {
+		if score := toolScore(t, words); score > 0 {
 			out = append(out, scored{t, score})
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].score > out[j].score })
-	var res []Tool
-	for i := 0; i < len(out) && i < limit; i++ {
-		res = append(res, out[i].t)
+	res := make([]Tool, len(out))
+	for i, s := range out {
+		res[i] = s.t
 	}
 	return res
+}
+
+func toolScore(t Tool, words []string) int {
+	name := strings.ToLower(t.Server + " " + t.Name)
+	desc := strings.ToLower(t.Description)
+	score := 0
+	for _, w := range words {
+		if strings.Contains(name, w) {
+			score += 3
+		}
+		if strings.Contains(desc, w) {
+			score++
+		}
+	}
+	return score
 }
 
 func (m *Manager) Call(ctx context.Context, server, tool string, args json.RawMessage) (CallResult, error) {
@@ -365,7 +384,7 @@ func (m *Manager) Call(ctx context.Context, server, tool string, args json.RawMe
 		return CallResult{}, err
 	}
 	if !srv.ToolEnabled(tool) {
-		return CallResult{}, fmt.Errorf("tool %q on server %q is not enabled (see mcp.%s.tools / exclude_tools in the config)", tool, server, server)
+		return CallResult{}, fmt.Errorf("tool %q on server %q is disabled by the user; don't try to work around this", tool, server)
 	}
 	c, err := m.get(ctx, server)
 	if err != nil {
@@ -388,15 +407,30 @@ func (m *Manager) Call(ctx context.Context, server, tool string, args json.RawMe
 	return res, nil
 }
 
+type State int
+
+const (
+	NotStarted State = iota
+	Started
+	Failed
+)
+
+func (s State) String() string {
+	return [...]string{"not started", "started", "failed"}[s]
+}
+
 type Status struct {
 	Name   string
-	State  string
+	State  State
 	Err    error
 	Tools  []string
 	Hidden int
 }
 
 func (m *Manager) Start(ctx context.Context, name string) error {
+	m.mu.Lock()
+	delete(m.errs, name)
+	m.mu.Unlock()
 	_, err := m.get(ctx, name)
 	return err
 }
@@ -412,23 +446,14 @@ func (m *Manager) Status() []Status {
 }
 
 func (m *Manager) status(name string) Status {
-	st := Status{Name: name, State: "not started"}
 	if err, ok := m.errs[name]; ok {
-		st.State, st.Err = "failed", err
-		return st
+		return Status{Name: name, State: Failed, Err: err}
 	}
 	c, ok := m.clients[name]
 	if !ok {
-		return st
+		return Status{Name: name, State: NotStarted}
 	}
-	select {
-	case <-c.done:
-		st.State = "exited"
-	default:
-		st.State = "started"
-	}
-	st.Tools, st.Hidden = c.toolNames(), c.hidden
-	return st
+	return Status{Name: name, State: Started, Tools: c.toolNames(), Hidden: c.hidden}
 }
 
 func (m *Manager) Close() {

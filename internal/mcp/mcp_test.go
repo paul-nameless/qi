@@ -42,14 +42,15 @@ func TestManagerSearchAndCall(t *testing.T) {
 	m := NewManager(map[string]config.MCPServer{"fake": fake, "broken": {Command: "/nonexistent/mcp-server"}})
 	defer m.Close()
 	ctx := context.Background()
-	found, errs := m.Search(ctx, "list issues", 10)
+	l := m.Search(ctx, "list issues")
+	found, errs := l.Tools, l.Errs
 	if len(found) != 1 || found[0].Name != "list_issues" || found[0].Server != "fake" {
 		t.Fatalf("search: %+v", found)
 	}
 	if len(errs) != 1 {
 		t.Errorf("expected one error for the broken server, got %v", errs)
 	}
-	if all, _ := m.Search(ctx, "echo", 10); len(all) != 1 || all[0].Name != "echo" {
+	if all := m.Search(ctx, "echo").Tools; len(all) != 1 || all[0].Name != "echo" {
 		t.Errorf("paginated tool missing: %+v", all)
 	}
 	res, err := m.Call(ctx, "fake", "echo", json.RawMessage(`{"text":"hi"}`))
@@ -63,19 +64,19 @@ func TestManagerFiltersTools(t *testing.T) {
 	m := NewManager(map[string]config.MCPServer{"fake": fake})
 	defer m.Close()
 	ctx := context.Background()
-	found, _ := m.Search(ctx, "issue", 10)
-	if got := names(found); slices.Contains(got, "delete_issue") || !slices.Contains(got, "get_issue") {
-		t.Errorf("search returned %v", got)
+	found := m.Search(ctx, "issue")
+	if got := names(found.Tools); slices.Contains(got, "delete_issue") || !slices.Contains(got, "get_issue") || found.Hidden["fake"] != 1 {
+		t.Errorf("search returned %v, hidden %v", got, found.Hidden)
 	}
 	all, err := m.ServerTools(ctx, "fake", "")
-	if got := names(all); err != nil || !slices.Equal(got, []string{"list_issues", "get_issue", "echo"}) {
-		t.Errorf("server tools: %v %v", got, err)
+	if got := names(all.Tools); err != nil || !slices.Equal(got, []string{"list_issues", "get_issue", "echo"}) || all.Hidden["fake"] != 1 {
+		t.Errorf("server tools: %v %v %v", got, all.Hidden, err)
 	}
-	if one, _ := m.ServerTools(ctx, "fake", "echo"); !slices.Equal(names(one), []string{"echo"}) {
-		t.Errorf("server tools with query: %v", names(one))
+	if one, _ := m.ServerTools(ctx, "fake", "echo"); !slices.Equal(names(one.Tools), []string{"echo"}) {
+		t.Errorf("server tools with query: %v", names(one.Tools))
 	}
 	st := m.Status()
-	if len(st) != 1 || st[0].State != "started" || st[0].Hidden != 1 || len(st[0].Tools) != 3 {
+	if len(st) != 1 || st[0].State != Started || st[0].Hidden != 1 || len(st[0].Tools) != 3 {
 		t.Errorf("status: %+v", st)
 	}
 }
@@ -86,8 +87,8 @@ func TestManagerCallRejectsWithoutRoundTrip(t *testing.T) {
 	defer m.Close()
 	ctx := context.Background()
 	cases := map[string][]string{
-		"delete_issue": {`tool "delete_issue" on server "fake" is not enabled`, "mcp.fake.tools / exclude_tools"},
-		"other":        {`tool "other" on server "fake" is not enabled`},
+		"delete_issue": {`tool "delete_issue" on server "fake" is disabled by the user; don't try to work around this`},
+		"other":        {`tool "other" on server "fake" is disabled by the user`},
 		"nope_issue":   {`unknown tool "nope_issue" on server "fake"`, "use tool_search"},
 	}
 	for tool, parts := range cases {
@@ -124,13 +125,36 @@ func TestManagerStatus(t *testing.T) {
 		t.Fatal("broken server started")
 	}
 	st := m.Status()
-	if st[0].Name != "broken" || st[0].State != "failed" || st[0].Err == nil {
+	if st[0].Name != "broken" || st[0].State != Failed || st[0].Err == nil {
 		t.Errorf("broken: %+v", st[0])
 	}
-	if st[1].Name != "fake" || st[1].State != "started" || !slices.Equal(st[1].Tools, []string{"list_issues", "echo"}) || st[1].Hidden != 2 {
+	if st[1].Name != "fake" || st[1].State != Started || !slices.Equal(st[1].Tools, []string{"list_issues", "echo"}) || st[1].Hidden != 2 {
 		t.Errorf("fake: %+v", st[1])
 	}
-	if st[2].Name != "idle" || st[2].State != "not started" {
+	if st[2].Name != "idle" || st[2].State != NotStarted {
 		t.Errorf("idle: %+v", st[2])
+	}
+}
+
+func TestManagerStartRetriesFailedServer(t *testing.T) {
+	exe, _ := os.Executable()
+	script := filepath.Join(t.TempDir(), "server")
+	m := NewManager(map[string]config.MCPServer{"late": {Command: script, Env: map[string]string{mcptest.Env: "1"}}})
+	defer m.Close()
+	ctx := context.Background()
+	if err := m.Start(ctx, "late"); err == nil {
+		t.Fatal("started a missing server")
+	}
+	if _, err := m.ServerTools(ctx, "late", ""); err == nil {
+		t.Fatal("failure not cached for normal use")
+	}
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nexec '"+exe+"'\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Start(ctx, "late"); err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	if st := m.Status(); st[0].State != Started || len(st[0].Tools) != 4 {
+		t.Errorf("after retry: %+v", st)
 	}
 }
