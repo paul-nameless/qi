@@ -9,10 +9,10 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/paul-nameless/qi/internal/config"
+	"github.com/paul-nameless/qi/internal/proc"
 	"github.com/paul-nameless/qi/internal/tools"
 )
 
@@ -141,9 +141,7 @@ func runQuiet(command, picker string, vars map[string]string, stdin string) (str
 	line, env := expandTool(command, picker, vars)
 	cmd := exec.CommandContext(ctx, "sh", "-c", line)
 	cmd.Env = toolEnv(env)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
-	cmd.WaitDelay = time.Second
+	proc.Setup(cmd, proc.Group, proc.Grace)
 	cmd.Stdin = strings.NewReader(stdin)
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb

@@ -13,13 +13,16 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/paul-nameless/qi/internal/config"
+	"github.com/paul-nameless/qi/internal/proc"
 )
 
-const protocolVersion = "2025-06-18"
+const (
+	protocolVersion = "2025-06-18"
+	closeGrace      = time.Second
+)
 
 type Tool struct {
 	Server      string          `json:"server"`
@@ -73,7 +76,7 @@ func start(name string, srv config.MCPServer) (*client, error) {
 	for k, v := range srv.Env {
 		cmd.Env = append(cmd.Env, k+"="+v)
 	}
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	proc.Detach(cmd, proc.Session)
 	cmd.Stderr = io.Discard
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -226,10 +229,7 @@ func (c *client) close() {
 	case <-c.done:
 	case <-time.After(500 * time.Millisecond):
 	}
-	if c.cmd.Process != nil {
-		_ = syscall.Kill(-c.cmd.Process.Pid, syscall.SIGKILL)
-	}
-	_ = c.cmd.Wait()
+	_ = proc.Stop(c.cmd, closeGrace)
 }
 
 type Manager struct {
@@ -459,8 +459,10 @@ func (m *Manager) status(name string) Status {
 func (m *Manager) Close() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	var wg sync.WaitGroup
 	for _, c := range m.clients {
-		c.close()
+		wg.Go(c.close)
 	}
+	wg.Wait()
 	m.clients = map[string]*client{}
 }

@@ -11,10 +11,10 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/paul-nameless/qi/internal/llm"
+	"github.com/paul-nameless/qi/internal/proc"
 )
 
 type bashArgs struct {
@@ -170,9 +170,7 @@ func runBash(ctx context.Context, env *Env, in json.RawMessage, progress func(st
 	if env.readOnly() {
 		cmd.Env = append(cmd.Env, readOnlyEnv()...)
 	}
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
-	cmd.WaitDelay = 2 * time.Second
+	proc.Setup(cmd, proc.Session, proc.Grace)
 	out := &progressWriter{progress: progress}
 	cmd.Stdout = out
 	cmd.Stderr = out

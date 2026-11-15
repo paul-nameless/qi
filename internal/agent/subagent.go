@@ -8,11 +8,13 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/paul-nameless/qi/internal/config"
+	"github.com/paul-nameless/qi/internal/proc"
 )
+
+const subagentGrace = 5 * time.Second
 
 type SubagentRunner struct {
 	ConfigPath string
@@ -68,9 +70,7 @@ func (r *SubagentRunner) Run(parent context.Context, prompt, model, provider, ef
 	cmd := exec.CommandContext(ctx, exe, r.args(prompt, model, provider, effort)...)
 	cmd.Dir = r.Cwd
 	cmd.Env = env
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	cmd.Cancel = func() error { return syscall.Kill(cmd.Process.Pid, syscall.SIGTERM) }
-	cmd.WaitDelay = 5 * time.Second
+	proc.Setup(cmd, proc.Session, subagentGrace)
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 	stderr, err := cmd.StderrPipe()
