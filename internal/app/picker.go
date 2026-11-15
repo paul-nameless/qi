@@ -94,54 +94,36 @@ func quotePath(p string) string {
 	return "'" + p + "'"
 }
 
-var builtinCommands = []pickItem{
-	{"help", "show commands"},
-	{"keys", "show key bindings"},
-	{"config", "show the config file and external tools"},
-	{"clear", "start a new session"},
-	{"context", "show what takes space in the context"},
-	{"reload", "re-read skills, commands and CLAUDE.md files"},
-	{"compact", "summarize the conversation to free context"},
-	{"resume", "switch to another session"},
-	{"history", "open the conversation in the pager"},
-	{"copy", "copy the last answer to the clipboard"},
-	{"model", "switch the model"},
-	{"profile", "switch the profile"},
-	{"effort", "switch the reasoning effort"},
-	{"skills", "pick a skill"},
-	{"mcp", "show MCP servers and their enabled tools"},
-	{"exit", "quit"},
-}
-
 func (r *repl) slashPicker() (string, bool) {
-	name, ok := r.pick("/", builtinCommands)
+	name, ok := r.pick("/", pickerItems())
 	if !ok {
 		return "/", false
 	}
-	switch name {
-	case "model":
-		return r.pickArg("model", r.modelItems())
-	case "effort":
-		return r.pickArg("effort", r.effortItems())
-	case "profile":
-		items := r.profileItems()
-		if len(items) == 0 {
-			r.display.Info("no profiles: add a \"profiles\" object to " + r.configFile() + " (see readme)")
-			return "", false
-		}
-		return r.pickArg("profile", items)
-	case "skills":
-		items := r.skillItems()
-		if len(items) == 0 {
-			r.display.Info("no skills found in ~/.claude/skills or .claude/skills")
-			return "", false
-		}
-		if s, ok := r.pick("skill ", items); ok {
-			return "/" + s + " ", false
-		}
-		return "/", false
+	if c := findCommand(name); c != nil && c.pickArg != nil {
+		return c.pickArg(r)
 	}
 	return "/" + name, true
+}
+
+func (r *repl) pickProfile() (string, bool) {
+	items := r.profileItems()
+	if len(items) == 0 {
+		r.display.Info("no profiles: add a \"profiles\" object to " + r.configFile() + " (see readme)")
+		return "", false
+	}
+	return r.pickArg("profile", items)
+}
+
+func (r *repl) pickSkill() (string, bool) {
+	items := r.skillItems()
+	if len(items) == 0 {
+		r.display.Info("no skills found in ~/.claude/skills or .claude/skills")
+		return "", false
+	}
+	if s, ok := r.pick("skill ", items); ok {
+		return "/" + s + " ", false
+	}
+	return "/", false
 }
 
 func (r *repl) pickArg(cmd string, items []pickItem) (string, bool) {
