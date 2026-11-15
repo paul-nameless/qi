@@ -457,6 +457,9 @@ func (r *repl) switchProfile(name string) error {
 	if r.runner != nil && !sameMCP(cfg.MCP, r.runner.MCP) {
 		r.display.Info("MCP servers unchanged; restart qi to apply the new profile's MCP setup")
 	}
+	if err := config.SetDefaultProfile(r.opts.configPath, cfg.Profile); err != nil {
+		r.display.Error("couldn't save the default profile: " + err.Error())
+	}
 	return nil
 }
 

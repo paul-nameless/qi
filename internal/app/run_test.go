@@ -89,6 +89,9 @@ func TestModelSwitchKeepsSubagentsOnProfileProvider(t *testing.T) {
 	if err := r.switchProfile("p"); err != nil {
 		t.Fatal(err)
 	}
+	if saved, err := config.Resolve(config.Options{Path: path}); err != nil || saved.Profile != "p" {
+		t.Errorf("/profile p not saved as default: %q, %v", saved.Profile, err)
+	}
 	if err := r.switchModel("haiku"); err != nil {
 		t.Fatal(err)
 	}

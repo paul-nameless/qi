@@ -55,7 +55,7 @@ go install github.com/paul-nameless/qi@latest
 }
 ```
 
-Top-level keys apply to every profile; a profile overrides them. `qi -p opus` picks a profile, `/profile` and `/model` switch while running. A provider's key comes from `api_key` (the key itself), `api_key_shell` (a command that prints it, so the key stays out of the file), or the environment: `ANTHROPIC_API_KEY` for `"api": "anthropic"`, `OPENROUTER_API_KEY` only for an openrouter.ai `base_url`, and `OPENAI_API_KEY` for any other host, so an environment key is never sent to a server it doesn't belong to.
+Top-level keys apply to every profile; a profile overrides them. `qi -p opus` picks a profile for that run; `/profile opus` switches while running and makes it the default for next time. `/model` switches the model for this session only. A provider's key comes from `api_key` (the key itself), `api_key_shell` (a command that prints it, so the key stays out of the file), or the environment: `ANTHROPIC_API_KEY` for `"api": "anthropic"`, `OPENROUTER_API_KEY` only for an openrouter.ai `base_url`, and `OPENAI_API_KEY` for any other host, so an environment key is never sent to a server it doesn't belong to.
 
 Every key is described in [`internal/config/schema.json`](internal/config/schema.json). `qi -check-config` checks the config without calling any API. Or just ask qi to change a setting: the built-in `qi-config` skill knows the format.
 
