@@ -3,6 +3,7 @@ package session
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -99,15 +100,20 @@ func TestLatestSkipsEmptySessions(t *testing.T) {
 	s1.Message(llm.UserText("real work"), "m", nil)
 	s1.Message(llm.Message{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: "done"}}}, "m", nil)
 	s1.Close()
-	time.Sleep(1100 * time.Millisecond)
 	s2, _ := Create(CreateOptions{Cwd: "/p", Model: "m", Kind: Interactive})
 	s2.Message(llm.UserText("asked but never answered"), "m", nil)
 	s2.Close()
-	time.Sleep(1100 * time.Millisecond)
 	s3, _ := Create(CreateOptions{Cwd: "/p", Model: "m", Kind: Headless})
 	s3.Message(llm.UserText("one-shot"), "m", nil)
 	s3.Message(llm.Message{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: "ok"}}}, "m", nil)
 	s3.Close()
+	now := time.Now()
+	for i, s := range []*Session{s1, s2, s3} {
+		at := now.Add(time.Duration(i-3) * time.Minute)
+		if err := os.Chtimes(s.Path, at, at); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if got, err := Latest("/p", true); err != nil || got != s1.Path {
 		t.Errorf("interactive latest %q, want %q (%v)", got, s1.Path, err)
 	}
@@ -146,5 +152,28 @@ func TestIDs(t *testing.T) {
 	}
 	if !strings.HasSuffix(Dir("/Users/x/my.proj"), "-Users-x-my-proj") {
 		t.Errorf("dir %q", Dir("/Users/x/my.proj"))
+	}
+}
+
+func TestDirMigratesLegacyNameOnce(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("QI_SESSION_DIR", base)
+	legacy := filepath.Join(base, "Users-x-a.b")
+	if err := os.MkdirAll(legacy, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	dir := Dir("/Users/x/a.b")
+	if _, err := os.Stat(dir); err != nil || dir == legacy {
+		t.Fatalf("legacy dir not renamed to %s: %v", dir, err)
+	}
+	if err := os.Remove(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(legacy, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	Dir("/Users/x/a.b")
+	if _, err := os.Stat(legacy); err != nil {
+		t.Error("migration ran again on a later call")
 	}
 }

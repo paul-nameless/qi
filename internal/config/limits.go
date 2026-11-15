@@ -5,9 +5,10 @@ import (
 	"encoding/json/v2"
 	"fmt"
 	"math"
-	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/paul-nameless/qi/internal/llm"
 )
 
 type Tokens int
@@ -27,21 +28,11 @@ var knownWindows = []struct {
 	{"gemini", 1048576},
 }
 
-var claudeVersion = regexp.MustCompile(`(opus|sonnet|haiku)-(\d)(?:[-.](\d)(?:\D|$))?`)
-
 func claudeWindow(model string) int {
 	if strings.Contains(model, "fable") || strings.Contains(model, "mythos") {
 		return 1000000
 	}
-	v := claudeVersion.FindStringSubmatch(model)
-	if v == nil {
-		return 200000
-	}
-	major, minor := int(v[2][0]-'0'), 0
-	if v[3] != "" {
-		minor = int(v[3][0] - '0')
-	}
-	if major >= 5 || major == 4 && minor >= 6 {
+	if m, ok := llm.ParseClaude(model); ok && m.AtLeast46() {
 		return 1000000
 	}
 	return 200000

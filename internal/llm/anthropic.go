@@ -94,24 +94,35 @@ func InvalidArgs(raw json.RawMessage) bool {
 
 var modelVersion = regexp.MustCompile(`(opus|sonnet|haiku|fable|mythos)-(\d)(?:[-.](\d)(?:\D|$))?`)
 
+type ClaudeModel struct {
+	Family string
+	Major  int
+	Minor  int
+}
+
+func ParseClaude(model string) (ClaudeModel, bool) {
+	v := modelVersion.FindStringSubmatch(model)
+	if v == nil {
+		return ClaudeModel{}, false
+	}
+	m := ClaudeModel{Family: v[1], Major: int(v[2][0] - '0')}
+	if v[3] != "" {
+		m.Minor = int(v[3][0] - '0')
+	}
+	return m, true
+}
+
+func (m ClaudeModel) AtLeast46() bool {
+	return m.Major >= 5 || m.Major == 4 && m.Minor >= 6
+}
+
 func supportsAdaptive(model string) bool {
-	m := strings.ToLower(model)
-	if strings.Contains(m, "claude-3") {
+	model = strings.ToLower(model)
+	if strings.Contains(model, "claude-3") {
 		return false
 	}
-	v := modelVersion.FindStringSubmatch(m)
-	if v == nil {
-		return true
-	}
-	if v[1] == "fable" || v[1] == "mythos" {
-		return true
-	}
-	major := int(v[2][0] - '0')
-	minor := 0
-	if v[3] != "" {
-		minor = int(v[3][0] - '0')
-	}
-	return major >= 5 || (major == 4 && minor >= 6)
+	m, ok := ParseClaude(model)
+	return !ok || m.Family == "fable" || m.Family == "mythos" || m.AtLeast46()
 }
 
 func (a *Anthropic) buildBody(req Request) map[string]any {

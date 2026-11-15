@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -125,7 +126,7 @@ func checkPositional(words []string, sub string) error {
 		positional = append(positional, w)
 	}
 	switch {
-	case sub == "git branch" && len(positional) > 0 && !contains(words, "--list") && !contains(words, "-l"):
+	case sub == "git branch" && len(positional) > 0 && !slices.Contains(words, "--list") && !slices.Contains(words, "-l"):
 		return errors.New("git branch with a name creates a branch")
 	case words[0] == "uniq" && uniqHasFiles(words[1:]):
 		return errors.New("uniq is allowed only in pipes, without file arguments")
@@ -136,15 +137,6 @@ func checkPositional(words []string, sub string) error {
 func uniqHasFiles(args []string) bool {
 	for _, a := range args {
 		if a == "-" || a == "--" || !strings.HasPrefix(a, "-") {
-			return true
-		}
-	}
-	return false
-}
-
-func contains(ws []string, s string) bool {
-	for _, w := range ws {
-		if w == s {
 			return true
 		}
 	}

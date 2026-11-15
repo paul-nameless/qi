@@ -85,12 +85,12 @@ func renderBlock(b *strings.Builder, p painter, role string, blk llm.Block, resu
 	}
 }
 
-func indentResult(text string, max int) string {
+func indentResult(text string, limit int) string {
 	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
 	more := 0
-	if max > 0 && len(lines) > max {
-		more = len(lines) - max
-		lines = lines[:max]
+	if limit > 0 && len(lines) > limit {
+		more = len(lines) - limit
+		lines = lines[:limit]
 	}
 	var b strings.Builder
 	for i, l := range lines {

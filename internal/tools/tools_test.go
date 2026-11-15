@@ -401,3 +401,20 @@ func TestMCPCallHookUnwrapAndRewrap(t *testing.T) {
 		t.Errorf("read hook call %+v", read)
 	}
 }
+
+func TestSpillFailureIsReported(t *testing.T) {
+	blocker := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(blocker, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env := &Env{SpillDir: filepath.Join(blocker, "sub")}
+	if _, err := env.spill("x"); err == nil {
+		t.Error("spill into a file path succeeded")
+	}
+	if out := env.capOutput(strings.Repeat("line\n", 1000)); !strings.Contains(out, "Full output: (not saved: ") {
+		t.Errorf("cap output without a spill file: %q", out[len(out)-200:])
+	}
+	if p := env.saveImage([]byte("x"), "image/png"); p != "" {
+		t.Errorf("saveImage returned %q", p)
+	}
+}

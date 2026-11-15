@@ -261,8 +261,8 @@ func mcpImage(env *Env, mimeType, data string) (preparedImage, error) {
 }
 
 func (e *Env) saveImage(data []byte, mimeType string) string {
-	path := e.spill("")
-	if strings.HasPrefix(path, "(") {
+	path, err := e.spill("")
+	if err != nil {
 		return ""
 	}
 	dst := strings.TrimSuffix(path, ".txt") + "." + strings.TrimPrefix(mimeType, "image/")

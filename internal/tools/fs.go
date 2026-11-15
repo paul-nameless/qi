@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/paul-nameless/qi/internal/llm"
+	"github.com/paul-nameless/qi/internal/strutil"
 )
 
 const (
@@ -133,7 +134,7 @@ func readPath(path string, offset, limit int, crop []int) Result {
 		}
 		line := strings.TrimSuffix(lines[i], "\r")
 		if len(line) > maxLineLen {
-			line = cutStart(line, maxLineLen) + "…"
+			line = strutil.CutStart(line, maxLineLen) + "…"
 		}
 		fmt.Fprintf(&b, "%d\t%s\n", i+1, line)
 	}
@@ -325,10 +326,10 @@ func Edit() *Tool {
 	}
 }
 
-func lineDelta(old, new string, count int) (int, int) {
-	o := strings.Count(old, "\n") + 1
-	n := strings.Count(new, "\n") + 1
-	if new == "" {
+func lineDelta(oldText, newText string, count int) (int, int) {
+	o := strings.Count(oldText, "\n") + 1
+	n := strings.Count(newText, "\n") + 1
+	if newText == "" {
 		n = 0
 	}
 	return n * count, o * count
@@ -336,27 +337,27 @@ func lineDelta(old, new string, count int) (int, int) {
 
 var lineNumPrefix = regexp.MustCompile(`^\s*\d+(\t|\| ?|: )`)
 
-func applyEdit(content, old, new string, all bool) (string, int, error) {
-	if old == "" {
+func applyEdit(content, oldText, newText string, all bool) (string, int, error) {
+	if oldText == "" {
 		return "", 0, errors.New("old_string is empty; use write to create a file")
 	}
-	if old == new {
+	if oldText == newText {
 		return "", 0, errors.New("old_string and new_string are identical")
 	}
 	crlf := strings.Contains(content, "\r\n")
-	if crlf && !strings.Contains(old, "\r\n") {
-		old = strings.ReplaceAll(old, "\n", "\r\n")
-		new = strings.ReplaceAll(new, "\n", "\r\n")
+	if crlf && !strings.Contains(oldText, "\r\n") {
+		oldText = strings.ReplaceAll(oldText, "\n", "\r\n")
+		newText = strings.ReplaceAll(newText, "\n", "\r\n")
 	}
-	if out, n, err := replaceExact(content, old, new, all); n != 0 || err != nil {
+	if out, n, err := replaceExact(content, oldText, newText, all); n != 0 || err != nil {
 		return out, n, err
 	}
-	if o2, n2, ok := stripLineNumbers(old, new); ok {
+	if o2, n2, ok := stripLineNumbers(oldText, newText); ok {
 		if out, n, err := replaceExact(content, o2, n2, all); n != 0 || err != nil {
 			return out, n, err
 		}
 	}
-	out, n := replaceTrimmed(content, old, new)
+	out, n := replaceTrimmed(content, oldText, newText)
 	switch {
 	case n == 1:
 		return out, 1, nil
@@ -366,21 +367,21 @@ func applyEdit(content, old, new string, all bool) (string, int, error) {
 	return "", 0, errors.New("old_string not found in file; read the file again and copy the text exactly")
 }
 
-func replaceExact(content, old, new string, all bool) (string, int, error) {
-	n := strings.Count(content, old)
+func replaceExact(content, oldText, newText string, all bool) (string, int, error) {
+	n := strings.Count(content, oldText)
 	switch {
 	case n == 0:
 		return "", 0, nil
 	case n == 1:
-		return strings.Replace(content, old, new, 1), 1, nil
+		return strings.Replace(content, oldText, newText, 1), 1, nil
 	case all:
-		return strings.ReplaceAll(content, old, new), n, nil
+		return strings.ReplaceAll(content, oldText, newText), n, nil
 	default:
 		return "", 0, fmt.Errorf("old_string matches %d places; include more context or set replace_all", n)
 	}
 }
 
-func stripLineNumbers(old, new string) (string, string, bool) {
+func stripLineNumbers(oldText, newText string) (string, string, bool) {
 	strip := func(s string) (string, bool) {
 		lines := strings.Split(s, "\n")
 		for _, l := range lines {
@@ -393,16 +394,16 @@ func stripLineNumbers(old, new string) (string, string, bool) {
 		}
 		return strings.Join(lines, "\n"), true
 	}
-	o, ok := strip(old)
+	o, ok := strip(oldText)
 	if !ok {
-		return old, new, false
+		return oldText, newText, false
 	}
-	n, _ := strip(new)
+	n, _ := strip(newText)
 	return o, n, true
 }
 
-func replaceTrimmed(content, old, new string) (string, int) {
-	oldLines := strings.Split(strings.Trim(old, "\r\n"), "\n")
+func replaceTrimmed(content, oldText, newText string) (string, int) {
+	oldLines := strings.Split(strings.Trim(oldText, "\r\n"), "\n")
 	lines := strings.Split(content, "\n")
 	match, count := -1, 0
 	for i := 0; i+len(oldLines) <= len(lines); i++ {
@@ -422,7 +423,7 @@ func replaceTrimmed(content, old, new string) (string, int) {
 		return "", count
 	}
 	var repl []string
-	if trimmed := strings.Trim(new, "\r\n"); trimmed != "" {
+	if trimmed := strings.Trim(newText, "\r\n"); trimmed != "" {
 		repl = strings.Split(trimmed, "\n")
 	}
 	if strings.HasSuffix(lines[match+len(oldLines)-1], "\r") {
@@ -457,7 +458,7 @@ func snippet(content, changed string) string {
 	for n := from; n <= to; n++ {
 		line := strings.TrimSuffix(lines[n], "\r")
 		if len(line) > maxLineLen {
-			line = cutStart(line, maxLineLen) + "…"
+			line = strutil.CutStart(line, maxLineLen) + "…"
 		}
 		fmt.Fprintf(&b, "%d\t%s\n", n+1, line)
 	}

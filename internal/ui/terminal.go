@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"bytes"
 	"os"
 	"strings"
 	"sync"
@@ -193,7 +194,7 @@ func (t *Terminal) decodeLoop() {
 		pending = append(pending, chunk...)
 		for len(pending) > 0 {
 			if inPaste {
-				end := indexOf(pending, "\x1b[201~")
+				end := bytes.Index(pending, []byte("\x1b[201~"))
 				if end < 0 {
 					keep := 0
 					for k := 1; k < 6 && k <= len(pending); k++ {
@@ -268,15 +269,6 @@ func normalizePaste(s string) string {
 		out = append(out, r)
 	}
 	return string(out)
-}
-
-func indexOf(b []byte, s string) int {
-	for i := 0; i+len(s) <= len(b); i++ {
-		if string(b[i:i+len(s)]) == s {
-			return i
-		}
-	}
-	return -1
 }
 
 func decodeKey(b []byte) (Key, int) {

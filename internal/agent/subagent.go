@@ -96,11 +96,15 @@ func (r *SubagentRunner) Run(parent context.Context, task tools.SubagentTask, pr
 			tail = tail[1:]
 		}
 	}
+	scanErr := sc.Err()
 	if err := cmd.Wait(); err != nil {
 		if ctx.Err() != nil {
 			return "", ctx.Err()
 		}
-		return "", fmt.Errorf("%v\n%s", err, strings.Join(tail, "\n"))
+		return "", fmt.Errorf("%w\n%s", err, strings.Join(tail, "\n"))
+	}
+	if scanErr != nil {
+		return "", fmt.Errorf("read subagent output: %w", scanErr)
 	}
 	answer := strings.TrimSpace(stdout.String())
 	if answer == "" {

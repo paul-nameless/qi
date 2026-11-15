@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	"github.com/paul-nameless/qi/internal/strutil"
 )
 
 const (
@@ -139,7 +141,7 @@ func capNotice(s string) string {
 	if len(s) <= maxNoticeBytes {
 		return s
 	}
-	return cutStart(s, maxNoticeBytes) + "\n… diff truncated; read the file for the rest"
+	return strutil.CutStart(s, maxNoticeBytes) + "\n… diff truncated; read the file for the rest"
 }
 
 type diffOp struct {

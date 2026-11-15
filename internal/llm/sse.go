@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/paul-nameless/qi/internal/strutil"
 )
 
 var httpClient = &http.Client{Transport: &http.Transport{
@@ -64,7 +66,7 @@ type APIError struct {
 func (e *APIError) Error() string {
 	body := strings.TrimSpace(e.Body)
 	if len(body) > 600 {
-		body = body[:600] + "…"
+		body = strutil.CutStart(body, 600) + "…"
 	}
 	return fmt.Sprintf("api error %d: %s", e.Status, body)
 }

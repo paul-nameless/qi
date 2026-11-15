@@ -12,10 +12,10 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	"github.com/paul-nameless/qi/internal/config"
 	"github.com/paul-nameless/qi/internal/llm"
+	"github.com/paul-nameless/qi/internal/strutil"
 )
 
 type Result struct {
@@ -275,11 +275,11 @@ func panicSite() string {
 	}
 }
 
-func OneLine(s string, max int) string {
+func OneLine(s string, limit int) string {
 	s = strings.Join(strings.Fields(s), " ")
 	r := []rune(s)
-	if len(r) > max {
-		return string(r[:max-1]) + "…"
+	if len(r) > limit {
+		return string(r[:limit-1]) + "…"
 	}
 	return s
 }
@@ -304,39 +304,21 @@ func (e *Env) capOutput(out string) string {
 	if len(out) <= maxOutBytes && len(lines) <= maxOutLines {
 		return out
 	}
-	path := e.spill(out)
+	path, err := e.spill(out)
+	if err != nil {
+		path = "(not saved: " + err.Error() + ")"
+	}
 	half := maxOutBytes / 2
 	if len(lines) <= headLines+tailLines {
-		head, tail := cutStart(out, half), cutEnd(out, half)
+		head, tail := strutil.CutStart(out, half), strutil.CutEnd(out, half)
 		return head + fmt.Sprintf("\n… %d bytes omitted. Full output: %s\n", len(out)-len(head)-len(tail), path) + tail
 	}
-	head := cutStart(strings.Join(lines[:headLines], "\n"), half)
-	tail := cutEnd(strings.Join(lines[len(lines)-tailLines:], "\n"), half)
+	head := strutil.CutStart(strings.Join(lines[:headLines], "\n"), half)
+	tail := strutil.CutEnd(strings.Join(lines[len(lines)-tailLines:], "\n"), half)
 	return head + fmt.Sprintf("\n… %d lines omitted. Full output: %s\n", len(lines)-headLines-tailLines, path) + tail
 }
 
-func cutStart(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	for n > 0 && !utf8.RuneStart(s[n]) {
-		n--
-	}
-	return s[:n]
-}
-
-func cutEnd(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	i := len(s) - n
-	for i < len(s) && !utf8.RuneStart(s[i]) {
-		i++
-	}
-	return s[i:]
-}
-
-func (e *Env) spill(out string) string {
+func (e *Env) spill(out string) (string, error) {
 	dir := e.SpillDir
 	if dir == "" {
 		base, err := os.UserCacheDir()
@@ -346,13 +328,13 @@ func (e *Env) spill(out string) string {
 		dir = filepath.Join(base, "qi", "out")
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "(not saved: " + err.Error() + ")"
+		return "", err
 	}
 	b := make([]byte, 3)
 	_, _ = rand.Read(b)
 	path := filepath.Join(dir, time.Now().Format("20060102-150405")+"-"+hex.EncodeToString(b)+".txt")
 	if err := os.WriteFile(path, []byte(out), 0o600); err != nil {
-		return "(not saved: " + err.Error() + ")"
+		return "", err
 	}
-	return path
+	return path, nil
 }

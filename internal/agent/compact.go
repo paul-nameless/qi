@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/paul-nameless/qi/internal/llm"
+	"github.com/paul-nameless/qi/internal/strutil"
 )
 
 const (
@@ -82,7 +83,7 @@ func clip(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
-	return s[:n/2] + "\n… [shortened for compaction] …\n" + s[len(s)-n/2:]
+	return strutil.CutStart(s, n/2) + "\n… [shortened for compaction] …\n" + strutil.CutEnd(s, n/2)
 }
 
 func clipBlock(b llm.Block) llm.Block {

@@ -51,12 +51,24 @@ func Dir(cwd string) string {
 	name := strings.NewReplacer("/", "-", "\\", "-", ":", "", ".", "-").Replace(cwd)
 	dir := filepath.Join(base, name)
 	old := filepath.Join(base, strings.Trim(strings.NewReplacer("/", "-", "\\", "-", ":", "").Replace(cwd), "-"))
-	if _, err := os.Stat(dir); err != nil {
-		if _, err := os.Stat(old); err == nil && old != dir {
-			_ = os.Rename(old, dir)
-		}
+	if _, done := migrated.LoadOrStore(dir, true); !done {
+		migrate(old, dir)
 	}
 	return dir
+}
+
+var migrated sync.Map
+
+func migrate(old, dir string) {
+	if old == dir {
+		return
+	}
+	if _, err := os.Stat(dir); err == nil {
+		return
+	}
+	if _, err := os.Stat(old); err == nil {
+		_ = os.Rename(old, dir)
+	}
 }
 
 func NewID() string {
