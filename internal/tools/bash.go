@@ -104,25 +104,36 @@ func readOnlySandbox(ctx context.Context, command string) *exec.Cmd {
 	return sandboxCmd(ctx, command, tmp)
 }
 
-func sandboxCmd(ctx context.Context, command, tmp string) *exec.Cmd {
+var sandbox = sync.OnceValue(findSandbox)
+
+func findSandbox() string {
 	if runtime.GOOS == "darwin" {
-		if sbx, err := exec.LookPath("sandbox-exec"); err == nil {
-			return exec.CommandContext(ctx, sbx, "-D", "TMP="+tmp, "-p", sandboxProfile, "bash", "-c", command)
-		}
+		path, _ := exec.LookPath("sandbox-exec")
+		return path
 	}
-	if bwrap, err := exec.LookPath("bwrap"); err == nil {
-		return exec.CommandContext(ctx, bwrap, "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--bind", tmp, tmp, "--die-with-parent", "bash", "-c", command)
+	path, err := exec.LookPath("bwrap")
+	if err != nil {
+		return ""
 	}
-	return exec.CommandContext(ctx, "bash", "-c", command)
+	if exec.Command(path, "--ro-bind", "/", "/", "--dev", "/dev", "--die-with-parent", "true").Run() != nil {
+		return ""
+	}
+	return path
+}
+
+func sandboxCmd(ctx context.Context, command, tmp string) *exec.Cmd {
+	path := sandbox()
+	switch {
+	case path == "":
+		return exec.CommandContext(ctx, "bash", "-c", command)
+	case runtime.GOOS == "darwin":
+		return exec.CommandContext(ctx, path, "-D", "TMP="+tmp, "-p", sandboxProfile, "bash", "-c", command)
+	}
+	return exec.CommandContext(ctx, path, "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--bind", tmp, tmp, "--die-with-parent", "bash", "-c", command)
 }
 
 func HasSandbox() bool {
-	if runtime.GOOS == "darwin" {
-		_, err := exec.LookPath("sandbox-exec")
-		return err == nil
-	}
-	_, err := exec.LookPath("bwrap")
-	return err == nil
+	return sandbox() != ""
 }
 
 func readOnlyEnv() []string {

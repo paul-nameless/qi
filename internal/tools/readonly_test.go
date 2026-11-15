@@ -173,7 +173,7 @@ func TestReadOnlySandboxBlocksWrites(t *testing.T) {
 	target := filepath.Join(t.TempDir(), "probe.txt")
 	t.Cleanup(func() { os.Remove(target) })
 	out, _ := sandboxCmd(context.Background(), "echo x > "+target, allowed).CombinedOutput()
-	if _, err := os.Stat(target); err == nil || !strings.Contains(string(out), "not permitted") {
+	if _, err := os.Stat(target); err == nil || !strings.Contains(string(out), "not permitted") && !strings.Contains(string(out), "Read-only file system") {
 		t.Errorf("sandbox allowed a write outside TMP: %s", out)
 	}
 	if err := sandboxCmd(context.Background(), "echo ok > "+filepath.Join(allowed, "ok.txt"), allowed).Run(); err != nil {

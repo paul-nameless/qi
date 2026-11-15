@@ -27,5 +27,5 @@ Minimal Go coding agent for the terminal.
 - Never `MakeRaw` the terminal: it clears OPOST and output staircases; `ui.Terminal` keeps ISIG so ctrl+c is SIGINT
 - No code comments
 - Small, focused functions; check errors and return meaningful messages
-- External UI tools (picker, pager, notifier, ...) are shell-string config keys with `{placeholders}`, never hard dependencies, documented in readme "External tools"; plan in `docs/plans/external-tools.md`. Defaults live in `config.toolDefaults`; add new keys to `repl.toolKeys` so `/config` lists them
+- External UI tools (picker, pager, notifier, ...) are shell-string config keys with `{placeholders}`, never hard dependencies, documented in readme "External tools". Defaults live in `config.toolDefaults`; add new keys to `repl.toolKeys` so `/config` lists them
 - Only the user's input and the model's answer print in normal color; tool lines, reasoning and info are dim
