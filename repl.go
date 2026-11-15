@@ -55,7 +55,7 @@ func (r *repl) toggleMode() {
 	ro := !r.agent.ReadOnly()
 	r.agent.SetReadOnly(ro)
 	if ro && !tools.HasSandbox() {
-		r.display.Info("no OS sandbox found (install bubblewrap): read-only relies on the command allowlist only")
+		r.display.Info("no usable OS sandbox (bubblewrap missing, or user namespaces blocked): read-only relies on the command allowlist only")
 	}
 }
 
