@@ -125,6 +125,30 @@
       "description": "Shell command for the / picker: reads tab-separated items on stdin and prints the chosen line. {prompt} is replaced with the quoted prompt. Default: fzf with a 40% height.",
       "type": "string"
     },
+    "notify_cmd": {
+      "description": "Shell command run when a turn ends while the terminal is not focused; {title} and {msg} become environment references. \"off\" disables it. Default: terminal-notifier on macOS, notify-send on Linux.",
+      "type": "string"
+    },
+    "file_picker": {
+      "description": "Shell command opened by @: gets this directory's files on stdin (or {file}) and prints the chosen paths. {picker} expands to the picker command. \"off\" disables it. Default: {picker}.",
+      "type": "string"
+    },
+    "history_picker": {
+      "description": "Shell command for ctrl+r: gets prompt history on stdin, newest first, and prints the chosen prompt. \"off\" disables it. Default: {picker}.",
+      "type": "string"
+    },
+    "session_picker": {
+      "description": "Shell command for /resume and -r: gets this directory's sessions on stdin and prints the chosen line. \"off\" disables it. Default: {picker} with a session preview.",
+      "type": "string"
+    },
+    "pager": {
+      "description": "Shell command /history opens the conversation with (text on stdin, or {file}). \"off\" disables it. Default: $PAGER, else less -R.",
+      "type": "string"
+    },
+    "copy_cmd": {
+      "description": "Shell command /copy pipes the last answer to. \"off\" disables it. Default: pbcopy on macOS, wl-copy or xclip on Linux.",
+      "type": "string"
+    },
     "builtin_skills": {
       "description": "List aicode's built-in skills (aicode-config, for reading and changing these settings) in the system prompt. Default: true.",
       "type": "boolean"

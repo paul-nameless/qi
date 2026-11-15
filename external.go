@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -282,7 +281,7 @@ func (r *repl) toolKeys() [][2]string {
 func (r *repl) configInfo() string {
 	path := r.opts.configPath
 	if path == "" {
-		path = filepath.Join(config.Dir(), "config.yml")
+		path = config.DefaultPath()
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "Config: %s\nExternal tools:", path)
