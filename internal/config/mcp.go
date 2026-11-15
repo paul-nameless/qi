@@ -95,10 +95,8 @@ func profileMCP(raw []byte) (map[string]*MCPServer, bool, error) {
 		return nil, false, nil
 	}
 	var servers map[string]*MCPServer
-	if err := decodeStrict(value, &servers); err != nil {
-		return nil, true, fmt.Errorf("key %q: %w", "mcp", err)
-	}
-	return servers, true, nil
+	err = decodeStrict(value, &servers)
+	return servers, true, err
 }
 
 func (c *Config) mergeMCP(raw []byte) error {
@@ -115,8 +113,11 @@ func (c *Config) mergeMCP(raw []byte) error {
 		merged = map[string]MCPServer{}
 	}
 	for _, name := range sortedKeys(servers) {
-		if servers[name] != nil {
-			merged[name] = *servers[name]
+		if s := servers[name]; s != nil {
+			if err := c.checkReplacement(name, *s); err != nil {
+				return err
+			}
+			merged[name] = *s
 			continue
 		}
 		if _, ok := c.globalMCP[name]; !ok {
@@ -125,6 +126,13 @@ func (c *Config) mergeMCP(raw []byte) error {
 		delete(merged, name)
 	}
 	c.MCP = merged
+	return nil
+}
+
+func (c *Config) checkReplacement(name string, s MCPServer) error {
+	if _, global := c.globalMCP[name]; global && strings.TrimSpace(s.Command) == "" {
+		return fmt.Errorf("key %q: command is required; a profile entry replaces the whole server; repeat command and the other fields", "mcp."+name)
+	}
 	return nil
 }
 

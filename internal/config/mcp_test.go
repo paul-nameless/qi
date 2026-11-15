@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -135,4 +136,18 @@ func TestProfileMCPErrors(t *testing.T) {
 	top := writeConfig(t, dir, "top.json", `{"mcp": {"notes": null}}`)
 	_, err = Load(top, "")
 	wantErr(t, err, top, `key "mcp.notes": null removes a global server and is only allowed in a profile`)
+}
+
+func TestGlobalMCPErrorsBlameTheConfig(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("AICODE_CONFIG_DIR", dir)
+	path := writeConfig(t, dir, "config.json", `{"mcp": {"gh": {"command": "gh", "tools": ["[a"]}}, "default_profile": "p", "profiles": {"p": {"mcp": {"gh": {"command": "gh"}}}}}`)
+	_, err := Load(path, "")
+	wantErr(t, err, "config "+path+`: key "mcp.gh.tools.0"`)
+	if err != nil && strings.Contains(err.Error(), "profile") {
+		t.Errorf("global error blamed on a profile: %v", err)
+	}
+	path = writeConfig(t, dir, "config.json", `{"mcp": {"gh": {"command": "gh", "tools": ["get_*"]}}, "profiles": {"p": {"mcp": {"gh": {"tools": ["get_issue"]}}}}}`)
+	_, err = Load(path, "p")
+	wantErr(t, err, `profile "p": key "mcp.gh": command is required; a profile entry replaces the whole server; repeat command and the other fields`)
 }

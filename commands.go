@@ -133,7 +133,7 @@ func (r *repl) handleInput(line string) (string, bool) {
 
 func (r *repl) showMCP() {
 	if r.mcp == nil {
-		r.display.Info("no MCP servers configured (add \"mcp\" to " + r.configFile() + ")")
+		r.display.Info(r.noMCP())
 		return
 	}
 	var errs map[string]error
@@ -142,6 +142,13 @@ func (r *repl) showMCP() {
 		return nil
 	})
 	r.display.Info(mcpReport(r.mcp.Status(), errs))
+}
+
+func (r *repl) noMCP() string {
+	if len(r.agent.Cfg.MCP) > 0 {
+		return "aicode started without MCP servers; restart to use the ones in this profile"
+	}
+	return "no MCP servers configured (add \"mcp\" to " + r.configFile() + ")"
 }
 
 func startMCP(ctx context.Context, m *mcp.Manager, info func(string)) map[string]error {

@@ -85,13 +85,15 @@ Top-level servers are global: every profile gets them. A profile's `mcp` is merg
   },
   "profiles": {
     "work": {"mcp": {"jira": {"command": "jira-mcp", "description": "Jira tickets"}}},
-    "review": {"mcp": {"github": {"command": "github-mcp-server", "args": ["stdio"], "tools": ["get_*", "list_*"]}}},
+    "review": {"mcp": {"github": {"command": "github-mcp-server", "args": ["stdio"], "tools": ["get_*", "list_*"], "exclude_tools": ["*_secret*"]}}},
     "offline": {"mcp": {"github": null}}
   }
 }
 ```
 
-Here `work` has GitHub and Jira, `review` has a read-only GitHub, and `offline` has no servers. `/mcp` shows what the current profile ended up with; MCP changes need a restart.
+Here `work` has GitHub and Jira, `review` has a read-only GitHub, and `offline` has no servers. A replacing entry inherits nothing from the global one, so `review` repeats `exclude_tools`. MCP servers come from the profile aicode started with: `/profile` doesn't change them and config edits need a restart; `/mcp` shows the servers in use.
+
+Older versions replaced the whole `mcp` map with a profile's; now a profile's `mcp` merges with the global servers, and `{}` keeps them.
 
 A tool is enabled when `tools` is unset or one of its patterns matches, and no `exclude_tools` pattern matches. Patterns match the whole name and are case-sensitive: `*` is any run of characters (including `/`), `?` one character, `[a-z]` a class and `[^a-z]` a negated one. An empty `tools` list is an error; omit the key to allow every tool.
 

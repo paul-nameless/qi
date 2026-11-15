@@ -117,8 +117,8 @@
       "items": { "type": "string" }
     },
     "mcp": {
-      "description": "MCP servers over stdio, by name. They start on first use; the agent finds their tools with tool_search and calls them with mcp_call. Top-level servers are global: every profile gets them. Unlike other keys, a profile's mcp is merged by server name: a new name adds a server for that profile, an existing name replaces that server's whole entry, and null (only in a profile) removes a global server. \"mcp\": null in a profile removes all servers. Changes need a restart; /mcp shows what the current profile ended up with.",
-      "type": "object",
+      "description": "MCP servers over stdio, by name. They start on first use; the agent finds their tools with tool_search and calls them with mcp_call. Top-level servers are global: every profile gets them. Unlike other keys, a profile's mcp is merged by server name: a new name adds a server for that profile, an existing name replaces that server's whole entry, and null (only in a profile) removes a global server. \"mcp\": null in a profile removes all servers. A replacing entry inherits nothing from the global one. MCP servers come from the profile aicode started with; /profile doesn't change them, restart instead. /mcp shows the servers in use.",
+      "type": ["object", "null"],
       "additionalProperties": { "anyOf": [{ "$ref": "#/$defs/mcp_server" }, { "type": "null" }] }
     },
     "picker": {

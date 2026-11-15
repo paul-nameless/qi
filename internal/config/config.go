@@ -132,6 +132,9 @@ func Resolve(path, profile, provider, model, effort string) (Config, error) {
 		return c, err
 	}
 	c.globalMCP = c.MCP
+	if err := c.validateGlobal(); err != nil {
+		return c, fmt.Errorf("%s: %w", c.source, err)
+	}
 	if profile == "" {
 		profile = c.DefaultProfile
 	}
@@ -342,6 +345,11 @@ func mergeFile(c *Config, path string, required bool) error {
 		}
 	}
 	return nil
+}
+
+func (c Config) validateGlobal() error {
+	c.applyDefaults()
+	return c.validate()
 }
 
 func (c *Config) applyDefaults() {

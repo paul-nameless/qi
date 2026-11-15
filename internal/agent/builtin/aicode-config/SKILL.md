@@ -40,11 +40,9 @@ When a change takes effect in a running session:
 ## MCP servers
 
 - Top-level `mcp` servers are global: every profile gets them. A profile's `mcp` is merged by server name: a new name adds a server for that profile, an existing name replaces that server's whole entry (repeat `command` and everything else), `"name": null` removes a global server, `"mcp": null` removes all. Profile files work the same way.
-- Put a server at the top level when every profile should have it, in a profile when only that profile should.
 - `tools` (allow list) and `exclude_tools` (deny list) are glob patterns on the tool name: `*`, `?`, `[a-z]`, `[^a-z]`; case-sensitive; `*` crosses `/`. A tool is enabled when `tools` is unset or matches, and `exclude_tools` doesn't. Omit `tools` instead of writing `[]`. Change them only when the user asks: they are the user's decision.
-- Changes need a restart of aicode; then `/mcp` shows each server's status, enabled tools and hidden count. Subagents keep the setup their parent started with.
+- After a restart, `/mcp` shows each server's status, enabled tools and hidden count. `/profile` doesn't change MCP servers, and subagents keep their parent's setup.
 - Filters are a guard rail, not a sandbox: `bash` can still run anything.
-- Values under `mcp.<name>.env` are secrets: never print them (see below).
 
 ## Secrets
 

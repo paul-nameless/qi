@@ -14,6 +14,7 @@ import (
 
 	"github.com/paul-nameless/aicode/internal/config"
 	"github.com/paul-nameless/aicode/internal/llm"
+	"github.com/paul-nameless/aicode/internal/mcp"
 	"github.com/paul-nameless/aicode/internal/session"
 	"github.com/paul-nameless/aicode/internal/tools"
 	"github.com/paul-nameless/aicode/internal/ui"
@@ -224,4 +225,36 @@ func sortedNames(m map[string]config.MCPServer) []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+func TestProfileSwitchKeepsMCPSetup(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("AICODE_CONFIG_DIR", dir)
+	path := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(path, []byte(`{"api_key": "k", "mcp": {"notes": {"command": "notes", "exclude_tools": ["delete_*"]}}, "profiles": {"none": {"mcp": null}, "more": {"mcp": {"db": {"command": "db"}}}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	o := options{configPath: path}
+	cfg, err := resolveConfig(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, runner, _ := buildAgent(cfg, o, dir, nopProvider{}, devNullPrinter(t), true, false)
+	a.Registry = tools.NewRegistry()
+	manager := mcp.NewManager(cfg.MCP)
+	r := &repl{agent: a, display: devNullPrinter(t), runner: runner, opts: o, mcp: manager}
+	for _, p := range []string{"more", "none"} {
+		if err := r.switchProfile(p); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(runner.MCP, cfg.MCP) || !reflect.DeepEqual(manager.Names(), []string{"notes"}) || r.mcp != manager {
+			t.Errorf("/profile %s changed the MCP setup: runner %+v, manager %v", p, runner.MCP, manager.Names())
+		}
+	}
+	if !strings.Contains(r.noMCP(), "no MCP servers configured") {
+		t.Errorf("profile none: %q", r.noMCP())
+	}
+	if err := r.switchProfile("more"); err != nil || !strings.Contains(r.noMCP(), "restart to use the ones in this profile") {
+		t.Errorf("no restart hint: %q %v", r.noMCP(), err)
+	}
 }
