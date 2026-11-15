@@ -2,6 +2,8 @@
 
 A small coding agent for the terminal, built just because.
 
+![qi fixing a failing test, then the fzf command menu and /context](demo.gif)
+
 ## Philosophy
 
 - **Minimal.** One Go binary, about 20 MB of RAM, plain scrolling output instead of a fullscreen UI.
