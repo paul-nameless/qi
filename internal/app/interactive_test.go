@@ -376,3 +376,44 @@ func TestHeadlessPrintsAnswer(t *testing.T) {
 		t.Error("empty prompt accepted")
 	}
 }
+
+func TestQueuedPromptHookDoesNotBlockKeys(t *testing.T) {
+	cancelled := make(chan time.Duration, 1)
+	var r *repl
+	p := &scriptProvider{reply: func(ctx context.Context, n int, _ llm.Request) (llm.Message, error) {
+		if n > 0 {
+			return textReply("ok"), nil
+		}
+		start := time.Now()
+		for _, k := range []ui.Key{{Kind: ui.KeyRune, Rune: 'x'}, {Kind: ui.KeyEnter}, {Kind: ui.KeyEsc}} {
+			r.editor.T.Keys <- k
+		}
+		select {
+		case <-ctx.Done():
+			cancelled <- time.Since(start)
+		case <-time.After(3 * time.Second):
+			cancelled <- time.Hour
+		}
+		return llm.Message{}, ctx.Err()
+	}}
+	r, _ = testRepl(t, config.Config{Model: "m"}, p)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+	if err := os.WriteFile(path, []byte(`{"hooks":{"UserPromptSubmit":[{"hooks":[{"type":"command","command":"sleep 1"}]}]}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	hooks, err := agent.LoadHooks(dir, []string{path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.hooks = hooks
+	r.turn(func(context.Context) ([]llm.Block, error) {
+		return []llm.Block{{Type: llm.BlockText, Text: "go"}}, nil
+	}, "")
+	if d := <-cancelled; d > 700*time.Millisecond {
+		t.Errorf("esc waited %v for the UserPromptSubmit hook of a queued message", d)
+	}
+	if !r.lastCancelled {
+		t.Error("turn not cancelled")
+	}
+}

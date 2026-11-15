@@ -289,19 +289,12 @@ func (r *repl) turn(prepare func(context.Context) ([]llm.Block, error), draft st
 			return err
 		}
 		collectCtx, stopCollect := context.WithCancel(context.Background())
+		queue := r.startQueue(ctx)
 		draftCh := make(chan string, 1)
 		go func() {
 			defer ui.CleanupOnPanic()
 			draftCh <- r.editor.Collect(collectCtx, draft, ui.Steer{
-				OnQueue: func(s string) {
-					blocks, err := submitPrompt(ctx, r.agent, r.display, r.hooks, s)
-					if err != nil {
-						r.display.Error(err.Error())
-						return
-					}
-					r.agent.Queue(blocks)
-					r.display.Info("queued: " + tools.OneLine(s, 80))
-				},
+				OnQueue:  queue.add,
 				OnCancel: func() { r.cancelTurn() },
 				OnToggle: func() {
 					r.toggleMode()
@@ -312,6 +305,7 @@ func (r *repl) turn(prepare func(context.Context) ([]llm.Block, error), draft st
 		final, stats, err = r.agent.Turn(ctx, blocks)
 		stopCollect()
 		draft = <-draftCh
+		queue.wait()
 		return err
 	})
 	r.display.EndBlock()
@@ -329,6 +323,40 @@ func (r *repl) turn(prepare func(context.Context) ([]llm.Block, error), draft st
 		r.display.Info(stats.String(r.agent.ContextShort()))
 	}
 	return draft
+}
+
+type submitQueue struct {
+	lines chan string
+	done  chan struct{}
+}
+
+func (r *repl) startQueue(ctx context.Context) *submitQueue {
+	q := &submitQueue{lines: make(chan string, 64), done: make(chan struct{})}
+	go func() {
+		defer close(q.done)
+		defer ui.CleanupOnPanic()
+		for s := range q.lines {
+			r.queueMessage(ctx, s)
+		}
+	}()
+	return q
+}
+
+func (q *submitQueue) add(s string) { q.lines <- s }
+
+func (q *submitQueue) wait() {
+	close(q.lines)
+	<-q.done
+}
+
+func (r *repl) queueMessage(ctx context.Context, s string) {
+	blocks, err := submitPrompt(ctx, r.agent, r.display, r.hooks, s)
+	if err != nil {
+		r.display.Error(err.Error())
+		return
+	}
+	r.agent.Queue(blocks)
+	r.display.Info("queued: " + tools.OneLine(s, 80))
 }
 
 func (r *repl) armIdle() {
