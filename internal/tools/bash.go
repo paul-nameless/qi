@@ -141,7 +141,9 @@ var deniedExecs = []string{
 	"gsettings", "dconf", "secret-tool", "dbus-send", "gdbus", "busctl", "qdbus",
 }
 
-var execDirs = []string{"/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin"}
+var execDirs = []string{"/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin", "/run/wrappers/bin", "/run/current-system/sw/bin"}
+
+var multiCall = map[string]bool{"busybox": true, "toybox": true}
 
 var execDenied = sync.OnceValue(func() []string { return deniedPaths(execDirs, deniedExecs) })
 
@@ -149,13 +151,12 @@ func deniedPaths(dirs, names []string) []string {
 	var out []string
 	seen := map[string]bool{}
 	for _, d := range dirs {
-		real, err := filepath.EvalSymlinks(d)
-		if err != nil {
-			continue
-		}
 		for _, n := range names {
-			p := filepath.Join(real, n)
-			if st, err := os.Lstat(p); err == nil && st.Mode().IsRegular() && !seen[p] {
+			p, err := filepath.EvalSymlinks(filepath.Join(d, n))
+			if err != nil || seen[p] || multiCall[filepath.Base(p)] {
+				continue
+			}
+			if st, err := os.Stat(p); err == nil && st.Mode().IsRegular() {
 				seen[p] = true
 				out = append(out, p)
 			}

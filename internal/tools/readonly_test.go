@@ -252,14 +252,19 @@ func TestBwrapExecDenyList(t *testing.T) {
 	root := t.TempDir()
 	usr := filepath.Join(root, "usr", "bin")
 	os.MkdirAll(usr, 0o755)
+	alt := filepath.Join(root, "etc", "alternatives")
+	os.MkdirAll(alt, 0o755)
 	os.WriteFile(filepath.Join(usr, "sudo"), []byte("x"), 0o755)
 	os.WriteFile(filepath.Join(usr, "busybox"), []byte("x"), 0o755)
+	os.WriteFile(filepath.Join(usr, "real-open"), []byte("x"), 0o755)
+	os.Symlink(filepath.Join(usr, "real-open"), filepath.Join(alt, "xdg-open"))
+	os.Symlink(filepath.Join(alt, "xdg-open"), filepath.Join(usr, "xdg-open"))
 	os.Symlink(filepath.Join(usr, "busybox"), filepath.Join(usr, "su"))
 	os.Symlink(usr, filepath.Join(root, "bin"))
-	got := deniedPaths([]string{usr, filepath.Join(root, "bin"), filepath.Join(root, "missing")}, []string{"sudo", "su", "pkexec"})
+	got := deniedPaths([]string{usr, filepath.Join(root, "bin"), filepath.Join(root, "missing")}, []string{"sudo", "su", "pkexec", "xdg-open"})
 	real, _ := filepath.EvalSymlinks(usr)
-	if !slices.Equal(got, []string{filepath.Join(real, "sudo")}) {
-		t.Errorf("denied %q: want only the real sudo, no symlinked multi-call binary, no duplicates", got)
+	if !slices.Equal(got, []string{filepath.Join(real, "sudo"), filepath.Join(real, "real-open")}) {
+		t.Errorf("denied %q: want sudo and the alternatives target, not busybox, no duplicates", got)
 	}
 	args := strings.Join(bwrapArgs("ls", "/tmp/x", []string{"/usr/bin/sudo"}), " ")
 	if args != "--ro-bind / / --dev /dev --proc /proc --bind /tmp/x /tmp/x --unshare-net --ro-bind /dev/null /usr/bin/sudo --die-with-parent bash -c ls" {
