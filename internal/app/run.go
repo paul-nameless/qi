@@ -174,7 +174,7 @@ func loadHooks(roots, configured []string, headless bool, display *ui.Printer) (
 	if err != nil {
 		return nil, err
 	}
-	files, skipped, err := agent.SelectHookFiles(roots[0], parsed, !headless, agent.AskTrust)
+	files, skipped, err := agent.SelectHookFiles(roots[0], parsed, !headless, agent.TrustPrompt(os.Stdin, os.Stdout))
 	if err != nil {
 		display.Info(err.Error())
 	}

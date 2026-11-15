@@ -1,8 +1,11 @@
 package ui
 
 import (
+	"os"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 func TestDecodeKey(t *testing.T) {
@@ -100,5 +103,87 @@ func TestDeviceAttrsReplySyncs(t *testing.T) {
 	}
 	if !tm.Away() {
 		t.Error("focus-out before the reply was lost")
+	}
+}
+
+func pipeTerminal(t *testing.T) (*Terminal, *os.File) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { r.Close(); w.Close() })
+	var p [2]int
+	if err := unix.Pipe(p[:]); err != nil {
+		t.Fatal(err)
+	}
+	_ = unix.SetNonblock(p[0], true)
+	t.Cleanup(func() { unix.Close(p[0]); unix.Close(p[1]) })
+	tm := &Terminal{fd: int(r.Fd()), wakeR: p[0], wakeW: p[1], wake: make(chan struct{}, 1), raw: make(chan []byte, 8), Keys: make(chan Key, 8), pauseAck: make(chan struct{}, 1)}
+	return tm, w
+}
+
+func TestReadLoopWakesForPauseAndClose(t *testing.T) {
+	tm, w := pipeTerminal(t)
+	go tm.readLoop()
+	go tm.decodeLoop()
+	w.Write([]byte("a"))
+	if k := <-tm.Keys; k.Rune != 'a' {
+		t.Fatalf("key %+v", k)
+	}
+	tm.paused.Store(true)
+	tm.interrupt()
+	select {
+	case <-tm.pauseAck:
+	case <-time.After(time.Second):
+		t.Fatal("read loop did not acknowledge the pause")
+	}
+	w.Write([]byte("b"))
+	select {
+	case k := <-tm.Keys:
+		t.Fatalf("read while paused: %+v", k)
+	case <-time.After(50 * time.Millisecond):
+	}
+	tm.paused.Store(false)
+	tm.interrupt()
+	select {
+	case k := <-tm.Keys:
+		if k.Rune != 'b' {
+			t.Fatalf("after resume: %+v", k)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("no input after resume")
+	}
+	tm.closed.Store(true)
+	tm.interrupt()
+	deadline := time.After(time.Second)
+	for {
+		select {
+		case _, ok := <-tm.raw:
+			if !ok {
+				select {
+				case k := <-tm.Keys:
+					t.Errorf("key after close: %+v", k)
+				case <-time.After(50 * time.Millisecond):
+				}
+				return
+			}
+		case <-deadline:
+			t.Fatal("read loop kept running after close")
+		}
+	}
+}
+
+func TestReadLoopEOF(t *testing.T) {
+	tm, w := pipeTerminal(t)
+	go tm.readLoop()
+	go tm.decodeLoop()
+	w.Close()
+	select {
+	case k := <-tm.Keys:
+		if k.Kind != KeyEOF {
+			t.Errorf("key %+v", k)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("no EOF")
 	}
 }

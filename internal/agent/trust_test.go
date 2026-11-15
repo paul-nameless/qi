@@ -139,3 +139,17 @@ func TestTrustAnswer(t *testing.T) {
 		}
 	}
 }
+
+func TestTrustPrompt(t *testing.T) {
+	var out strings.Builder
+	ask := TrustPrompt(strings.NewReader("y\n"), &out)
+	if !ask("/p", "New hooks:", []string{"PreToolUse: x"}) {
+		t.Error("y not approved")
+	}
+	if out.String() != "New hooks:\n  PreToolUse: x\nTrust /p and run its hooks? [y/N] " {
+		t.Errorf("prompt %q", out.String())
+	}
+	if TrustPrompt(strings.NewReader("\n"), &out)("/p", "h", nil) {
+		t.Error("empty answer approved")
+	}
+}

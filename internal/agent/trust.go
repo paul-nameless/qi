@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -213,14 +214,16 @@ func describeChange(prev trustEntry, found bool, set hookSet) (string, []string)
 	return header, lines
 }
 
-func AskTrust(dir, header string, lines []string) bool {
-	os.Stdout.WriteString(header + "\n")
-	for _, l := range lines {
-		os.Stdout.WriteString("  " + l + "\n")
+func TrustPrompt(in io.Reader, out io.Writer) AskFunc {
+	return func(dir, header string, lines []string) bool {
+		fmt.Fprintln(out, header)
+		for _, l := range lines {
+			fmt.Fprintln(out, "  "+l)
+		}
+		fmt.Fprint(out, "Trust "+dir+" and run its hooks? [y/N] ")
+		line, _ := bufio.NewReader(in).ReadString('\n')
+		return approved(line)
 	}
-	os.Stdout.WriteString("Trust " + dir + " and run its hooks? [y/N] ")
-	line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
-	return approved(line)
 }
 
 func SelectHookFiles(root string, files []HookFile, interactive bool, ask AskFunc) (selected []HookFile, skipped bool, err error) {

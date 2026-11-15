@@ -56,6 +56,10 @@ type Key struct {
 
 type Terminal struct {
 	fd       int
+	in, out  *os.File
+	wakeR    int
+	wakeW    int
+	wake     chan struct{}
 	orig     *unix.Termios
 	Keys     chan Key
 	paused   atomic.Bool
@@ -73,17 +77,23 @@ func IsTerminal(f *os.File) bool {
 	return err == nil
 }
 
-func OpenTerminal() (*Terminal, error) {
-	fd := int(os.Stdin.Fd())
+func OpenTerminal(in, out *os.File) (*Terminal, error) {
+	fd := int(in.Fd())
 	orig, err := unix.IoctlGetTermios(fd, ioctlGetTermios)
 	if err != nil {
 		return nil, err
 	}
-	t := &Terminal{fd: fd, orig: orig, Keys: make(chan Key, 256), raw: make(chan []byte, 64), pauseAck: make(chan struct{}, 1), synced: make(chan struct{}, 1)}
-	if err := t.applyMode(); err != nil {
+	var p [2]int
+	if err := unix.Pipe(p[:]); err != nil {
 		return nil, err
 	}
-	os.Stdout.WriteString(modesOn)
+	_ = unix.SetNonblock(p[0], true)
+	t := &Terminal{fd: fd, in: in, out: out, wakeR: p[0], wakeW: p[1], wake: make(chan struct{}, 1), orig: orig, Keys: make(chan Key, 256), raw: make(chan []byte, 64), pauseAck: make(chan struct{}, 1), synced: make(chan struct{}, 1)}
+	if err := t.applyMode(); err != nil {
+		t.closeWake()
+		return nil, err
+	}
+	_, _ = t.out.WriteString(modesOn)
 	OnCrash(t.Restore)
 	go t.readLoop()
 	go t.decodeLoop()
@@ -104,14 +114,36 @@ func (t *Terminal) applyMode() error {
 func (t *Terminal) Restore() {
 	t.once.Do(func() {
 		t.closed.Store(true)
-		os.Stdout.WriteString(modesOff)
+		_, _ = t.out.WriteString(modesOff)
 		_ = unix.IoctlSetTermios(t.fd, ioctlSetTermios, t.orig)
+		t.interrupt()
 	})
+}
+
+func orStd(f, std *os.File) *os.File {
+	if f == nil {
+		return std
+	}
+	return f
+}
+
+func (t *Terminal) interrupt() {
+	_, _ = unix.Write(t.wakeW, []byte{0})
+	select {
+	case t.wake <- struct{}{}:
+	default:
+	}
+}
+
+func (t *Terminal) closeWake() {
+	unix.Close(t.wakeR)
+	unix.Close(t.wakeW)
 }
 
 func (t *Terminal) Suspend() {
 	t.sync()
 	t.paused.Store(true)
+	t.interrupt()
 	select {
 	case <-t.pauseAck:
 	case <-time.After(200 * time.Millisecond):
@@ -124,7 +156,7 @@ func (t *Terminal) sync() {
 	case <-t.synced:
 	default:
 	}
-	os.Stdout.WriteString(modesOff + "\x1b[c")
+	_, _ = t.out.WriteString(modesOff + "\x1b[c")
 	select {
 	case <-t.synced:
 	case <-time.After(300 * time.Millisecond):
@@ -133,37 +165,65 @@ func (t *Terminal) sync() {
 
 func (t *Terminal) Resume() {
 	_ = t.applyMode()
-	os.Stdout.WriteString(modesOn)
+	_, _ = t.out.WriteString(modesOn)
 	t.paused.Store(false)
+	t.interrupt()
 }
 
 func (t *Terminal) readLoop() {
+	defer close(t.raw)
 	buf := make([]byte, 4096)
-	fds := []unix.PollFd{{Fd: int32(t.fd), Events: unix.POLLIN}}
 	for !t.closed.Load() {
 		if t.paused.Load() {
-			select {
-			case t.pauseAck <- struct{}{}:
-			default:
-			}
-			time.Sleep(20 * time.Millisecond)
+			t.waitResume()
 			continue
 		}
-		n, err := unix.Poll(fds, 50)
-		if err != nil || n == 0 || t.paused.Load() {
+		ready, err := t.poll()
+		if err != nil {
+			return
+		}
+		if !ready || t.paused.Load() || t.closed.Load() {
 			continue
 		}
 		m, err := unix.Read(t.fd, buf)
+		if err == unix.EINTR || err == unix.EAGAIN {
+			continue
+		}
 		if err != nil || m <= 0 {
-			if err == unix.EINTR || err == unix.EAGAIN {
-				continue
-			}
-			t.raw <- nil
 			return
 		}
-		chunk := make([]byte, m)
-		copy(chunk, buf[:m])
-		t.raw <- chunk
+		t.raw <- append([]byte(nil), buf[:m]...)
+	}
+}
+
+func (t *Terminal) waitResume() {
+	select {
+	case t.pauseAck <- struct{}{}:
+	default:
+	}
+	<-t.wake
+}
+
+func (t *Terminal) poll() (bool, error) {
+	fds := []unix.PollFd{{Fd: int32(t.fd), Events: unix.POLLIN}, {Fd: int32(t.wakeR), Events: unix.POLLIN}}
+	if _, err := unix.Poll(fds, -1); err != nil {
+		if err == unix.EINTR {
+			return false, nil
+		}
+		return false, err
+	}
+	if fds[1].Revents != 0 {
+		t.drainWake()
+	}
+	return fds[0].Revents != 0, nil
+}
+
+func (t *Terminal) drainWake() {
+	var b [64]byte
+	for {
+		if n, err := unix.Read(t.wakeR, b[:]); n <= 0 || err != nil {
+			return
+		}
 	}
 }
 
@@ -187,8 +247,10 @@ func (t *Terminal) decodeLoop() {
 		} else {
 			chunk, ok = <-t.raw
 		}
-		if !ok || chunk == nil {
-			t.Keys <- Key{Kind: KeyEOF}
+		if !ok {
+			if !t.closed.Load() {
+				t.Keys <- Key{Kind: KeyEOF}
+			}
 			return
 		}
 		pending = append(pending, chunk...)
