@@ -37,7 +37,8 @@ func (r *repl) pickWith(command, prompt string, items []pickItem) (string, bool)
 }
 
 func (r *repl) filePicker() (string, bool) {
-	lines, ok := choose(r.runTTY, r.agent.Cfg.FilePicker, r.agent.Cfg.Picker, "@ ", nil)
+	files := strings.Join(listFiles(r.agent.Cwd, fileListLimit), "\n") + "\n"
+	lines, ok := choose(r.runTTY, r.agent.Cfg.FilePicker, r.agent.Cfg.Picker, "@ ", strings.NewReader(files))
 	if !ok {
 		return "", false
 	}

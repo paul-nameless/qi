@@ -2,6 +2,8 @@ package main
 
 import (
 	"os"
+	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -171,5 +173,49 @@ func TestConfigInfo(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in\n%s", want, got)
 		}
+	}
+}
+
+func writeFiles(t *testing.T, dir string, names ...string) {
+	for _, n := range names {
+		p := filepath.Join(dir, n)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(n), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestListFiles(t *testing.T) {
+	dir := t.TempDir()
+	writeFiles(t, dir, "z.txt", "a/b.txt", "a/c/d.txt", ".git/HEAD")
+	if got := strings.Join(listFiles(dir, 10), " "); got != "z.txt a/b.txt a/c/d.txt" {
+		t.Errorf("breadth-first without git: %q", got)
+	}
+	if got := listFiles(dir, 2); len(got) != 2 {
+		t.Errorf("limit: %q", got)
+	}
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	repo := t.TempDir()
+	writeFiles(t, repo, "deep/x/y.go", ".gitignore", "top.txt", "ignored/i.txt")
+	if err := os.WriteFile(filepath.Join(repo, ".gitignore"), []byte("ignored/\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"init", "-q"}, {"add", "deep"}} {
+		if out, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %s", args, out)
+		}
+	}
+	if got := strings.Join(listFiles(repo, 10), " "); got != ".gitignore top.txt deep/x/y.go ignored/i.txt" {
+		t.Errorf("git files first, then the rest: %q", got)
+	}
+	r := &repl{agent: newTestAgent(t, config.Config{FilePicker: "{picker} | tail -1"}), display: devNullPrinter(t)}
+	r.agent.Cwd = repo
+	if got, ok := r.filePicker(); !ok || got != "ignored/i.txt " {
+		t.Errorf("file picker gets the list on stdin: %q %v", got, ok)
 	}
 }
