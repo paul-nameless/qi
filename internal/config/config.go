@@ -153,7 +153,7 @@ func Resolve(path, profile, provider, model, effort string) (Config, error) {
 	}
 	if provider != "" {
 		if err := c.UseProvider(provider); err != nil {
-			return c, fmt.Errorf("-provider: %w", err)
+			return c, fmt.Errorf("--provider: %w", err)
 		}
 	}
 	if model != "" {
@@ -394,7 +394,7 @@ func (c *Config) toolDefaults() {
 	mac := runtime.GOOS == "darwin"
 	setDefault(&c.NotifyCmd, pick(mac, "terminal-notifier -title {title} -message {msg}", "notify-send {title} {msg}"))
 	setDefault(&c.HistoryPicker, "{picker}")
-	setDefault(&c.SessionPicker, `{picker} --with-nth=2.. --nth=.. --preview '"$QI_BIN" -show {1}' --preview-window=right,60%`)
+	setDefault(&c.SessionPicker, `{picker} --with-nth=2.. --nth=.. --preview '"$QI_BIN" --show {1}' --preview-window=right,60%`)
 	setDefault(&c.Pager, os.Getenv("PAGER"))
 	setDefault(&c.Pager, "less -R")
 	setDefault(&c.CopyCmd, pick(mac, "pbcopy", firstOnPath("wl-copy", "xclip -selection clipboard")))

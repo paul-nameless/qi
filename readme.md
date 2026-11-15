@@ -1,12 +1,21 @@
 # qi
 
-A small coding agent for the terminal. One Go binary, one dependency, about 20MB of RAM, plain scrolling output (no fullscreen UI).
+A small coding agent for the terminal, built just because.
 
-- Works with OpenRouter, any OpenAI-compatible API, and Anthropic.
+## Philosophy
+
+- **Minimal.** One Go binary, about 20 MB of RAM, plain scrolling output instead of a fullscreen UI.
+- **One dependency**, vendored: `golang.org/x/sys` for the terminal. Everything else is the standard library.
+- **Reuse.** Every menu is fzf: the `/` command list, `@` file picker, ctrl+r prompt history and `/resume` sessions. qi just pipes lines into fzf and reads back the choice, so there's no picker, fuzzy matcher or preview pane to write and maintain. The same goes for `$EDITOR` (long prompts), `$PAGER` (history), `pbcopy` (copy) and `terminal-notifier` (notifications). See [External tools](#external-tools).
+- **Claude Code compatible:** reads `CLAUDE.md`/`AGENTS.md`, skills, commands and hooks from the usual places.
+
+## What it does
+
+- Talks to any OpenAI-compatible API, and Anthropic's native API.
 - Tools: `read`, `write`, `edit`, `bash`, `subagent`. Several calls in one response run in parallel.
-- Prompt caching always on, sessions saved as JSONL, `-c` to continue.
-- Claude Code compatible: reads `CLAUDE.md`/`AGENTS.md`, skills from `~/.claude/skills` and `.claude/skills`, commands from `.claude/commands`, hooks from `.claude/settings.json`.
-- Two modes, toggled with shift+tab: yolo (default) and read-only (no write/edit, bash limited to an allowlist).
+- Prompt caching, sessions saved as JSONL, automatic compaction when the context fills up and idle compaction.
+- MCP servers start on demand, with per-server limits on which tools the agent may use.
+- Two modes, toggled with shift+tab: yolo (default) and read-only (no edits, bash limited to an allowlist).
 
 ## Install
 
@@ -16,59 +25,39 @@ go install github.com/paul-nameless/qi@latest
 
 ## Configure
 
-`~/.config/qi/config.json` defines providers and profiles:
+`~/.config/qi/config.json`:
 
 ```json
 {
   "providers": {
     "openrouter": {
       "base_url": "https://openrouter.ai/api/v1",
-      "api_key_shell": "pass show openrouter-api-key | head -n 1"
-    },
-    "routeway": {
-      "base_url": "https://api.routeway.ai/v1",
-      "api_key_shell": "pass show routeway-api-key | head -n 1"
+      "api_key_shell": "pass show openrouter-api-key"
     },
     "anthropic": {
       "api": "anthropic",
-      "api_key_shell": "pass show anthropic-api-key | head -n 1"
+      "api_key": "sk-i-like-to-keep-api-keys-in-plain-config-files"
     }
   },
-  "default_profile": "smart",
+  "default_profile": "luna",
   "profiles": {
-    "smart": {
-      "provider": "openrouter",
-      "model": "openai/gpt-6.1-sol",
-      "reasoning_effort": "medium",
+    "luna": {"provider": "openrouter", "model": "openai/gpt-6-luna", "reasoning_effort": "low"},
+    "opus": {
+      "provider": "anthropic",
+      "model": "claude-opus-5-5",
       "subagent_models": [
-        {"name": "luna", "model": "openai/gpt-6-luna", "use_for": "fast and cheap; search, summaries"},
-        {"name": "terra", "model": "openai/gpt-6.1-terra", "use_for": "solid mid-tier; focused implementation and reviews"}
+        {"name": "haiku", "model": "claude-haiku-5-5", "use_for": "fast and cheap; search, summaries"}
       ]
-    },
-    "glm": {"provider": "routeway", "model": "glm-5.3-flash-uncensored"}
-  },
-  "subagent_efforts": ["low", "medium", "high"]
+    }
+  }
 }
 ```
 
-Top-level keys are shared settings; a profile can set any of them except `profiles` and `default_profile`, and replaces that key's whole value (`null` resets it to the default), except `mcp`, which is merged by server name. `api: anthropic` uses the native Messages API. The model picks one of `subagent_models` per subagent, and `/model <name>` switches to it. Other keys:
+Top-level keys apply to every profile; a profile overrides them. `qi -p opus` picks a profile, `/profile` and `/model` switch while running. A provider's key comes from `api_key` (the key itself), `api_key_shell` (a command that prints it, so the key stays out of the file), or the environment: `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`.
 
-- `cache_ttl`: Anthropic prompt cache TTL (default `1h` interactive, `5m` with `-q`); idle compaction runs 5 minutes before it expires.
-- `compact_at`: compact when context passes this, in tokens (`150000`, `"150k"`) or a share of the window (`"80%"`). `compact_idle_at` is the idle threshold, same syntax.
-- `context_window`: window of the profile's model, for % thresholds (dropped when `/model` switches); known for Claude, GPT-6 and Gemini, else 200k is assumed.
-- `read_only_allow`: extra commands allowed in read-only mode, e.g. `["make lint", "go test"]`.
-- `mcp`: stdio MCP servers, see [MCP](#mcp).
-- `builtin_skills`: `false` hides the built-in `qi-config` skill, which lets the agent read and change these settings.
-
-Every key is described in the JSON Schema [`internal/config/schema.json`](internal/config/schema.json); a `"$schema"` key pointing at it is allowed. Unknown keys and values outside the schema are errors. `qi -check-config` loads the config and every profile (inline and `~/.config/qi/*.json`) without calling any API. After editing, `/profile <name>` re-reads the file; prompt keys (`skill_dirs`, `instruction_files`, `builtin_skills`) also need `/reload`, and `mcp` and `hook_files` need a restart.
-
-`qi -p glm` picks a profile, `/profile glm` and `/model luna` switch at runtime. A plain `~/.config/qi/<name>.json` also works as a profile. The API key can also come from `OPENROUTER_API_KEY`, `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`. Project hooks from `.claude/settings.json` run only after you trust the project once.
+Every key is described in [`internal/config/schema.json`](internal/config/schema.json). `qi --check-config` checks the config without calling any API. Or just ask qi to change a setting: the built-in `qi-config` skill knows the format.
 
 ### MCP
-
-MCP servers start on first use. Their tools never enter the tool list directly: the agent finds them with `tool_search` (by keywords, or `server` to list one server's tools) and calls them with `mcp_call`. `tools` and `exclude_tools` limit what the agent can see and call, with glob patterns on the tool name.
-
-Top-level servers are global: every profile gets them. A profile's `mcp` is merged by server name: a new name adds a server for that profile, an existing name replaces that server's whole entry, `"name": null` removes a global server, and `"mcp": null` removes them all. Profile files follow the same rules.
 
 ```json
 {
@@ -76,53 +65,54 @@ Top-level servers are global: every profile gets them. A profile's `mcp` is merg
     "github": {
       "command": "github-mcp-server",
       "args": ["stdio"],
-      "description": "GitHub issues and pull requests",
-      "tools": ["get_*", "list_*", "search_*", "create_issue"],
+      "tools": ["get_*", "list_*", "create_issue"],
       "exclude_tools": ["*_secret*"]
     }
   },
   "profiles": {
-    "work": {"mcp": {"jira": {"command": "jira-mcp", "description": "Jira tickets"}}},
-    "review": {"mcp": {"github": {"command": "github-mcp-server", "args": ["stdio"], "tools": ["get_*", "list_*"], "exclude_tools": ["*_secret*"]}}},
+    "work": {"mcp": {"jira": {"command": "jira-mcp"}}},
     "offline": {"mcp": {"github": null}}
   }
 }
 ```
 
-Here `work` has GitHub and Jira, `review` has a read-only GitHub, and `offline` has no servers. A replacing entry inherits nothing from the global one, so `review` repeats `exclude_tools`. MCP servers come from the profile qi started with: `/profile` doesn't change them and config edits need a restart; `/mcp` shows the servers in use.
-
-Older versions replaced the whole `mcp` map with a profile's; now a profile's `mcp` merges with the global servers, and `{}` keeps them.
-
-A tool is enabled when `tools` is unset or one of its patterns matches, and no `exclude_tools` pattern matches. Patterns match the whole name and are case-sensitive: `*` is any run of characters (including `/`), `?` one character, `[a-z]` a class and `[^a-z]` a negated one. An empty `tools` list is an error; omit the key to allow every tool.
-
-Hidden tools never show in `tool_search`; results say how many tools are disabled so the agent doesn't hunt for another way. `mcp_call` refuses them without contacting the server. `tool_search` with `server` lists that server's tools (names and descriptions only past 10, with schemas for a query). `/mcp` starts the servers and shows each one's status, enabled tools and the number hidden.
-
-Subagents get the parent's MCP setup at launch, so editing the config mid-session doesn't widen it for them. This is a guard rail against the model calling the wrong tool, not a sandbox: `bash` can still run anything the server's credentials allow. Known limitation: qi reads each server's tool list once and ignores `tools/list_changed`.
+The agent finds MCP tools with `tool_search` and calls them with `mcp_call`, so they never fill up the tool list. `tools` and `exclude_tools` are glob patterns; hidden tools don't show up in search and calls to them are refused. Top-level servers are available in every profile, and a profile can add servers, replace one, or drop one with `null`. `/mcp` shows what's running. This keeps the model away from the wrong tools; it's not a sandbox, since `bash` can still run anything.
 
 ## Use
 
 ```bash
-qi                          # interactive
-qi -c                       # continue the last session in this directory
-qi -r                       # pick a session of this directory to resume
-qi -q "fix the failing test"  # headless: progress on stderr, answer on stdout
+qi                             # interactive
+qi -c                          # continue the last session here
+qi -r                          # pick a session to resume
+qi -q "fix the failing test"   # one prompt, answer on stdout
 git diff | qi -q "review this"
-qi -read-only               # start in read-only mode
 ```
 
-Compaction summarizes the conversation into a structured handoff (updated on later compactions); between turns it also keeps the newest ~20k tokens verbatim. The summary request resends the history unchanged, so it reads the prompt cache. A "context too long" error triggers one compaction and a retry.
+Keys: shift+tab toggles read-only, ctrl+g opens `$EDITOR`, ctrl+r searches past prompts, `@` picks files, alt+enter adds a newline, esc or ctrl+c stops the agent. Text typed while it works is sent with the next tool results.
 
-Keys: shift+tab toggles read-only, ctrl+g edits the prompt in `$EDITOR`, ctrl+r searches prompt history, `@` picks files, alt+enter or ctrl+j inserts a newline, ctrl+c or esc cancels a turn. Text typed while the agent works is queued and delivered after the next tool results.
-
-Commands: `/help`, `/keys`, `/config`, `/clear`, `/context`, `/reload`, `/compact [focus]`, `/resume`, `/history`, `/copy`, `/model`, `/profile`, `/effort`, `/skills`, `/mcp`, `/exit`, and `/<skill-or-command> [args]`. Typing `/` on an empty line opens a picker (fzf by default; set `"picker"` in the config to use another command that reads `name<TAB>description` lines and prints the chosen one).
+Commands: `/help`, `/keys`, `/config`, `/clear`, `/context`, `/compact`, `/reload`, `/resume`, `/history`, `/copy`, `/model`, `/profile`, `/effort`, `/skills`, `/mcp`, `/exit`, plus `/<skill or command>`. `/` on an empty line opens the picker.
 
 ## External tools
 
-UI features reuse CLI tools you already have. Each is a shell string in the config run with `sh -c`. `{prompt}`, `{file}`, `{title}`, `{msg}` become references to environment variables (`$QI_MSG`, ...), so their values are never parsed as shell code: bare or in double quotes they give the value; inside single quotes they stay `"$QI_MSG"` for a nested shell (`sh -c '...'`, fzf `--preview '...'`) to expand. A nested script in double quotes, or a non-shell interpreter like `osascript`, should read the variables itself (`system attribute "QI_MSG"`). `{picker}` expands to the `picker` value. `{file}` is a temp file qi writes input to or reads the result from; without it input goes on stdin and the result comes from stdout. A tool is off when set to `off` or when its command is not installed; `/config` shows which are active.
+qi has no built-in menus or viewers. Whenever it needs you to pick something, it runs fzf with a list of lines on stdin and takes the line you choose. That one tool covers four features:
 
-- `notify_cmd` (default `terminal-notifier -title {title} -message {msg}` on macOS, `notify-send {title} {msg}` on Linux): runs when a turn ends while the terminal is not focused. Needs a terminal that reports focus (iTerm2, Ghostty, kitty, WezTerm, agterm; in tmux `set -g focus-events on`).
-- `file_picker` (default `{picker}`): typing `@` at the start of a word opens it with this directory's files on stdin and inserts the chosen paths. The list has git files first (tracked and untracked, shallowest first), then all other files including ignored ones, breadth-first so top-level files come before deep ones; `.git` is skipped and the list stops at 20000 files or 2 seconds of walking, so big trees like `node_modules` can't stall it (images become `[image N]`). Works with file managers too: `ranger --choosefile={file}`, `yazi --chooser-file={file}`, `nnn -p {file}`.
-- `history_picker` (default `{picker}`): ctrl+r picks a prompt from history (newest first) and puts it in the input line without sending it.
-- `session_picker` (default `{picker} --with-nth=2.. --nth=.. --preview '"$QI_BIN" -show {1}' --preview-window=right,60%`): `/resume` and `qi -r` pick a session of this directory (newest first, with age, message count and first prompt) and switch to it. `$QI_BIN` is set to the running qi binary for every tool; `qi -show <id>` prints a session as plain text. The default uses fzf flags, so set it to `{picker}` with another picker.
-- `pager` (default `$PAGER`, else `less -R`): `/history` opens the whole conversation in color (answers styled like the live output, tool calls dim) with their full results (as the model saw them; a long result shows the path of its full output). `LESS=-R` is set for tools when `LESS` is unset, so a plain `less` pager shows the colors.
-- `copy_cmd` (default `pbcopy` on macOS, `wl-copy` or `xclip -selection clipboard` on Linux): `/copy` copies the last answer, `/copy code` its last code block.
+| You press | You get | fzf reads |
+|---|---|---|
+| `/` on an empty line | command menu | commands and skills with descriptions |
+| `@` | file picker | this directory's files, git files first |
+| ctrl+r | prompt history | your past prompts, newest first |
+| `/resume`, `qi -r` | session picker | sessions with a preview of each |
+
+Other jobs go to the usual tools the same way: `$PAGER` (or `less -R`) for `/history`, `pbcopy`/`wl-copy`/`xclip` for `/copy`, and `terminal-notifier`/`notify-send` to tell you a turn finished while you were in another window.
+
+Each tool is a shell command in the config (`picker`, `file_picker`, `history_picker`, `session_picker`, `pager`, `copy_cmd`, `notify_cmd`), so you can swap in anything that reads lines and prints a choice, or a file manager for files:
+
+```json
+{
+  "picker": "fzf --height=40% --reverse",
+  "file_picker": "yazi --chooser-file={file}",
+  "notify_cmd": "off"
+}
+```
+
+`"off"` disables one, and a tool that isn't installed is skipped. `/config` shows which are active. Values like `{file}` and `{msg}` are passed as environment variables, never pasted into the command; [`schema.json`](internal/config/schema.json) has the details and defaults.

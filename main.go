@@ -38,19 +38,20 @@ type options struct {
 
 func main() {
 	var o options
-	flag.StringVar(&o.query, "q", "", "run one prompt without the interactive UI and print the answer")
+	flag.StringVar(&o.query, "q", "", "run one `prompt` without the interactive UI and print the answer")
 	flag.BoolVar(&o.cont, "c", false, "continue the last session in this directory")
-	flag.StringVar(&o.profile, "p", "", "profile from \"profiles\" in the config, or ~/.config/qi/<name>.json")
-	flag.StringVar(&o.provider, "provider", "", "provider override (from \"providers\" in the config)")
-	flag.StringVar(&o.configPath, "config", "", "JSON config file (default ~/.config/qi/config.json)")
-	flag.StringVar(&o.model, "model", "", "model override")
-	flag.StringVar(&o.effort, "effort", "", "reasoning effort override")
+	flag.StringVar(&o.profile, "p", "", "profile `name` from \"profiles\" in the config, or ~/.config/qi/<name>.json")
+	flag.StringVar(&o.provider, "provider", "", "provider `name` override (from \"providers\" in the config)")
+	flag.StringVar(&o.configPath, "config", "", "JSON config `file` (default ~/.config/qi/config.json)")
+	flag.StringVar(&o.model, "model", "", "`model` override")
+	flag.StringVar(&o.effort, "effort", "", "reasoning `effort` override")
 	flag.BoolVar(&o.readOnly, "read-only", false, "start in read-only mode")
-	flag.StringVar(&o.sessionID, "session-id", "", "use this session id: continues it if it exists, creates it otherwise")
+	flag.StringVar(&o.sessionID, "session-id", "", "use this session `id`: continues it if it exists, creates it otherwise")
 	flag.BoolVar(&o.pickSession, "r", false, "pick a session of this directory to resume")
-	show := flag.String("show", "", "print a session of this directory (id or path) as plain text and exit")
+	show := flag.String("show", "", "print a `session` of this directory (id or path) as plain text and exit")
 	showVersion := flag.Bool("version", false, "print version")
 	checkConfig := flag.Bool("check-config", false, "load the config and every profile without calling any API, then exit")
+	flag.Usage = usage
 	flag.Parse()
 	if *showVersion {
 		fmt.Println("qi", version)
@@ -306,4 +307,26 @@ func runHeadless(a *agent.Agent, display *ui.Printer, hooks *agent.Hooks, prompt
 	}
 	fmt.Println(final)
 	return nil
+}
+
+func usage() {
+	out := flag.CommandLine.Output()
+	fmt.Fprintln(out, "Usage: qi [flags]")
+	var rows [][2]string
+	width := 0
+	flag.VisitAll(func(f *flag.Flag) {
+		arg, help := flag.UnquoteUsage(f)
+		name := "--" + f.Name
+		if len(f.Name) == 1 {
+			name = "-" + f.Name
+		}
+		if arg != "" {
+			name += " " + arg
+		}
+		width = max(width, len(name))
+		rows = append(rows, [2]string{name, help})
+	})
+	for _, r := range rows {
+		fmt.Fprintf(out, "  %-*s  %s\n", width, r[0], r[1])
+	}
 }

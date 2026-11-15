@@ -7,3 +7,4 @@
 !.goreleaser.yml
 docs/
 dist/
+CLAUDE.local.md

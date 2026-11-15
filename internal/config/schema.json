@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "qi config",
-  "description": "qi settings: ~/.config/qi/config.json (or -config path.json), and profile files ~/.config/qi/<name>.json. A profile has the same keys as the top level; every key it sets replaces the top-level value as a whole (objects and arrays included), except mcp, which is merged by server name.",
+  "description": "qi settings: ~/.config/qi/config.json (or --config path.json), and profile files ~/.config/qi/<name>.json. A profile has the same keys as the top level; every key it sets replaces the top-level value as a whole (objects and arrays included), except mcp, which is merged by server name.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
