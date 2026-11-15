@@ -213,30 +213,11 @@ func TestProfileKeysReplaceWholeValues(t *testing.T) {
 	}
 }
 
-func TestYAMLConfigGivesMigrationHint(t *testing.T) {
+func TestUnknownProfile(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("AICODE_CONFIG_DIR", dir)
-	writeConfig(t, dir, "config.yml", "model: m\n")
-	_, err := Load("", "")
-	wantErr(t, err, "config.yml", "config.json", "yq -o json")
-
-	_, err = Load(filepath.Join(dir, "config.yml"), "")
-	wantErr(t, err, "YAML config is no longer supported", "yq -o json")
-
-	writeConfig(t, dir, "foo.yml", "model: m\n")
-	_, err = Load(filepath.Join(dir, "foo.json"), "")
-	wantErr(t, err, "foo.yml", "foo.json", "yq -o json")
-
 	path := writeConfig(t, dir, "config.json", `{"model": "m"}`)
-	writeConfig(t, dir, "commit.yml", "model: c\n")
-	_, err = Load(path, "commit")
-	wantErr(t, err, "commit.yml", "commit.json")
-
-	writeConfig(t, dir, "work.yml", "model: w\n")
-	_, err = Load(path, "work.yml")
-	wantErr(t, err, "work.yml", "YAML config is no longer supported")
-
-	_, err = Load(path, "nope")
+	_, err := Load(path, "nope")
 	wantErr(t, err, `unknown profile "nope"`)
 }
 

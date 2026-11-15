@@ -8,8 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -165,28 +163,4 @@ func checkProfile(raw []byte) error {
 func jsonName(f reflect.StructField) string {
 	name, _, _ := strings.Cut(f.Tag.Get("json"), ",")
 	return name
-}
-
-func rejectYAML(path string) error {
-	switch strings.ToLower(filepath.Ext(path)) {
-	case ".yml", ".yaml":
-		return fmt.Errorf("%s: YAML config is no longer supported; %s", ShortHome(path), convertHint(path))
-	}
-	return nil
-}
-
-func legacyYAML(path string) error {
-	if filepath.Ext(path) != ".json" {
-		return nil
-	}
-	yml := strings.TrimSuffix(path, ".json") + ".yml"
-	if _, err := os.Stat(yml); err != nil {
-		return nil
-	}
-	return fmt.Errorf("found %s but no %s: aicode now reads JSON config; %s", ShortHome(yml), ShortHome(path), convertHint(yml))
-}
-
-func convertHint(yml string) string {
-	out := strings.TrimSuffix(yml, filepath.Ext(yml)) + ".json"
-	return fmt.Sprintf("convert it with the same keys, e.g. yq -o json %s > %s (keys aicode no longer knows are now errors)", ShortHome(yml), ShortHome(out))
 }

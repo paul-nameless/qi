@@ -225,14 +225,8 @@ func (c *Config) profileData(name string) ([]byte, string, error) {
 		return raw, fmt.Sprintf("%s: profile %q", c.source, name), nil
 	}
 	path := profilePath(name)
-	if err := rejectYAML(path); err != nil {
-		return nil, "", err
-	}
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		if err := legacyYAML(path); err != nil {
-			return nil, "", err
-		}
 		return nil, "", fmt.Errorf("unknown profile %q (not in profiles and no %s)", name, ShortHome(path))
 	}
 	if err != nil {
@@ -250,7 +244,7 @@ func profilePath(name string) string {
 		return ExpandHome(name)
 	}
 	switch strings.ToLower(filepath.Ext(name)) {
-	case ".json", ".yml", ".yaml":
+	case ".json":
 		return filepath.Join(Dir(), name)
 	}
 	return filepath.Join(Dir(), name+".json")
@@ -321,14 +315,9 @@ func (c Config) ProfileNames() []string {
 }
 
 func mergeFile(c *Config, path string, required bool) error {
-	if err := rejectYAML(path); err != nil {
-		return err
-	}
 	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		if err := legacyYAML(path); err != nil || !required {
-			return err
-		}
+	if errors.Is(err, os.ErrNotExist) && !required {
+		return nil
 	}
 	if err != nil {
 		return fmt.Errorf("read config %s: %w", path, err)

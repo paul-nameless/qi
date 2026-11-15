@@ -64,8 +64,6 @@ Every key is described in the JSON Schema [`internal/config/schema.json`](intern
 
 `aicode -p glm` picks a profile, `/profile glm` and `/model luna` switch at runtime. A plain `~/.config/aicode/<name>.json` also works as a profile. The API key can also come from `OPENROUTER_API_KEY`, `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`. Project hooks from `.claude/settings.json` run only after you trust the project once.
 
-Older versions read YAML (`config.yml`). Convert it once with the same keys, e.g. `yq -o json config.yml > config.json`; aicode stops with a hint while only the YAML file exists.
-
 ### MCP
 
 MCP servers start on first use. Their tools never enter the tool list directly: the agent finds them with `tool_search` (by keywords, or `server` to list one server's tools) and calls them with `mcp_call`. `tools` and `exclude_tools` limit what the agent can see and call, with glob patterns on the tool name.
@@ -116,7 +114,7 @@ Compaction summarizes the conversation into a structured handoff (updated on lat
 
 Keys: shift+tab toggles read-only, ctrl+g edits the prompt in `$EDITOR`, ctrl+r searches prompt history, `@` picks files, alt+enter or ctrl+j inserts a newline, ctrl+c or esc cancels a turn. Text typed while the agent works is queued and delivered after the next tool results.
 
-Commands: `/help`, `/keys`, `/config`, `/clear`, `/context`, `/reload`, `/compact [focus]`, `/resume`, `/history`, `/copy`, `/model`, `/profile`, `/effort`, `/skills`, `/mcp`, `/exit`, and `/<skill-or-command> [args]`. Typing `/` on an empty line opens a picker (fzf by default; set `picker:` in the config to use another command that reads `name<TAB>description` lines and prints the chosen one).
+Commands: `/help`, `/keys`, `/config`, `/clear`, `/context`, `/reload`, `/compact [focus]`, `/resume`, `/history`, `/copy`, `/model`, `/profile`, `/effort`, `/skills`, `/mcp`, `/exit`, and `/<skill-or-command> [args]`. Typing `/` on an empty line opens a picker (fzf by default; set `"picker"` in the config to use another command that reads `name<TAB>description` lines and prints the chosen one).
 
 ## External tools
 
