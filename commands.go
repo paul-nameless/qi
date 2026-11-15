@@ -18,6 +18,8 @@ import (
 
 const helpText = `Commands:
   /help              this help
+  /keys              key bindings
+  /config            config file and external tools
   /clear             start a new session
   /context           show what takes space in the context
   /reload            re-read skills, commands and CLAUDE.md files (rebuilds the cached prompt)
@@ -31,8 +33,9 @@ const helpText = `Commands:
   /profile [name]    show or switch the profile
   /effort [level]    show or switch the reasoning effort (default, none, low, medium, high, xhigh, max)
   /skills            list skills (/<skill-name> [args] runs one)
-  /exit              quit
-Keys:
+  /exit              quit`
+
+const keysText = `Keys:
   shift+tab          toggle read-only / yolo
   ctrl+g             edit the prompt in $EDITOR
   ctrl+r             pick a prompt from history
@@ -55,7 +58,11 @@ func (r *repl) handleInput(line string) (string, bool) {
 	case "exit", "quit":
 		return "", true
 	case "help":
-		r.display.Info(helpText + "\n" + r.toolsHelp())
+		r.display.Info(helpText)
+	case "keys":
+		r.display.Info(keysText)
+	case "config":
+		r.display.Info(r.configInfo())
 	case "clear":
 		if err := r.newSession(); err != nil {
 			r.display.Error(err.Error())

@@ -163,3 +163,13 @@ func TestHistoryPicker(t *testing.T) {
 		t.Errorf("newest first: got %q", got)
 	}
 }
+
+func TestConfigInfo(t *testing.T) {
+	r := &repl{agent: newTestAgent(t, config.Config{Viewer: "off", CopyCmd: "cat"}), opts: options{configPath: "/x/c.yml"}}
+	got := r.configInfo()
+	for _, want := range []string{"Config: /x/c.yml", "viewer          off  off", "copy_cmd        on   cat"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in\n%s", want, got)
+		}
+	}
+}

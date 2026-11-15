@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -279,9 +280,13 @@ func (r *repl) toolKeys() [][2]string {
 	}
 }
 
-func (r *repl) toolsHelp() string {
+func (r *repl) configInfo() string {
+	path := r.opts.configPath
+	if path == "" {
+		path = filepath.Join(config.Dir(), "config.yml")
+	}
 	var b strings.Builder
-	b.WriteString("External tools:")
+	fmt.Fprintf(&b, "Config: %s\nExternal tools:", path)
 	for _, kv := range r.toolKeys() {
 		state := "on "
 		if !r.toolOn(kv[1]) {

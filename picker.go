@@ -92,7 +92,9 @@ func quotePath(p string) string {
 }
 
 var builtinCommands = []pickItem{
-	{"help", "show commands and keys"},
+	{"help", "show commands"},
+	{"keys", "show key bindings"},
+	{"config", "show the config file and external tools"},
 	{"clear", "start a new session"},
 	{"context", "show what takes space in the context"},
 	{"reload", "re-read skills, commands and CLAUDE.md files"},
