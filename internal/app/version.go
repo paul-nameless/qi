@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"regexp"
@@ -8,7 +8,7 @@ import (
 
 var pseudoVersion = regexp.MustCompile(`^v\d+\.\d+\.\d+-(?:[\w.]+\.)?0\.\d{14}-([0-9a-f]{12})(\+dirty)?$`)
 
-func buildVersion() string {
+func buildVersion(version string) string {
 	if version != "dev" {
 		return version
 	}
@@ -16,10 +16,10 @@ func buildVersion() string {
 	if !ok {
 		return version
 	}
-	return versionFrom(info)
+	return versionFrom(info, version)
 }
 
-func versionFrom(info *debug.BuildInfo) string {
+func versionFrom(info *debug.BuildInfo, version string) string {
 	v := info.Main.Version
 	if m := pseudoVersion.FindStringSubmatch(v); m != nil {
 		return "dev-" + m[1][:7] + strings.Replace(m[2], "+", "-", 1)

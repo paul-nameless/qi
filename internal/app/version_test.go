@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"runtime/debug"
@@ -19,7 +19,7 @@ func TestVersionFrom(t *testing.T) {
 		{debug.BuildInfo{Main: debug.Module{Version: "(devel)"}}, "dev"},
 	}
 	for _, c := range cases {
-		if got := versionFrom(&c.info); got != c.want {
+		if got := versionFrom(&c.info, "dev"); got != c.want {
 			t.Errorf("%+v: got %q, want %q", c.info.Main, got, c.want)
 		}
 	}
