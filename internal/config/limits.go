@@ -1,13 +1,13 @@
 package config
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"math"
 	"regexp"
 	"strconv"
 	"strings"
-
-	"github.com/goccy/go-yaml"
 )
 
 type Tokens int
@@ -83,23 +83,38 @@ func ParseThreshold(s string) (Threshold, error) {
 	return Threshold{Tokens: n}, nil
 }
 
-func scalar(b []byte) (string, error) {
-	var v any
-	if err := yaml.Unmarshal(b, &v); err != nil {
-		return "", err
+func scalar(b []byte) (string, bool, error) {
+	b = bytes.TrimSpace(b)
+	switch {
+	case string(b) == "null":
+		return "", false, nil
+	case len(b) > 0 && b[0] == '"':
+		var s string
+		err := json.Unmarshal(b, &s)
+		return s, true, err
+	case len(b) > 0 && (b[0] == '-' || b[0] >= '0' && b[0] <= '9'):
+		return string(b), true, nil
 	}
-	switch x := v.(type) {
-	case string:
-		return x, nil
-	case uint64, int64, int, float64:
-		return fmt.Sprint(x), nil
-	}
-	return "", fmt.Errorf("expected a number or string, got %s", strings.TrimSpace(string(b)))
+	return "", false, fmt.Errorf("expected a number or a string, got %s", rawKind(b))
 }
 
-func (t *Tokens) UnmarshalYAML(b []byte) error {
-	s, err := scalar(b)
-	if err != nil {
+func rawKind(b []byte) string {
+	switch {
+	case len(b) == 0:
+		return "nothing"
+	case b[0] == '{':
+		return "an object"
+	case b[0] == '[':
+		return "an array"
+	case b[0] == 't' || b[0] == 'f':
+		return "a boolean"
+	}
+	return string(b)
+}
+
+func (t *Tokens) UnmarshalJSON(b []byte) error {
+	s, ok, err := scalar(b)
+	if !ok || err != nil {
 		return err
 	}
 	n, err := ParseTokens(s)
@@ -107,9 +122,9 @@ func (t *Tokens) UnmarshalYAML(b []byte) error {
 	return err
 }
 
-func (t *Threshold) UnmarshalYAML(b []byte) error {
-	s, err := scalar(b)
-	if err != nil {
+func (t *Threshold) UnmarshalJSON(b []byte) error {
+	s, ok, err := scalar(b)
+	if !ok || err != nil {
 		return err
 	}
 	*t, err = ParseThreshold(s)

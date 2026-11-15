@@ -6,47 +6,38 @@ import (
 	"testing"
 )
 
-const sample = `
-providers:
-  openrouter:
-    base_url: https://openrouter.ai/api/v1
-    api_key: or-key
-  anthropic:
-    api: anthropic
-    api_key: ant-key
-model: base-model
-reasoning_effort: low
-default_profile: smart
-profiles:
-  smart:
-    provider: openrouter
-    model: openai/gpt-6.1-sol
-    reasoning_effort: medium
-    subagent_models:
-      - name: luna
-        model: openai/gpt-6-luna
-        use_for: cheap
-      - name: haiku
-        provider: anthropic
-        model: claude-haiku-5-5
-        use_for: claude
-  glm:
-    provider: openrouter
-    model: z-ai/glm-5.3
-  local:
-    provider: openrouter
-    base_url: http://localhost:8080/v1
-    model: qwen
+const sample = `{
+  "providers": {
+    "openrouter": {"base_url": "https://openrouter.ai/api/v1", "api_key": "or-key"},
+    "anthropic": {"api": "anthropic", "api_key": "ant-key"}
+  },
+  "model": "base-model",
+  "reasoning_effort": "low",
+  "default_profile": "smart",
+  "profiles": {
+    "smart": {
+      "provider": "openrouter",
+      "model": "openai/gpt-6.1-sol",
+      "reasoning_effort": "medium",
+      "subagent_models": [
+        {"name": "luna", "model": "openai/gpt-6-luna", "use_for": "cheap"},
+        {"name": "haiku", "provider": "anthropic", "model": "claude-haiku-5-5", "use_for": "claude"}
+      ]
+    },
+    "glm": {"provider": "openrouter", "model": "z-ai/glm-5.3"},
+    "local": {"provider": "openrouter", "base_url": "http://localhost:8080/v1", "model": "qwen"}
+  }
+}
 `
 
 func TestProfiles(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("AICODE_CONFIG_DIR", dir)
-	path := filepath.Join(dir, "config.yml")
+	path := filepath.Join(dir, "config.json")
 	os.WriteFile(path, []byte(sample), 0o600)
-	os.WriteFile(filepath.Join(dir, "legacy.yml"), []byte("model: legacy-model\nprovider: claude\n"), 0o600)
-	v1 := filepath.Join(dir, "v1.yml")
-	os.WriteFile(v1, []byte("api_key_shell: \"pass show x\"\nprovider: \"claude\"\nmodel: claude-sonnet-4-20250514\n"), 0o600)
+	os.WriteFile(filepath.Join(dir, "legacy.json"), []byte(`{"model": "legacy-model", "provider": "claude"}`), 0o600)
+	v1 := filepath.Join(dir, "v1.json")
+	os.WriteFile(v1, []byte(`{"api_key_shell": "pass show x", "provider": "claude", "model": "claude-sonnet-4-20250514"}`), 0o600)
 	if c, err := Load(v1, ""); err != nil || c.API != "anthropic" || c.APIKeyShell != "pass show x" {
 		t.Errorf("v1 config must keep its api_key_shell: %+v %v", c, err)
 	}
@@ -78,7 +69,7 @@ func TestProfiles(t *testing.T) {
 	if c, _ := Load(path, "local"); c.BaseURL != "http://localhost:8080/v1" || c.APIKey != "or-key" {
 		t.Errorf("profile base_url should win over its provider: %+v", c)
 	}
-	os.WriteFile(filepath.Join(dir, "filelocal.yml"), []byte("provider: openrouter\nbase_url: http://localhost:9/v1\nmodel: q\n"), 0o600)
+	os.WriteFile(filepath.Join(dir, "filelocal.json"), []byte(`{"provider": "openrouter", "base_url": "http://localhost:9/v1", "model": "q"}`), 0o600)
 	fl, err := Load(path, "filelocal")
 	if err != nil || fl.BaseURL != "http://localhost:9/v1" || fl.APIKey != "or-key" {
 		t.Errorf("file profile base_url should win: %+v %v", fl, err)
@@ -94,7 +85,7 @@ func TestProfiles(t *testing.T) {
 func TestUseProviderBuiltinsResetConnection(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("AICODE_CONFIG_DIR", dir)
-	path := filepath.Join(dir, "config.yml")
+	path := filepath.Join(dir, "config.json")
 	os.WriteFile(path, []byte(sample), 0o600)
 	c, err := Load(path, "smart")
 	if err != nil {
@@ -114,8 +105,8 @@ func TestUseProviderBuiltinsResetConnection(t *testing.T) {
 func TestRuntimeBuiltinSwitchDropsOldKey(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("AICODE_CONFIG_DIR", dir)
-	path := filepath.Join(dir, "c.yml")
-	os.WriteFile(path, []byte("api: anthropic\napi_key: sk-ant\n"), 0o600)
+	path := filepath.Join(dir, "c.json")
+	os.WriteFile(path, []byte(`{"api": "anthropic", "api_key": "sk-ant"}`), 0o600)
 	c, err := Resolve(path, "", "openai", "", "")
 	if err != nil || c.API != "openai" || c.APIKey != "" || c.Model != "gpt-6-luna" {
 		t.Errorf("openai override kept anthropic settings: %+v %v", c, err)

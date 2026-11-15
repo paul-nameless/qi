@@ -55,25 +55,25 @@ func TestReadOnlyWiring(t *testing.T) {
 func TestModelSwitchKeepsSubagentsOnProfileProvider(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("AICODE_CONFIG_DIR", dir)
-	path := dir + "/config.yml"
-	os.WriteFile(path, []byte(`providers:
-  or:
-    base_url: https://openrouter.ai/api/v1
-    api_key: k1
-  anth:
-    api: anthropic
-    api_key: k2
-default_profile: p
-profiles:
-  p:
-    provider: or
-    model: openai/gpt-6-luna
-    subagent_models:
-      - {name: luna, model: openai/gpt-6-luna, use_for: x}
-      - {name: haiku, provider: anth, model: claude-haiku-5-5, use_for: y}
-  q:
-    provider: anth
-    model: claude-haiku-5-5
+	path := dir + "/config.json"
+	os.WriteFile(path, []byte(`{
+  "providers": {
+    "or": {"base_url": "https://openrouter.ai/api/v1", "api_key": "k1"},
+    "anth": {"api": "anthropic", "api_key": "k2"}
+  },
+  "default_profile": "p",
+  "profiles": {
+    "p": {
+      "provider": "or",
+      "model": "openai/gpt-6-luna",
+      "subagent_models": [
+        {"name": "luna", "model": "openai/gpt-6-luna", "use_for": "x"},
+        {"name": "haiku", "provider": "anth", "model": "claude-haiku-5-5", "use_for": "y"}
+      ]
+    },
+    "q": {"provider": "anth", "model": "claude-haiku-5-5"}
+  }
+}
 `), 0o600)
 	o := options{configPath: path, provider: "anth"}
 	cfg, err := config.Resolve(path, "", o.provider, "", "")
@@ -112,7 +112,8 @@ func TestSubagentModeIsFixedAtLaunch(t *testing.T) {
 
 func TestReloadRereadsInstructionsAndSkills(t *testing.T) {
 	dir := t.TempDir()
-	cfg := config.Config{Model: "m", InstructionFile: []string{"CLAUDE.md"}, SkillDirs: []string{".claude/skills"}}
+	off := false
+	cfg := config.Config{Model: "m", InstructionFile: []string{"CLAUDE.md"}, SkillDirs: []string{".claude/skills"}, BuiltinSkills: &off}
 	a, runner, _ := buildAgent(cfg, options{}, dir, nopProvider{}, devNullPrinter(t), true, false)
 	a.Registry = tools.NewRegistry()
 	r := &repl{agent: a, display: devNullPrinter(t), runner: runner}

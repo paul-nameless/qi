@@ -6,11 +6,10 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/goccy/go-yaml"
 
 	"github.com/paul-nameless/aicode/internal/config"
 	"github.com/paul-nameless/aicode/internal/tools"
@@ -43,32 +42,7 @@ type Skill struct {
 	Description string
 	Path        string
 	Hidden      bool
-}
-
-type skillMeta struct {
-	Name                   string `yaml:"name"`
-	Description            string `yaml:"description"`
-	DisableModelInvocation bool   `yaml:"disable-model-invocation"`
-}
-
-func ParseFrontmatter(data string) (skillMeta, string) {
-	var m skillMeta
-	if !strings.HasPrefix(data, "---") {
-		return m, data
-	}
-	rest := strings.TrimLeft(data[3:], "\r\n")
-	end := strings.Index(rest, "\n---")
-	if end < 0 {
-		return m, data
-	}
-	_ = yaml.Unmarshal([]byte(rest[:end]), &m)
-	body := rest[end+4:]
-	if i := strings.IndexByte(body, '\n'); i >= 0 {
-		body = body[i+1:]
-	} else {
-		body = ""
-	}
-	return m, body
+	Builtin     bool
 }
 
 func ProjectRoots(cwd string) []string {
@@ -130,6 +104,15 @@ func LoadSkills(dirs []string) []Skill {
 		}
 	}
 	return out
+}
+
+func addSkills(skills, extra []Skill) []Skill {
+	for _, e := range extra {
+		if !slices.ContainsFunc(skills, func(s Skill) bool { return s.Name == e.Name }) {
+			skills = append(skills, e)
+		}
+	}
+	return skills
 }
 
 func findSkillFiles(dir string, depth int, out *[]string) {
@@ -236,6 +219,9 @@ type SystemPrompt struct {
 func LoadPrompt(cwd string, cfg config.Config) ([]Skill, SystemPrompt) {
 	roots := ProjectRoots(cwd)
 	skills := LoadSkills(ExpandPaths(roots, cfg.SkillDirs))
+	if cfg.BuiltinSkillsOn() {
+		skills = addSkills(skills, BuiltinSkills())
+	}
 	return skills, BuildSystemPrompt(cwd, ExpandPaths(roots, cfg.InstructionFile), skills)
 }
 
@@ -266,7 +252,7 @@ func BuildSystemPrompt(cwd string, instructionFiles []string, skills []Skill) Sy
 	for _, s := range skills {
 		switch {
 		case s.Hidden:
-		case inProject(s.Path, roots):
+		case !s.Builtin && inProject(s.Path, roots):
 			project = append(project, s)
 		default:
 			global = append(global, s)

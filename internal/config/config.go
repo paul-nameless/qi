@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -9,70 +10,70 @@ import (
 	"runtime"
 	"sort"
 	"strings"
-
-	"github.com/goccy/go-yaml"
 )
 
 type SubagentModel struct {
-	Name     string `yaml:"name"`
-	Model    string `yaml:"model"`
-	Provider string `yaml:"provider"`
-	UseFor   string `yaml:"use_for"`
+	Name     string `json:"name"`
+	Model    string `json:"model"`
+	Provider string `json:"provider"`
+	UseFor   string `json:"use_for"`
 }
 
 type Provider struct {
-	API          string `yaml:"api"`
-	BaseURL      string `yaml:"base_url"`
-	APIKey       string `yaml:"api_key"`
-	APIKeyShell  string `yaml:"api_key_shell"`
-	CacheControl *bool  `yaml:"cache_control"`
+	API          string `json:"api"`
+	BaseURL      string `json:"base_url"`
+	APIKey       string `json:"api_key"`
+	APIKeyShell  string `json:"api_key_shell"`
+	CacheControl *bool  `json:"cache_control"`
 }
 
 type MCPServer struct {
-	Command     string            `yaml:"command"`
-	Args        []string          `yaml:"args"`
-	Env         map[string]string `yaml:"env"`
-	Description string            `yaml:"description"`
+	Command     string            `json:"command"`
+	Args        []string          `json:"args"`
+	Env         map[string]string `json:"env"`
+	Description string            `json:"description"`
 }
 
 const DefaultPicker = `fzf --height=40% --reverse --no-multi --bind=ctrl-z:ignore --delimiter='\t' --nth=1 --tabstop=24 --prompt={prompt}`
 
 type Config struct {
-	Model           string               `yaml:"model"`
-	API             string               `yaml:"api"`
-	Provider        string               `yaml:"provider"`
-	BaseURL         string               `yaml:"base_url"`
-	APIKey          string               `yaml:"api_key"`
-	APIKeyShell     string               `yaml:"api_key_shell"`
-	ReasoningEffort string               `yaml:"reasoning_effort"`
-	MaxTokens       int                  `yaml:"max_tokens"`
-	CacheControl    *bool                `yaml:"cache_control"`
-	CacheTTL        string               `yaml:"cache_ttl"`
-	CompactAt       Threshold            `yaml:"compact_at"`
-	CompactIdleAt   Threshold            `yaml:"compact_idle_at"`
-	ContextWindow   Tokens               `yaml:"context_window"`
-	MaxRounds       int                  `yaml:"max_rounds"`
-	ShowReasoning   *bool                `yaml:"show_reasoning"`
-	ReadOnly        bool                 `yaml:"read_only"`
-	ReadOnlyAllow   []string             `yaml:"read_only_allow"`
-	BashTimeout     int                  `yaml:"bash_timeout"`
-	SubagentModels  []SubagentModel      `yaml:"subagent_models"`
-	SubagentEfforts []string             `yaml:"subagent_efforts"`
-	InstructionFile []string             `yaml:"instruction_files"`
-	SkillDirs       []string             `yaml:"skill_dirs"`
-	HookFiles       []string             `yaml:"hook_files"`
-	MCP             map[string]MCPServer `yaml:"mcp"`
-	Picker          string               `yaml:"picker"`
-	NotifyCmd       string               `yaml:"notify_cmd"`
-	FilePicker      string               `yaml:"file_picker"`
-	HistoryPicker   string               `yaml:"history_picker"`
-	SessionPicker   string               `yaml:"session_picker"`
-	Pager           string               `yaml:"pager"`
-	CopyCmd         string               `yaml:"copy_cmd"`
-	Providers       map[string]Provider  `yaml:"providers"`
-	Profiles        map[string]any       `yaml:"profiles"`
-	DefaultProfile  string               `yaml:"default_profile"`
-	Profile         string               `yaml:"-"`
+	Schema          string                     `json:"$schema"`
+	Model           string                     `json:"model"`
+	API             string                     `json:"api"`
+	Provider        string                     `json:"provider"`
+	BaseURL         string                     `json:"base_url"`
+	APIKey          string                     `json:"api_key"`
+	APIKeyShell     string                     `json:"api_key_shell"`
+	ReasoningEffort string                     `json:"reasoning_effort"`
+	MaxTokens       int                        `json:"max_tokens"`
+	CacheControl    *bool                      `json:"cache_control"`
+	CacheTTL        string                     `json:"cache_ttl"`
+	CompactAt       Threshold                  `json:"compact_at"`
+	CompactIdleAt   Threshold                  `json:"compact_idle_at"`
+	ContextWindow   Tokens                     `json:"context_window"`
+	MaxRounds       int                        `json:"max_rounds"`
+	ShowReasoning   *bool                      `json:"show_reasoning"`
+	ReadOnly        bool                       `json:"read_only"`
+	ReadOnlyAllow   []string                   `json:"read_only_allow"`
+	BashTimeout     int                        `json:"bash_timeout"`
+	SubagentModels  []SubagentModel            `json:"subagent_models"`
+	SubagentEfforts []string                   `json:"subagent_efforts"`
+	InstructionFile []string                   `json:"instruction_files"`
+	SkillDirs       []string                   `json:"skill_dirs"`
+	HookFiles       []string                   `json:"hook_files"`
+	MCP             map[string]MCPServer       `json:"mcp"`
+	Picker          string                     `json:"picker"`
+	NotifyCmd       string                     `json:"notify_cmd"`
+	FilePicker      string                     `json:"file_picker"`
+	HistoryPicker   string                     `json:"history_picker"`
+	SessionPicker   string                     `json:"session_picker"`
+	Pager           string                     `json:"pager"`
+	CopyCmd         string                     `json:"copy_cmd"`
+	BuiltinSkills   *bool                      `json:"builtin_skills"`
+	Providers       map[string]Provider        `json:"providers"`
+	Profiles        map[string]json.RawMessage `json:"profiles"`
+	DefaultProfile  string                     `json:"default_profile"`
+	Profile         string                     `json:"-"`
 	profileRaw      []byte
 }
 
@@ -112,12 +113,16 @@ func Load(path, profile string) (Config, error) {
 	return Resolve(path, profile, "", "", "")
 }
 
+func DefaultPath() string {
+	return filepath.Join(Dir(), "config.json")
+}
+
 func Resolve(path, profile, provider, model, effort string) (Config, error) {
 	var c Config
 	if path == "" {
-		path = filepath.Join(Dir(), "config.yml")
+		path = DefaultPath()
 	}
-	if err := mergeFile(&c, ExpandHome(path), path != filepath.Join(Dir(), "config.yml")); err != nil {
+	if err := mergeFile(&c, ExpandHome(path), path != DefaultPath()); err != nil {
 		return c, err
 	}
 	if profile == "" {
@@ -132,8 +137,8 @@ func Resolve(path, profile, provider, model, effort string) (Config, error) {
 		return c, err
 	}
 	if c.profileRaw != nil {
-		if err := yaml.Unmarshal(c.profileRaw, &c); err != nil {
-			return c, err
+		if err := c.overlay(c.profileRaw); err != nil {
+			return c, fmt.Errorf("profile %s: %w", c.Profile, err)
 		}
 	}
 	if provider != "" {
@@ -151,33 +156,64 @@ func Resolve(path, profile, provider, model, effort string) (Config, error) {
 	return c, nil
 }
 
-func (c *Config) applyProfile(name string) error {
-	var raw []byte
-	if p, ok := c.Profiles[name]; ok {
-		data, err := yaml.Marshal(p)
-		if err != nil {
-			return fmt.Errorf("profile %s: %w", name, err)
-		}
-		raw = data
-	} else {
-		path := name
-		if !strings.Contains(path, "/") && !strings.HasSuffix(path, ".yml") {
-			path = filepath.Join(Dir(), path+".yml")
-		}
-		data, err := os.ReadFile(ExpandHome(path))
-		if errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("unknown profile %q (not in profiles: and no %s)", name, path)
-		}
-		if err != nil {
-			return err
-		}
-		raw = data
+func Check(path, profile string) error {
+	c, err := Resolve(path, profile, "", "", "")
+	if err != nil {
+		return err
 	}
-	if err := yaml.Unmarshal(raw, c); err != nil {
+	for _, name := range c.ProfileNames() {
+		if _, err := Resolve(path, name, "", "", ""); err != nil {
+			return fmt.Errorf("profile %q: %w", name, err)
+		}
+	}
+	return nil
+}
+
+func (c *Config) applyProfile(name string) error {
+	raw, err := c.profileData(name)
+	if err != nil {
+		return err
+	}
+	if err := c.overlay(raw); err != nil {
 		return fmt.Errorf("profile %s: %w", name, err)
 	}
 	c.Profile, c.profileRaw = name, raw
 	return nil
+}
+
+func (c *Config) profileData(name string) ([]byte, error) {
+	if raw, ok := c.Profiles[name]; ok {
+		return raw, nil
+	}
+	path := name
+	if !strings.Contains(path, "/") && !strings.HasSuffix(path, ".json") {
+		path = filepath.Join(Dir(), path+".json")
+	}
+	path = ExpandHome(path)
+	if err := rejectYAML(path); err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		if err := legacyYAML(path); err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("unknown profile %q (not in profiles and no %s)", name, ShortHome(path))
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read profile %s: %w", path, err)
+	}
+	if err := decodeStrict(data, &Config{}); err != nil {
+		return nil, fmt.Errorf("profile file %s: %w", path, err)
+	}
+	return data, nil
+}
+
+func (c *Config) overlay(raw []byte) error {
+	if err := clearKeys(c, raw); err != nil {
+		return err
+	}
+	return decodeStrict(raw, c)
 }
 
 var builtinProviders = map[string]Provider{
@@ -235,19 +271,23 @@ func (c Config) ProfileNames() []string {
 }
 
 func mergeFile(c *Config, path string, required bool) error {
+	if err := rejectYAML(path); err != nil {
+		return err
+	}
 	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) && !required {
+		return legacyYAML(path)
+	}
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) && !required {
-			return nil
-		}
 		return fmt.Errorf("read config %s: %w", path, err)
 	}
-	if err := yaml.Unmarshal(data, c); err != nil {
-		return fmt.Errorf("parse config %s: %w", path, err)
+	if err := decodeStrict(data, c); err != nil {
+		return fmt.Errorf("config %s: %w", path, err)
 	}
-	var strict Config
-	if err := yaml.UnmarshalWithOptions(data, &strict, yaml.Strict()); err != nil {
-		fmt.Fprintf(os.Stderr, "aicode: %s: %s (ignored)\n", path, strings.SplitN(err.Error(), "\n", 2)[0])
+	for _, name := range c.ProfileNames() {
+		if err := decodeStrict(c.Profiles[name], &Config{}); err != nil {
+			return fmt.Errorf("config %s: profile %q: %w", path, name, err)
+		}
 	}
 	return nil
 }
@@ -338,6 +378,10 @@ func (c Config) ShowReasoningOn() bool {
 	return c.ShowReasoning == nil || *c.ShowReasoning
 }
 
+func (c Config) BuiltinSkillsOn() bool {
+	return c.BuiltinSkills == nil || *c.BuiltinSkills
+}
+
 func (c Config) ResolveAPIKey() (string, error) {
 	if c.APIKey != "" {
 		return c.APIKey, nil
@@ -367,7 +411,7 @@ func (c Config) ResolveAPIKey() (string, error) {
 			return v, nil
 		}
 	}
-	return "", fmt.Errorf("no API key: set api_key_shell in %s or %s", filepath.Join(Dir(), "config.yml"), strings.Join(envs, "/"))
+	return "", fmt.Errorf("no API key: set api_key_shell in %s or %s", ShortHome(DefaultPath()), strings.Join(envs, "/"))
 }
 
 func (c *Config) DefaultCacheTTL(headless bool) {

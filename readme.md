@@ -1,6 +1,6 @@
 # aicode
 
-A small coding agent for the terminal. One Go binary, two dependencies, about 20MB of RAM, plain scrolling output (no fullscreen UI).
+A small coding agent for the terminal. One Go binary, one dependency, about 20MB of RAM, plain scrolling output (no fullscreen UI).
 
 - Works with OpenRouter, any OpenAI-compatible API, and Anthropic.
 - Tools: `read`, `write`, `edit`, `bash`, `subagent`. Several calls in one response run in parallel.
@@ -16,53 +16,55 @@ go install github.com/paul-nameless/aicode@latest
 
 ## Configure
 
-`~/.config/aicode/config.yml` defines providers and profiles:
+`~/.config/aicode/config.json` defines providers and profiles:
 
-```yaml
-providers:
-  openrouter:
-    base_url: https://openrouter.ai/api/v1
-    api_key_shell: "pass show openrouter-api-key | head -n 1"
-  routeway:
-    base_url: https://api.routeway.ai/v1
-    api_key_shell: "pass show routeway-api-key | head -n 1"
-  anthropic:
-    api: anthropic                     # native Messages API (base_url optional)
-    api_key_shell: "pass show anthropic-api-key | head -n 1"
-
-default_profile: smart
-
-profiles:
-  smart:
-    provider: openrouter
-    model: openai/gpt-6.1-sol
-    reasoning_effort: medium
-    subagent_models:                   # the model picks one per subagent; /model <name> switches to it
-      - name: luna
-        model: openai/gpt-6-luna
-        use_for: fast and cheap; search, summaries
-      - name: terra
-        model: openai/gpt-6.1-terra
-        use_for: solid mid-tier; focused implementation and reviews
-  glm:
-    provider: routeway
-    model: glm-5.3-flash-uncensored
-
-# shared settings (a profile can override any of them)
-subagent_efforts: [low, medium, high]
-# cache_ttl: 1h             # Anthropic prompt cache TTL (default 1h interactive, 5m with -q); idle compaction runs 5 min before it expires
-# compact_at: 150k          # compact when context passes this: tokens (150000, 150k) or a share of the window (80%)
-# compact_idle_at: 100k     # idle compaction threshold, same syntax
-# context_window: 1m        # window of this profile's model, for % thresholds (dropped when /model switches); known for Claude, GPT-6 and Gemini, else 200k is assumed
-# read_only_allow: [make lint, go test]
-# mcp:
-#   github:
-#     command: github-mcp-server
-#     args: [stdio]
-#     description: GitHub issues and pull requests
+```json
+{
+  "providers": {
+    "openrouter": {
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key_shell": "pass show openrouter-api-key | head -n 1"
+    },
+    "routeway": {
+      "base_url": "https://api.routeway.ai/v1",
+      "api_key_shell": "pass show routeway-api-key | head -n 1"
+    },
+    "anthropic": {
+      "api": "anthropic",
+      "api_key_shell": "pass show anthropic-api-key | head -n 1"
+    }
+  },
+  "default_profile": "smart",
+  "profiles": {
+    "smart": {
+      "provider": "openrouter",
+      "model": "openai/gpt-6.1-sol",
+      "reasoning_effort": "medium",
+      "subagent_models": [
+        {"name": "luna", "model": "openai/gpt-6-luna", "use_for": "fast and cheap; search, summaries"},
+        {"name": "terra", "model": "openai/gpt-6.1-terra", "use_for": "solid mid-tier; focused implementation and reviews"}
+      ]
+    },
+    "glm": {"provider": "routeway", "model": "glm-5.3-flash-uncensored"}
+  },
+  "subagent_efforts": ["low", "medium", "high"]
+}
 ```
 
-`aicode -p glm` picks a profile, `/profile glm` and `/model luna` switch at runtime. A plain `~/.config/aicode/<name>.yml` also works as a profile. The API key can also come from `OPENROUTER_API_KEY`, `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`. Project hooks from `.claude/settings.json` run only after you trust the project once.
+Top-level keys are shared settings; a profile can set any of them and replaces that key's whole value. `api: anthropic` uses the native Messages API. The model picks one of `subagent_models` per subagent, and `/model <name>` switches to it. Other keys:
+
+- `cache_ttl`: Anthropic prompt cache TTL (default `1h` interactive, `5m` with `-q`); idle compaction runs 5 minutes before it expires.
+- `compact_at`: compact when context passes this, in tokens (`150000`, `"150k"`) or a share of the window (`"80%"`). `compact_idle_at` is the idle threshold, same syntax.
+- `context_window`: window of the profile's model, for % thresholds (dropped when `/model` switches); known for Claude, GPT-6 and Gemini, else 200k is assumed.
+- `read_only_allow`: extra commands allowed in read-only mode, e.g. `["make lint", "go test"]`.
+- `mcp`: stdio MCP servers, e.g. `{"github": {"command": "github-mcp-server", "args": ["stdio"], "description": "GitHub issues and pull requests"}}`.
+- `builtin_skills`: `false` hides the built-in `aicode-config` skill, which lets the agent read and change these settings.
+
+Every key is described in the JSON Schema [`internal/config/schema.json`](internal/config/schema.json); a `"$schema"` key pointing at it is allowed. Unknown keys are errors. `aicode -check-config` loads the config and every profile without calling any API.
+
+`aicode -p glm` picks a profile, `/profile glm` and `/model luna` switch at runtime. A plain `~/.config/aicode/<name>.json` also works as a profile. The API key can also come from `OPENROUTER_API_KEY`, `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`. Project hooks from `.claude/settings.json` run only after you trust the project once.
+
+Older versions read YAML (`config.yml`). Convert it once with the same keys, e.g. `yq -o json config.yml > config.json`; aicode stops with a hint while only the YAML file exists.
 
 ## Use
 

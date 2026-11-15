@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -29,11 +30,11 @@ func TestParseThreshold(t *testing.T) {
 	}
 }
 
-func TestThresholdYAML(t *testing.T) {
+func TestThresholdJSON(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("AICODE_CONFIG_DIR", dir)
-	path := filepath.Join(dir, "config.yml")
-	cfg := "compact_at: 120000\ncompact_idle_at: 60k\nprofiles:\n  big:\n    model: some-model\n    context_window: 2m\n    compact_at: \"50%\"\n"
+	path := filepath.Join(dir, "config.json")
+	cfg := `{"compact_at": 120000, "compact_idle_at": "60k", "profiles": {"big": {"model": "some-model", "context_window": "2m", "compact_at": "50%"}, "num": {"context_window": 300000}}}`
 	if err := os.WriteFile(path, []byte(cfg), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -51,67 +52,43 @@ func TestThresholdYAML(t *testing.T) {
 	if c.CompactAt != (Threshold{Percent: 50}) || c.ContextWindow != 2000000 || c.CompactTokens() != 1000000 {
 		t.Errorf("profile: %+v window %d tokens %d", c.CompactAt, c.ContextWindow, c.CompactTokens())
 	}
-	if err := os.WriteFile(path, []byte("compact_at: lots\n"), 0o600); err != nil {
+	if c, err := Load(path, "num"); err != nil || c.ContextWindow != 300000 {
+		t.Errorf("numeric context_window: %d %v", c.ContextWindow, err)
+	}
+}
+
+func TestThresholdJSONErrors(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("AICODE_CONFIG_DIR", dir)
+	path := filepath.Join(dir, "config.json")
+	cases := map[string][]string{
+		`{"compact_at": "lots"}`:                                     {"compact_at", "invalid token count"},
+		`{"compact_at": "lots", "model": "m", "context_window": 5}`:  {`key "compact_at"`},
+		`{"profiles": {"p": {"context_window": "x", "model": "m"}}}`: {`profile "p"`, `key "context_window"`},
+		`{"compact_idle_at": "120%"}`:                                {"compact_idle_at", "invalid percentage"},
+		`{"context_window": true}`:                                   {"context_window", "a boolean"},
+		`{"context_window": [1]}`:                                    {"context_window", "an array"},
+		`{"profiles": {"p": {"model": "m", "compact_at": "-5k"}}}`:   {`profile "p"`, "compact_at"},
+	}
+	for in, want := range cases {
+		if err := os.WriteFile(path, []byte(in), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_, err := Load(path, "")
+		if err == nil {
+			t.Errorf("%s accepted", in)
+			continue
+		}
+		for _, w := range append(want, path) {
+			if !strings.Contains(err.Error(), w) {
+				t.Errorf("%s: error %q does not mention %q", in, err, w)
+			}
+		}
+	}
+	if err := os.WriteFile(path, []byte(`{"compact_at": null}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Load(path, ""); err == nil {
-		t.Error("invalid compact_at accepted")
-	}
-}
-
-func TestResolveThresholds(t *testing.T) {
-	defaults := Config{Model: "openai/gpt-6-luna"}
-	defaults.applyDefaults()
-	if defaults.CompactTokens() != 150000 || defaults.CompactIdleTokens() != 100000 {
-		t.Errorf("defaults: %d %d", defaults.CompactTokens(), defaults.CompactIdleTokens())
-	}
-	cases := []struct {
-		name      string
-		cfg       Config
-		at, idle  int
-		guessWarn bool
-	}{
-		{"percent of table window", Config{Model: "claude-opus-5-5", MaxTokens: 32000, CompactAt: Threshold{Percent: 50}, CompactIdleAt: Threshold{Percent: 10}}, 500000, 100000, false},
-		{"old claude is 200k", Config{Model: "anthropic/claude-opus-4.5", MaxTokens: 32000, CompactAt: Threshold{Percent: 50}, CompactIdleAt: Threshold{Tokens: 100000}}, 100000, 100000, false},
-		{"clamped to window minus output", Config{Model: "x", ContextWindow: 128000, MaxTokens: 32000, CompactAt: Threshold{Tokens: 150000}, CompactIdleAt: Threshold{Tokens: 100000}}, 96000, 96000, false},
-		{"no clamp against the guess", Config{Model: "mystery", MaxTokens: 32000, CompactAt: Threshold{Tokens: 500000}, CompactIdleAt: Threshold{Tokens: 100000}}, 500000, 100000, false},
-		{"percent of the guess", Config{Model: "mystery", MaxTokens: 32000, CompactAt: Threshold{Percent: 3}, CompactIdleAt: Threshold{Tokens: 100000}}, 6000, 6000, true},
-	}
-	for _, tc := range cases {
-		if got := tc.cfg.CompactTokens(); got != tc.at {
-			t.Errorf("%s: compact %d, want %d", tc.name, got, tc.at)
-		}
-		if got := tc.cfg.CompactIdleTokens(); got != tc.idle {
-			t.Errorf("%s: idle %d, want %d", tc.name, got, tc.idle)
-		}
-		if got := tc.cfg.WindowGuessed(); got != tc.guessWarn {
-			t.Errorf("%s: guessed %v", tc.name, got)
-		}
-	}
-}
-
-func TestClaudeWindows(t *testing.T) {
-	cases := map[string]int{
-		"claude-opus-5-5": 1000000, "anthropic/claude-sonnet-4.6": 1000000, "claude-opus-4-8": 1000000,
-		"claude-fable-5-2": 1000000, "claude-haiku-5-5": 1000000,
-		"claude-haiku-4-5": 200000, "claude-sonnet-4-5": 200000, "claude-opus-4-1": 200000,
-		"claude-opus-4-20250514": 200000, "anthropic/claude-sonnet-4": 200000, "claude-3-7-sonnet-latest": 200000,
-	}
-	for model, want := range cases {
-		if got, known := (Config{Model: model}).Window(); got != want || !known {
-			t.Errorf("%s: %d %v, want %d", model, got, known, want)
-		}
-	}
-}
-
-func TestSetModelDropsProfileWindow(t *testing.T) {
-	c := Config{Model: "a", ContextWindow: 128000}
-	c.SetModel("a")
-	if c.ContextWindow != 128000 {
-		t.Error("same model must keep context_window")
-	}
-	c.SetModel("claude-opus-5-5")
-	if w, _ := c.Window(); w != 1000000 {
-		t.Errorf("context_window of the previous model applied: %d", w)
+	if c, err := Load(path, ""); err != nil || c.CompactAt != (Threshold{Tokens: 150000}) {
+		t.Errorf("null compact_at should keep the default: %+v %v", c.CompactAt, err)
 	}
 }

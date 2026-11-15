@@ -1,0 +1,238 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "aicode config",
+  "description": "aicode settings: ~/.config/aicode/config.json (or -config path.json), and profile files ~/.config/aicode/<name>.json. A profile has the same keys as the top level; every key it sets replaces the top-level value as a whole (objects and arrays included).",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "description": "Optional URL or path of this schema, for editors. aicode ignores it.",
+      "type": "string"
+    },
+    "model": {
+      "description": "Model id sent to the API, e.g. openai/gpt-6-luna or claude-opus-5-5. Default: claude-sonnet-5-5 for api anthropic, openai/gpt-6-luna for OpenRouter, gpt-6-luna otherwise.",
+      "type": "string"
+    },
+    "api": {
+      "description": "Wire protocol: openai (chat completions; OpenAI, OpenRouter and compatible servers) or anthropic (native Messages API). Usually set by the provider. Default: openai.",
+      "type": "string",
+      "enum": ["openai", "anthropic"]
+    },
+    "provider": {
+      "description": "Name of an entry in providers, or a built-in provider: claude, anthropic (api anthropic) or openai. Selecting a provider sets api, base_url, api_key, api_key_shell and cache_control from it; base_url and the other connection keys set in the same profile win over the provider's.",
+      "type": "string"
+    },
+    "base_url": {
+      "description": "API base URL. Default: https://api.openai.com/v1 or Anthropic's; https://openrouter.ai/api/v1 when only OPENROUTER_API_KEY is set.",
+      "type": "string"
+    },
+    "api_key": {
+      "description": "Literal API key. Prefer api_key_shell so the key stays out of the file. Without either, the key comes from OPENROUTER_API_KEY, OPENAI_API_KEY or ANTHROPIC_API_KEY.",
+      "type": "string"
+    },
+    "api_key_shell": {
+      "description": "Shell command whose first output line is the API key, e.g. \"pass show openrouter-api-key | head -n 1\".",
+      "type": "string"
+    },
+    "reasoning_effort": {
+      "description": "Reasoning effort sent to the model. Omit for the model's default. none turns thinking off where supported; xhigh is not supported by every model; max is Anthropic only.",
+      "type": "string",
+      "enum": ["none", "minimal", "low", "medium", "high", "xhigh", "max"]
+    },
+    "max_tokens": {
+      "description": "Maximum output tokens per response. Default: 32000.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "cache_control": {
+      "description": "Send prompt cache breakpoints on the openai API (needed for Claude and some other models behind OpenAI-compatible APIs). Default: true for OpenRouter, false otherwise. The anthropic API always caches.",
+      "type": "boolean"
+    },
+    "cache_ttl": {
+      "description": "Anthropic prompt cache TTL. Default: 1h interactive, 5m with -q. Idle compaction runs 5 minutes before it expires.",
+      "type": "string",
+      "enum": ["5m", "1h"]
+    },
+    "compact_at": {
+      "$ref": "#/$defs/threshold",
+      "description": "Compact the conversation when the context passes this: tokens (150000, \"150k\", \"1.5m\") or a share of the context window (\"80%\"). Default: 150k."
+    },
+    "compact_idle_at": {
+      "$ref": "#/$defs/threshold",
+      "description": "Compaction threshold used between turns when the prompt cache is about to expire; same syntax as compact_at, capped at compact_at. Default: 100k."
+    },
+    "context_window": {
+      "$ref": "#/$defs/tokens",
+      "description": "Context window of this model, used for % thresholds and the context display. Dropped when /model switches models. Known for Claude, GPT-6 and Gemini; 200k is assumed otherwise."
+    },
+    "max_rounds": {
+      "description": "Stop a turn after this many model requests. 0 means no limit interactively and 200 with -q.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "show_reasoning": {
+      "description": "Print the model's reasoning (dim). Default: true.",
+      "type": "boolean"
+    },
+    "read_only": {
+      "description": "Start in read-only mode (no write or edit, bash limited to an allowlist). shift+tab toggles it. Default: false.",
+      "type": "boolean"
+    },
+    "read_only_allow": {
+      "description": "Extra command prefixes bash may run in read-only mode, e.g. [\"make lint\", \"go test\"].",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "bash_timeout": {
+      "description": "Default bash tool timeout in seconds. Default: 120.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "subagent_models": {
+      "description": "Models the agent can pick for a subagent; /model <name> also switches to one.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/subagent_model" }
+    },
+    "subagent_efforts": {
+      "description": "Reasoning efforts the agent can pick for a subagent. Default: [\"low\", \"medium\", \"high\"].",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["none", "minimal", "low", "medium", "high", "xhigh", "max"]
+      }
+    },
+    "instruction_files": {
+      "description": "Instruction files added to the system prompt. Relative paths are looked up in the git root and the working directory; ~ is expanded. Default: [\"~/.claude/CLAUDE.md\", \"CLAUDE.md\", \"AGENTS.md\", \"CLAUDE.local.md\"].",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "skill_dirs": {
+      "description": "Directories searched for */SKILL.md. Relative paths are looked up in the git root and the working directory. Default: [\"~/.claude/skills\", \".claude/skills\", \"~/.config/aicode/skills\"].",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "hook_files": {
+      "description": "Claude Code settings files whose hooks run. Project files run only after the project is trusted. Default: [\"~/.claude/settings.json\", \".claude/settings.json\", \".claude/settings.local.json\", \"~/.config/aicode/settings.json\"].",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "mcp": {
+      "description": "MCP servers over stdio, by name. They start on first use; the agent finds their tools with tool_search and calls them with mcp_call.",
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/mcp_server" }
+    },
+    "picker": {
+      "description": "Shell command for the / picker: reads tab-separated items on stdin and prints the chosen line. {prompt} is replaced with the quoted prompt. Default: fzf with a 40% height.",
+      "type": "string"
+    },
+    "builtin_skills": {
+      "description": "List aicode's built-in skills (aicode-config, for reading and changing these settings) in the system prompt. Default: true.",
+      "type": "boolean"
+    },
+    "providers": {
+      "description": "Named API endpoints. A profile or the top level selects one with provider.",
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/provider" }
+    },
+    "profiles": {
+      "description": "Named profiles, selected with default_profile, -p name or /profile name. Each takes the same keys as the top level and replaces the top-level value of every key it sets. -p name also accepts a file ~/.config/aicode/<name>.json or a path.",
+      "type": "object",
+      "additionalProperties": { "$ref": "#" }
+    },
+    "default_profile": {
+      "description": "Profile used when -p is not given.",
+      "type": "string"
+    }
+  },
+  "$defs": {
+    "tokens": {
+      "description": "A token count: a number (150000) or a string with an optional k or m suffix (\"150k\", \"1.5m\").",
+      "oneOf": [
+        { "type": "integer", "minimum": 0 },
+        { "type": "string", "pattern": "^\\s*[0-9]+(\\.[0-9]+)?[kKmM]?\\s*$" }
+      ]
+    },
+    "threshold": {
+      "description": "A token count (150000, \"150k\", \"1.5m\") or a share of the context window (\"80%\", 0-100).",
+      "oneOf": [
+        { "type": "integer", "minimum": 0 },
+        { "type": "string", "pattern": "^\\s*([0-9]+(\\.[0-9]+)?[kKmM]?|[0-9]+(\\.[0-9]+)?\\s*%)\\s*$" }
+      ]
+    },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "api": {
+          "description": "openai or anthropic. Default: openai.",
+          "type": "string",
+          "enum": ["openai", "anthropic"]
+        },
+        "base_url": {
+          "description": "API base URL; optional for the official OpenAI and Anthropic APIs.",
+          "type": "string"
+        },
+        "api_key": {
+          "description": "Literal API key; prefer api_key_shell.",
+          "type": "string"
+        },
+        "api_key_shell": {
+          "description": "Shell command whose first output line is the API key.",
+          "type": "string"
+        },
+        "cache_control": {
+          "description": "Send prompt cache breakpoints on the openai API. Default: true for OpenRouter, false otherwise.",
+          "type": "boolean"
+        }
+      }
+    },
+    "subagent_model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "model"],
+      "properties": {
+        "name": {
+          "description": "Short name the agent and /model use.",
+          "type": "string"
+        },
+        "model": {
+          "description": "Model id.",
+          "type": "string"
+        },
+        "provider": {
+          "description": "Provider for this model. Default: the provider of the profile.",
+          "type": "string"
+        },
+        "use_for": {
+          "description": "When the agent should pick this model, shown in the subagent tool description.",
+          "type": "string"
+        }
+      }
+    },
+    "mcp_server": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command"],
+      "properties": {
+        "command": {
+          "description": "Executable started over stdio.",
+          "type": "string"
+        },
+        "args": {
+          "description": "Command arguments.",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "env": {
+          "description": "Extra environment variables for the server.",
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "description": {
+          "description": "What the server is for, shown to the agent so it knows when to search its tools.",
+          "type": "string"
+        }
+      }
+    }
+  }
+}

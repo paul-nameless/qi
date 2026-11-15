@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/paul-nameless/aicode/internal/config"
 )
 
 type pickItem struct {
@@ -123,7 +125,7 @@ func (r *repl) slashPicker() (string, bool) {
 	case "profile":
 		items := r.profileItems()
 		if len(items) == 0 {
-			r.display.Info("no profiles: add a profiles: section to " + r.configFile() + " (see readme)")
+			r.display.Info("no profiles: add a \"profiles\" object to " + r.configFile() + " (see readme)")
 			return "", false
 		}
 		return r.pickArg("profile", items)
@@ -152,7 +154,7 @@ func (r *repl) configFile() string {
 	if r.opts.configPath != "" {
 		return r.opts.configPath
 	}
-	return "~/.config/aicode/config.yml"
+	return config.ShortHome(config.DefaultPath())
 }
 
 func (r *repl) skillItems() []pickItem {

@@ -40,9 +40,9 @@ func main() {
 	var o options
 	flag.StringVar(&o.query, "q", "", "run one prompt without the interactive UI and print the answer")
 	flag.BoolVar(&o.cont, "c", false, "continue the last session in this directory")
-	flag.StringVar(&o.profile, "p", "", "profile from profiles: in the config, or ~/.config/aicode/<name>.yml")
-	flag.StringVar(&o.provider, "provider", "", "provider override (from providers: in the config)")
-	flag.StringVar(&o.configPath, "config", "", "config file (default ~/.config/aicode/config.yml)")
+	flag.StringVar(&o.profile, "p", "", "profile from \"profiles\" in the config, or ~/.config/aicode/<name>.json")
+	flag.StringVar(&o.provider, "provider", "", "provider override (from \"providers\" in the config)")
+	flag.StringVar(&o.configPath, "config", "", "JSON config file (default ~/.config/aicode/config.json)")
 	flag.StringVar(&o.model, "model", "", "model override")
 	flag.StringVar(&o.effort, "effort", "", "reasoning effort override")
 	flag.BoolVar(&o.readOnly, "read-only", false, "start in read-only mode")
@@ -50,6 +50,7 @@ func main() {
 	flag.BoolVar(&o.pickSession, "r", false, "pick a session of this directory to resume")
 	show := flag.String("show", "", "print a session of this directory (id or path) as plain text and exit")
 	showVersion := flag.Bool("version", false, "print version")
+	checkConfig := flag.Bool("check-config", false, "load the config and every profile without calling any API, then exit")
 	flag.Parse()
 	if *showVersion {
 		fmt.Println("aicode", version)
@@ -60,6 +61,14 @@ func main() {
 			fmt.Fprintln(os.Stderr, "aicode:", err)
 			os.Exit(1)
 		}
+		return
+	}
+	if *checkConfig {
+		if err := config.Check(o.configPath, o.profile); err != nil {
+			fmt.Fprintln(os.Stderr, "aicode:", err)
+			os.Exit(1)
+		}
+		fmt.Println("config ok")
 		return
 	}
 	if err := run(o); err != nil {
