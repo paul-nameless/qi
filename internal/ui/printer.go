@@ -68,8 +68,11 @@ func (p *Printer) Color(code, s string) string {
 
 func (p *Printer) size() (int, int) {
 	ws, err := unix.IoctlGetWinsize(int(p.out.Fd()), unix.TIOCGWINSZ)
-	if err != nil || ws.Col == 0 || ws.Row == 0 {
+	if err != nil || ws.Col == 0 {
 		return 80, 24
+	}
+	if ws.Row == 0 {
+		return int(ws.Col), 24
 	}
 	return int(ws.Col), int(ws.Row)
 }
@@ -99,7 +102,7 @@ func (p *Printer) clearSeq() string {
 func (s shownFrame) above(width int) int {
 	n := s.span(s.widths[:s.row], width)
 	if width < s.term && width > 0 {
-		n += s.col / width
+		n += min(s.col/width, s.reflowed(s.widths[s.row], width)-1)
 	}
 	return n
 }

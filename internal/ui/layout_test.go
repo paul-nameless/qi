@@ -130,7 +130,7 @@ func TestMoveVertical(t *testing.T) {
 
 func TestShownFrameAfterReflow(t *testing.T) {
 	s := shownFrame{widths: []int{10, 10, 4}, row: 2, col: 4, term: 10}
-	cases := []struct{ width, above, height int }{{10, 2, 3}, {20, 2, 3}, {5, 4, 5}, {3, 9, 10}, {4, 7, 7}}
+	cases := []struct{ width, above, height int }{{10, 2, 3}, {20, 2, 3}, {5, 4, 5}, {3, 9, 10}, {4, 6, 7}, {2, 11, 12}}
 	for _, c := range cases {
 		if got, h := s.above(c.width), s.height(c.width); got != c.above || h != c.height {
 			t.Errorf("width %d: above %d height %d, want %d %d", c.width, got, h, c.above, c.height)

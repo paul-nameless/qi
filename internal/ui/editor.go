@@ -278,7 +278,6 @@ func (e *Editor) historyBack(st *lineState, histIdx *int, draft *string) {
 	}
 	*histIdx--
 	st.set(e.history[*histIdx])
-	st.hasGoal = false
 }
 
 func (e *Editor) historyForward(st *lineState, histIdx *int, draft *string) {
@@ -291,7 +290,6 @@ func (e *Editor) historyForward(st *lineState, histIdx *int, draft *string) {
 	} else {
 		st.set(e.history[*histIdx])
 	}
-	st.hasGoal = false
 }
 
 func (e *Editor) pasteText(text string) string {
@@ -328,6 +326,7 @@ func (e *Editor) TakeImages(line string) []string {
 func (st *lineState) set(text string) {
 	st.buf = []rune(text)
 	st.pos = len(st.buf)
+	st.hasGoal = false
 }
 
 func (st *lineState) atWordStart() bool {
@@ -341,6 +340,7 @@ func (st *lineState) insert(rs []rune) {
 	buf = append(buf, st.buf[st.pos:]...)
 	st.buf = buf
 	st.pos += len(rs)
+	st.hasGoal = false
 }
 
 func (e *Editor) external(text string) (string, error) {
