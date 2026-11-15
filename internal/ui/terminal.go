@@ -2,6 +2,7 @@ package ui
 
 import (
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -38,6 +39,7 @@ const (
 	KeyHistory
 	keyFocusIn
 	keyFocusOut
+	keyDeviceAttrs
 )
 
 const (
@@ -60,6 +62,7 @@ type Terminal struct {
 	raw      chan []byte
 	closed   atomic.Bool
 	away     atomic.Bool
+	synced   chan struct{}
 	child    atomic.Bool
 	once     sync.Once
 }
@@ -75,7 +78,7 @@ func OpenTerminal() (*Terminal, error) {
 	if err != nil {
 		return nil, err
 	}
-	t := &Terminal{fd: fd, orig: orig, Keys: make(chan Key, 256), raw: make(chan []byte, 64), pauseAck: make(chan struct{}, 1)}
+	t := &Terminal{fd: fd, orig: orig, Keys: make(chan Key, 256), raw: make(chan []byte, 64), pauseAck: make(chan struct{}, 1), synced: make(chan struct{}, 1)}
 	if err := t.applyMode(); err != nil {
 		return nil, err
 	}
@@ -105,13 +108,25 @@ func (t *Terminal) Restore() {
 }
 
 func (t *Terminal) Suspend() {
+	t.sync()
 	t.paused.Store(true)
 	select {
 	case <-t.pauseAck:
 	case <-time.After(200 * time.Millisecond):
 	}
-	os.Stdout.WriteString(modesOff)
 	_ = unix.IoctlSetTermios(t.fd, ioctlSetTermios, t.orig)
+}
+
+func (t *Terminal) sync() {
+	select {
+	case <-t.synced:
+	default:
+	}
+	os.Stdout.WriteString(modesOff + "\x1b[c")
+	select {
+	case <-t.synced:
+	case <-time.After(300 * time.Millisecond):
+	}
 }
 
 func (t *Terminal) Resume() {
@@ -205,7 +220,7 @@ func (t *Terminal) decodeLoop() {
 				inPaste = true
 				continue
 			}
-			if k.Kind == -1 || t.trackFocus(k.Kind) {
+			if k.Kind == -1 || t.reply(k.Kind) {
 				continue
 			}
 			t.Keys <- k
@@ -213,12 +228,17 @@ func (t *Terminal) decodeLoop() {
 	}
 }
 
-func (t *Terminal) trackFocus(k KeyKind) bool {
+func (t *Terminal) reply(k KeyKind) bool {
 	switch k {
 	case keyFocusIn:
 		t.away.Store(false)
 	case keyFocusOut:
 		t.away.Store(true)
+	case keyDeviceAttrs:
+		select {
+		case t.synced <- struct{}{}:
+		default:
+		}
 	default:
 		return false
 	}
@@ -361,6 +381,9 @@ func decodeEscape(b []byte) (Key, int) {
 }
 
 func csiKey(seq string) Key {
+	if strings.HasPrefix(seq, "?") && strings.HasSuffix(seq, "c") {
+		return Key{Kind: keyDeviceAttrs}
+	}
 	switch seq {
 	case "A":
 		return Key{Kind: KeyUp}

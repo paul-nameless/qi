@@ -85,3 +85,20 @@ func TestFocusEvents(t *testing.T) {
 		t.Error("still away after focus-in")
 	}
 }
+
+func TestDeviceAttrsReplySyncs(t *testing.T) {
+	tm := &Terminal{raw: make(chan []byte, 8), Keys: make(chan Key, 64), synced: make(chan struct{}, 1)}
+	go tm.decodeLoop()
+	tm.raw <- []byte("\x1b[O\x1b[?62;22cx")
+	if k := <-tm.Keys; k.Kind != KeyRune || k.Rune != 'x' {
+		t.Errorf("device attributes reply leaked as a key: %+v", k)
+	}
+	select {
+	case <-tm.synced:
+	default:
+		t.Error("device attributes reply did not signal sync")
+	}
+	if !tm.Away() {
+		t.Error("focus-out before the reply was lost")
+	}
+}
