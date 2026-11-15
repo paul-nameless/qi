@@ -239,7 +239,8 @@ func TestProfileSwitchKeepsMCPSetup(t *testing.T) {
 	}
 	a, runner := buildAgent(cfg, o, dir, nopProvider{}, devNullPrinter(t), true, false)
 	manager := mcp.NewManager(cfg.MCP)
-	r := &repl{agent: a, display: devNullPrinter(t), runner: runner, opts: o, mcp: manager}
+	display, out := capturePrinter(t)
+	r := &repl{agent: a, display: display, runner: runner, opts: o, mcp: manager}
 	for _, p := range []string{"more", "none"} {
 		if err := r.switchProfile(p); err != nil {
 			t.Fatal(err)
@@ -247,6 +248,9 @@ func TestProfileSwitchKeepsMCPSetup(t *testing.T) {
 		if !reflect.DeepEqual(runner.MCP, cfg.MCP) || !reflect.DeepEqual(manager.Names(), []string{"notes"}) || r.mcp != manager {
 			t.Errorf("/profile %s changed the MCP setup: runner %+v, manager %v", p, runner.MCP, manager.Names())
 		}
+	}
+	if n := strings.Count(out.String(), "MCP servers unchanged; restart qi to apply the new profile's MCP setup"); n != 2 {
+		t.Errorf("restart note printed %d times:\n%s", n, out.String())
 	}
 	if !strings.Contains(r.noMCP(), "no MCP servers configured") {
 		t.Errorf("profile none: %q", r.noMCP())

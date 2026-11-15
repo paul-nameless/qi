@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"syscall"
@@ -434,7 +435,17 @@ func (r *repl) switchProfile(name string) error {
 	if err != nil {
 		return err
 	}
-	return r.apply(cfg, cfg.Provider)
+	if err := r.apply(cfg, cfg.Provider); err != nil {
+		return err
+	}
+	if r.runner != nil && !sameMCP(cfg.MCP, r.runner.MCP) {
+		r.display.Info("MCP servers unchanged; restart qi to apply the new profile's MCP setup")
+	}
+	return nil
+}
+
+func sameMCP(a, b map[string]config.MCPServer) bool {
+	return len(a) == 0 && len(b) == 0 || reflect.DeepEqual(a, b)
 }
 
 func (r *repl) switchModel(name string) error {
