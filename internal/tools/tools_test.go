@@ -132,12 +132,20 @@ func TestBash(t *testing.T) {
 	var pid int
 	fmt.Sscanf(res.Text, "%d", &pid)
 	time.Sleep(100 * time.Millisecond)
-	if pid == 0 || syscall.Kill(pid, 0) == nil {
+	if pid == 0 || alive(pid) {
 		t.Errorf("background child %d survived the timeout", pid)
 	}
 	if res := runBash(context.Background(), env, json.RawMessage(`{"command":"  "}`), nil); !res.IsError {
 		t.Error("empty command accepted")
 	}
+}
+
+func alive(pid int) bool {
+	if syscall.Kill(pid, 0) != nil {
+		return false
+	}
+	stat, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+	return err != nil || !strings.Contains(string(stat), ") Z ")
 }
 
 func TestReadPath(t *testing.T) {
