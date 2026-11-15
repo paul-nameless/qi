@@ -453,7 +453,7 @@ func TestBannerLine(t *testing.T) {
 	r.opts.version = "dev-x"
 	id := r.agent.Session().ID
 	got := r.bannerLine(id)
-	if !strings.HasPrefix(got, "qi dev · claude-opus-5-5 · yolo · ") || !strings.HasSuffix(got, "/200k ("+strings.Split(strings.Split(got, "(")[1], ")")[0]+") · "+id) || strings.Contains(got, "context") || strings.Contains(got, "~") || strings.Contains(got, "session") {
+	if !strings.HasPrefix(got, "qi dev · claude-opus-5-5 · default · yolo · ") || !strings.HasSuffix(got, "/200k ("+strings.Split(strings.Split(got, "(")[1], ")")[0]+") · "+id) || strings.Contains(got, "context") || strings.Contains(got, "~") || strings.Contains(got, "session") {
 		t.Errorf("banner %q", got)
 	}
 	r2, _ := testRepl(t, config.Config{Model: "unknown-model"}, nopProvider{})

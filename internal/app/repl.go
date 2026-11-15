@@ -170,7 +170,7 @@ func bannerVersion(v string) string {
 }
 
 func (r *repl) bannerLine(sessionID string) string {
-	return r.display.Color(ui.Bold, "qi") + r.display.Color(ui.Dim, fmt.Sprintf(" %s · %s · %s · %s · %s", bannerVersion(r.opts.version), r.agent.Model(), r.modeName(), r.agent.ContextUsage(), sessionID))
+	return r.display.Color(ui.Bold, "qi") + r.display.Color(ui.Dim, fmt.Sprintf(" %s · %s · %s · %s · %s · %s", bannerVersion(r.opts.version), r.agent.Model(), effortName(r.agent.Config().ReasoningEffort), r.modeName(), r.agent.ContextUsage(), sessionID))
 }
 
 func (r *repl) handleSignals() {
