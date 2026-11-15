@@ -39,6 +39,7 @@ type repl struct {
 	turnDone      chan struct{}
 	idle          *time.Timer
 	idleCancel    context.CancelFunc
+	idleDone      chan struct{}
 	idleGen       int
 	lastIntr      time.Time
 	lastCancelled bool
@@ -113,6 +114,7 @@ func (r *repl) run() error {
 		if line == "" {
 			continue
 		}
+		r.stopIdle()
 		images := r.editor.TakeImages(line)
 		text, quit := r.handleInput(line)
 		if quit {
@@ -342,26 +344,29 @@ func (r *repl) armIdle() {
 	}
 	r.idleGen++
 	gen := r.idleGen
-	r.idle = time.AfterFunc(ttl-5*time.Minute, func() {
-		defer ui.CleanupOnPanic()
-		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
-		defer cancel()
-		r.mu.Lock()
-		if gen != r.idleGen {
-			r.mu.Unlock()
-			return
-		}
-		r.idleCancel = cancel
+	r.idle = time.AfterFunc(ttl-5*time.Minute, func() { r.idleCompact(gen) })
+}
+
+func (r *repl) idleCompact(gen int) {
+	defer ui.CleanupOnPanic()
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	defer cancel()
+	done := make(chan struct{})
+	defer close(done)
+	r.mu.Lock()
+	if gen != r.idleGen {
 		r.mu.Unlock()
-		if err := r.agent.TryCompactIdle(ctx); err != nil && ctx.Err() == nil {
-			r.display.Error("idle compaction failed: " + err.Error())
-		}
-	})
+		return
+	}
+	r.idleCancel, r.idleDone = cancel, done
+	r.mu.Unlock()
+	if err := r.agent.TryCompactIdle(ctx); err != nil && ctx.Err() == nil {
+		r.display.Error("idle compaction failed: " + err.Error())
+	}
 }
 
 func (r *repl) stopIdle() {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	r.idleGen++
 	if r.idle != nil {
 		r.idle.Stop()
@@ -369,7 +374,12 @@ func (r *repl) stopIdle() {
 	}
 	if r.idleCancel != nil {
 		r.idleCancel()
-		r.idleCancel = nil
+	}
+	done := r.idleDone
+	r.idleCancel, r.idleDone = nil, nil
+	r.mu.Unlock()
+	if done != nil {
+		<-done
 	}
 }
 
