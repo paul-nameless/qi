@@ -25,11 +25,7 @@ func (a *Agent) ContextReport() string {
 	}
 	window, known := l.cfg.Window()
 	var b strings.Builder
-	head := "context ~" + fmtTokens(total)
-	if known && window > 0 {
-		head += fmt.Sprintf(" of %s (%s)", fmtTokens(window), pct(total, window))
-	}
-	head += " · compacts at " + fmtTokens(l.cfg.CompactTokens())
+	head := "context " + usageOf(total, window, known) + " · compacts at " + fmtTokens(l.cfg.CompactTokens())
 	if n := l.ctxTokens; n > 0 {
 		head += " · last request " + fmtTokens(n)
 	}

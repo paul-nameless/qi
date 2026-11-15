@@ -317,7 +317,7 @@ func TestFmtTokens(t *testing.T) {
 func TestContextUsageBeforeFirstRequest(t *testing.T) {
 	a := New(Options{Config: config.Config{Model: "claude-opus-5-5", ContextWindow: 200000}})
 	a.SetSystem(SystemPrompt{Text: strings.Repeat("x", 40000)})
-	if got, want := a.ContextUsage(), "context ~10.0k of 200k (5.0%)"; got != want {
+	if got, want := a.ContextUsage(), "10.0k/200k (5.0%)"; got != want {
 		t.Errorf("ContextUsage() = %q, want %q", got, want)
 	}
 }
@@ -331,7 +331,7 @@ func TestContextReport(t *testing.T) {
 		{Role: llm.RoleUser, Blocks: []llm.Block{{Type: llm.BlockToolResult, ToolUseID: "1", Text: strings.Repeat("r", 2000)}}},
 	}
 	got := a.ContextReport()
-	for _, want := range []string{"of 200k", "system prompt", "base prompt", "environment", "tools (1)", "messages (3)", "user text", "read results", "500", "free"} {
+	for _, want := range []string{"context 1.8k/200k (0.9%)", "system prompt", "base prompt", "environment", "tools (1)", "messages (3)", "user text", "read results", "500", "free"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("report misses %q:\n%s", want, got)
 		}

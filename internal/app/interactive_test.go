@@ -439,3 +439,17 @@ func TestHeadlessJSONStreamsSessionEntries(t *testing.T) {
 		t.Errorf("stream:\n%s", stdout)
 	}
 }
+
+func TestBannerLine(t *testing.T) {
+	r, _ := testRepl(t, config.Config{Model: "claude-opus-5-5", ContextWindow: 200000}, nopProvider{})
+	r.opts.version = "dev-x"
+	id := r.agent.Session().ID
+	got := r.bannerLine(id)
+	if !strings.HasPrefix(got, "qi dev-x · claude-opus-5-5 · yolo · ") || !strings.HasSuffix(got, "/200k ("+strings.Split(strings.Split(got, "(")[1], ")")[0]+") · "+id) || strings.Contains(got, "context") || strings.Contains(got, "~") || strings.Contains(got, "session") {
+		t.Errorf("banner %q", got)
+	}
+	r2, _ := testRepl(t, config.Config{Model: "unknown-model"}, nopProvider{})
+	if got := r2.bannerLine("ID"); strings.Contains(got, "/") || !strings.HasSuffix(got, " · ID") {
+		t.Errorf("banner with an unknown window %q", got)
+	}
+}

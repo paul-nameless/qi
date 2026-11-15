@@ -336,10 +336,14 @@ func (a *Agent) ContextUsage() string {
 		n = a.EstimateTokens()
 	}
 	window, known := a.Config().Window()
+	return usageOf(n, window, known)
+}
+
+func usageOf(n, window int, known bool) string {
 	if !known || window <= 0 {
-		return "context ~" + fmtTokens(n)
+		return fmtTokens(n)
 	}
-	return fmt.Sprintf("context ~%s of %s (%s)", fmtTokens(n), fmtTokens(window), pct(n, window))
+	return fmt.Sprintf("%s/%s (%s)", fmtTokens(n), fmtTokens(window), pct(n, window))
 }
 
 func (a *Agent) ContextShort() string {

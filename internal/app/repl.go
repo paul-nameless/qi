@@ -150,11 +150,14 @@ func (r *repl) run() error {
 
 func (r *repl) banner() {
 	where := r.agent.Session().ID
-	r.display.Line(r.display.Color(ui.Bold, "qi") + r.display.Color(ui.Dim, fmt.Sprintf(" %s · %s · %s · %s · session %s", r.opts.version, r.agent.Model(), r.modeName(), r.agent.ContextUsage(), where)))
+	r.display.Line(r.bannerLine(where))
 	if n := len(r.agent.Messages()); n > 0 {
 		r.printHistory()
 	}
-	r.display.Info("/help for commands")
+}
+
+func (r *repl) bannerLine(sessionID string) string {
+	return r.display.Color(ui.Bold, "qi") + r.display.Color(ui.Dim, fmt.Sprintf(" %s · %s · %s · %s · %s", r.opts.version, r.agent.Model(), r.modeName(), r.agent.ContextUsage(), sessionID))
 }
 
 func (r *repl) handleSignals() {

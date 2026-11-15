@@ -241,7 +241,7 @@ func (r *repl) reload() {
 	if sys.Text != before {
 		note = "changed; the next request rewrites the prompt cache"
 	}
-	r.display.Info(fmt.Sprintf("reloaded %d skills, %d commands; system prompt %s · %s", len(skills), len(r.commands), note, r.agent.ContextUsage()))
+	r.display.Info(fmt.Sprintf("reloaded %d skills, %d commands; system prompt %s · %s", len(skills), len(r.commands), note, "context "+r.agent.ContextUsage()))
 }
 
 func (r *repl) report(err error) {
