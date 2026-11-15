@@ -162,8 +162,15 @@ func (r *repl) banner() {
 	}
 }
 
+func bannerVersion(v string) string {
+	if strings.HasPrefix(v, "dev-") {
+		return "dev"
+	}
+	return v
+}
+
 func (r *repl) bannerLine(sessionID string) string {
-	return r.display.Color(ui.Bold, "qi") + r.display.Color(ui.Dim, fmt.Sprintf(" %s · %s · %s · %s · %s", r.opts.version, r.agent.Model(), r.modeName(), r.agent.ContextUsage(), sessionID))
+	return r.display.Color(ui.Bold, "qi") + r.display.Color(ui.Dim, fmt.Sprintf(" %s · %s · %s · %s · %s", bannerVersion(r.opts.version), r.agent.Model(), r.modeName(), r.agent.ContextUsage(), sessionID))
 }
 
 func (r *repl) handleSignals() {
