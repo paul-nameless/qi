@@ -28,10 +28,12 @@ type Provider struct {
 }
 
 type MCPServer struct {
-	Command     string            `json:"command"`
-	Args        []string          `json:"args"`
-	Env         map[string]string `json:"env"`
-	Description string            `json:"description"`
+	Command      string            `json:"command"`
+	Args         []string          `json:"args"`
+	Env          map[string]string `json:"env"`
+	Description  string            `json:"description"`
+	Tools        []string          `json:"tools"`
+	ExcludeTools []string          `json:"exclude_tools"`
 }
 
 const DefaultPicker = `fzf --height=40% --reverse --no-multi --bind=ctrl-z:ignore --delimiter='\t' --nth=1 --tabstop=24 --prompt={prompt}`

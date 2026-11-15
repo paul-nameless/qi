@@ -13,6 +13,7 @@ import (
 
 	"github.com/paul-nameless/aicode/internal/agent"
 	"github.com/paul-nameless/aicode/internal/llm"
+	"github.com/paul-nameless/aicode/internal/mcp"
 	"github.com/paul-nameless/aicode/internal/tools"
 )
 
@@ -31,6 +32,7 @@ const helpText = `Commands:
   /profile [name]    show or switch the profile
   /effort [level]    show or switch the reasoning effort (default, none, low, medium, high, xhigh, max)
   /skills            list skills (/<skill-name> [args] runs one)
+  /mcp               start MCP servers and show their status and enabled tools
   /exit              quit`
 
 const keysText = `Keys:
@@ -105,6 +107,8 @@ func (r *repl) handleInput(line string) (string, bool) {
 			}
 		}
 		r.display.Info("effort: " + effortName(r.agent.Cfg.ReasoningEffort))
+	case "mcp":
+		r.showMCP()
 	case "skills":
 		var lines []string
 		for _, s := range r.skills {
@@ -125,6 +129,48 @@ func (r *repl) handleInput(line string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+func (r *repl) showMCP() {
+	if r.mcp == nil {
+		r.display.Info("no MCP servers configured (add \"mcp\" to " + r.configFile() + ")")
+		return
+	}
+	_ = r.cancellable(func(ctx context.Context) error {
+		for _, name := range r.mcp.Names() {
+			if ctx.Err() != nil {
+				break
+			}
+			_ = r.mcp.Start(ctx, name)
+		}
+		return nil
+	})
+	r.display.Info(mcpReport(r.mcp.Status()))
+}
+
+func mcpReport(servers []mcp.Status) string {
+	lines := make([]string, len(servers))
+	for i, s := range servers {
+		lines[i] = mcpLine(s)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func mcpLine(s mcp.Status) string {
+	if s.Err != nil {
+		return fmt.Sprintf("%s: failed: %v", s.Name, s.Err)
+	}
+	if s.State == "not started" {
+		return s.Name + ": not started"
+	}
+	line := fmt.Sprintf("%s: %s · %d tools", s.Name, s.State, len(s.Tools))
+	if len(s.Tools) > 0 {
+		line += ": " + strings.Join(s.Tools, ", ")
+	}
+	if s.Hidden > 0 {
+		line += fmt.Sprintf(" · %d hidden", s.Hidden)
+	}
+	return line
 }
 
 func (r *repl) reload() {

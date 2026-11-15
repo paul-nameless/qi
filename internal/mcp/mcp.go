@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -63,6 +64,7 @@ type client struct {
 	pending map[int64]chan rpcMsg
 	done    chan struct{}
 	tools   []Tool
+	hidden  int
 }
 
 func start(name string, srv config.MCPServer) (*client, error) {
@@ -194,6 +196,30 @@ func (c *client) initialize(ctx context.Context) error {
 	}
 }
 
+func (c *client) filter(srv config.MCPServer) {
+	var kept []Tool
+	for _, t := range c.tools {
+		if srv.ToolEnabled(t.Name) {
+			kept = append(kept, t)
+		} else {
+			c.hidden++
+		}
+	}
+	c.tools = kept
+}
+
+func (c *client) has(tool string) bool {
+	return slices.ContainsFunc(c.tools, func(t Tool) bool { return t.Name == tool })
+}
+
+func (c *client) toolNames() []string {
+	names := make([]string, len(c.tools))
+	for i, t := range c.tools {
+		names[i] = t.Name
+	}
+	return names
+}
+
 func (c *client) close() {
 	c.stdin.Close()
 	select {
@@ -226,8 +252,16 @@ func (m *Manager) Names() []string {
 	return names
 }
 
-func (m *Manager) Description(name string) string {
-	return m.servers[name].Description
+func (m *Manager) Server(name string) config.MCPServer {
+	return m.servers[name]
+}
+
+func (m *Manager) server(name string) (config.MCPServer, error) {
+	srv, ok := m.servers[name]
+	if !ok {
+		return srv, fmt.Errorf("unknown mcp server %q (servers: %s)", name, strings.Join(m.Names(), ", "))
+	}
+	return srv, nil
 }
 
 func (m *Manager) get(ctx context.Context, name string) (*client, error) {
@@ -245,9 +279,9 @@ func (m *Manager) get(ctx context.Context, name string) (*client, error) {
 	if err, ok := m.errs[name]; ok {
 		return nil, err
 	}
-	srv, ok := m.servers[name]
-	if !ok {
-		return nil, fmt.Errorf("unknown mcp server %q", name)
+	srv, err := m.server(name)
+	if err != nil {
+		return nil, err
 	}
 	c, err := start(name, srv)
 	if err == nil {
@@ -264,6 +298,7 @@ func (m *Manager) get(ctx context.Context, name string) (*client, error) {
 		}
 		return nil, err
 	}
+	c.filter(srv)
 	m.clients[name] = c
 	return c, nil
 }
@@ -280,6 +315,17 @@ func (m *Manager) Search(ctx context.Context, query string, limit int) ([]Tool, 
 		all = append(all, c.tools...)
 	}
 	return rank(all, query, limit), errs
+}
+
+func (m *Manager) ServerTools(ctx context.Context, server, query string) ([]Tool, error) {
+	c, err := m.get(ctx, server)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(query) == "" {
+		return slices.Clone(c.tools), nil
+	}
+	return rank(c.tools, query, len(c.tools)), nil
 }
 
 func rank(tools []Tool, query string, limit int) []Tool {
@@ -314,9 +360,19 @@ func rank(tools []Tool, query string, limit int) []Tool {
 }
 
 func (m *Manager) Call(ctx context.Context, server, tool string, args json.RawMessage) (CallResult, error) {
+	srv, err := m.server(server)
+	if err != nil {
+		return CallResult{}, err
+	}
+	if !srv.ToolEnabled(tool) {
+		return CallResult{}, fmt.Errorf("tool %q on server %q is not enabled (see mcp.%s.tools / exclude_tools in the config)", tool, server, server)
+	}
 	c, err := m.get(ctx, server)
 	if err != nil {
 		return CallResult{}, err
+	}
+	if !c.has(tool) {
+		return CallResult{}, fmt.Errorf("unknown tool %q on server %q; use tool_search with server %q to list its tools", tool, server, server)
 	}
 	if len(args) == 0 {
 		args = json.RawMessage("{}")
@@ -330,6 +386,49 @@ func (m *Manager) Call(ctx context.Context, server, tool string, args json.RawMe
 		return CallResult{}, errors.New("mcp: bad tools/call result")
 	}
 	return res, nil
+}
+
+type Status struct {
+	Name   string
+	State  string
+	Err    error
+	Tools  []string
+	Hidden int
+}
+
+func (m *Manager) Start(ctx context.Context, name string) error {
+	_, err := m.get(ctx, name)
+	return err
+}
+
+func (m *Manager) Status() []Status {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []Status
+	for _, name := range m.Names() {
+		out = append(out, m.status(name))
+	}
+	return out
+}
+
+func (m *Manager) status(name string) Status {
+	st := Status{Name: name, State: "not started"}
+	if err, ok := m.errs[name]; ok {
+		st.State, st.Err = "failed", err
+		return st
+	}
+	c, ok := m.clients[name]
+	if !ok {
+		return st
+	}
+	select {
+	case <-c.done:
+		st.State = "exited"
+	default:
+		st.State = "started"
+	}
+	st.Tools, st.Hidden = c.toolNames(), c.hidden
+	return st
 }
 
 func (m *Manager) Close() {

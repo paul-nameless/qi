@@ -1,8 +1,11 @@
 package main
 
 import (
+	"errors"
 	"reflect"
 	"testing"
+
+	"github.com/paul-nameless/aicode/internal/mcp"
 )
 
 func TestExpandArgs(t *testing.T) {
@@ -30,5 +33,21 @@ func TestPathTokens(t *testing.T) {
 	want := []string{"look", "at", "/a b.png", "and", "c d.jpg"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %q", got)
+	}
+}
+
+func TestMCPReport(t *testing.T) {
+	got := mcpReport([]mcp.Status{
+		{Name: "broken", State: "failed", Err: errors.New("start mcp server broken: no such file")},
+		{Name: "github", State: "started", Tools: []string{"get_issue", "list_issues"}, Hidden: 40},
+		{Name: "idle", State: "not started"},
+		{Name: "notes", State: "started"},
+	})
+	want := "broken: failed: start mcp server broken: no such file\n" +
+		"github: started · 2 tools: get_issue, list_issues · 40 hidden\n" +
+		"idle: not started\n" +
+		"notes: started · 0 tools"
+	if got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
 	}
 }

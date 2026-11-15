@@ -11,7 +11,7 @@ Minimal Go coding agent for the terminal (v2 rewrite). Plan: `docs/plans/aicode-
 - `internal/ui` termios, key decoder, line editor, printer with status line, `markdown.go` streaming markdown styling of answers (TTY only; `table.go` aligns tables, `width.go` display width)
 - `internal/session` append-only JSONL sessions; `Load`/`Entries` are read-only (`Open` repairs the file for appending), `List` summarizes a directory's sessions
 - `sessions.go` `/resume`, `-r`, `-show`; `render.go` renders a session as text (plain for `-show`, colored with `ui.Markdown` for the `/history` pager)
-- `internal/mcp` stdio MCP client (lazy start, tool search); exposed as `tool_search`/`mcp_call` in `internal/tools/mcp.go`
+- `internal/mcp` stdio MCP client (lazy start, tool search, per-server `tools`/`exclude_tools` globs from `config/mcp.go` enforced in the Manager: hidden tools never listed or called); exposed as `tool_search`/`mcp_call` in `internal/tools/mcp.go`, `/mcp` in `commands.go`; `mcptest` is the fake server the tests run
 
 ## Commands
 - Build: `go build -o aicode .`

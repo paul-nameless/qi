@@ -15,6 +15,7 @@ import (
 	"github.com/paul-nameless/aicode/internal/agent"
 	"github.com/paul-nameless/aicode/internal/config"
 	"github.com/paul-nameless/aicode/internal/llm"
+	"github.com/paul-nameless/aicode/internal/mcp"
 	"github.com/paul-nameless/aicode/internal/session"
 	"github.com/paul-nameless/aicode/internal/tools"
 	"github.com/paul-nameless/aicode/internal/ui"
@@ -31,6 +32,7 @@ type repl struct {
 	hooks    *agent.Hooks
 	runner   *agent.SubagentRunner
 	opts     options
+	mcp      *mcp.Manager
 
 	mu            sync.Mutex
 	turnCancel    context.CancelFunc

@@ -107,8 +107,9 @@ func run(o options) error {
 	cfg.DefaultCacheTTL(headless)
 	a, runner, toolset := buildAgent(cfg, o, cwd, newProvider(cfg, key), display, headless, isSub)
 	env := a.Env
+	var manager *mcp.Manager
 	if len(cfg.MCP) > 0 {
-		manager := mcp.NewManager(cfg.MCP)
+		manager = mcp.NewManager(cfg.MCP)
 		defer manager.Close()
 		toolset = append(toolset, tools.MCPTools(manager)...)
 	}
@@ -191,7 +192,7 @@ func run(o options) error {
 		}
 		return runHeadless(a, display, hooks, prompt)
 	}
-	r := &repl{agent: a, display: display, skills: skills, commands: agent.LoadCommands(roots), hooks: hooks, runner: runner, opts: o}
+	r := &repl{agent: a, display: display, skills: skills, commands: agent.LoadCommands(roots), hooks: hooks, runner: runner, opts: o, mcp: manager}
 	return r.run()
 }
 

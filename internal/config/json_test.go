@@ -132,6 +132,8 @@ func TestValidateMirrorsSchema(t *testing.T) {
 		`{"subagent_models": [{"name": "n"}]}`:  {"model is required"},
 		`{"subagent_models": [{"name": "n", "model": "m", "provider": "x"}]}`: {`key "subagent_models.0.provider"`, `unknown provider "x"`},
 		`{"mcp": {"gh": {"args": ["stdio"]}}}`:                                {`key "mcp.gh"`, "command is required"},
+		`{"mcp": {"gh": {"command": "gh", "tools": ["list_[a"]}}}`:            {`key "mcp.gh.tools.0"`, `invalid glob pattern "list_[a"`},
+		`{"mcp": {"gh": {"command": "gh", "exclude_tools": ["ok", ""]}}}`:     {`key "mcp.gh.exclude_tools.1"`, "empty pattern"},
 		`{"profiles": {"p": {"api": "nope"}}, "default_profile": "p"}`:        {`profile "p"`, `key "api"`},
 	}
 	for in, parts := range cases {
@@ -139,7 +141,7 @@ func TestValidateMirrorsSchema(t *testing.T) {
 		_, err := Load(path, "")
 		wantErr(t, err, append(parts, path)...)
 	}
-	path := writeConfig(t, dir, "config.json", `{"api": "anthropic", "cache_ttl": "5m", "reasoning_effort": "max", "max_rounds": 0, "subagent_models": [{"name": "n", "model": "m", "provider": "claude"}], "mcp": {"gh": {"command": "gh"}}}`)
+	path := writeConfig(t, dir, "config.json", `{"api": "anthropic", "cache_ttl": "5m", "reasoning_effort": "max", "max_rounds": 0, "subagent_models": [{"name": "n", "model": "m", "provider": "claude"}], "mcp": {"gh": {"command": "gh", "tools": ["get_*", "list_issues"], "exclude_tools": ["*delete*"]}}}`)
 	if _, err := Load(path, ""); err != nil {
 		t.Error(err)
 	}

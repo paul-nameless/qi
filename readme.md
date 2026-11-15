@@ -57,7 +57,7 @@ Top-level keys are shared settings; a profile can set any of them except `profil
 - `compact_at`: compact when context passes this, in tokens (`150000`, `"150k"`) or a share of the window (`"80%"`). `compact_idle_at` is the idle threshold, same syntax.
 - `context_window`: window of the profile's model, for % thresholds (dropped when `/model` switches); known for Claude, GPT-6 and Gemini, else 200k is assumed.
 - `read_only_allow`: extra commands allowed in read-only mode, e.g. `["make lint", "go test"]`.
-- `mcp`: stdio MCP servers, e.g. `{"github": {"command": "github-mcp-server", "args": ["stdio"], "description": "GitHub issues and pull requests"}}`.
+- `mcp`: stdio MCP servers, see [MCP](#mcp).
 - `builtin_skills`: `false` hides the built-in `aicode-config` skill, which lets the agent read and change these settings.
 
 Every key is described in the JSON Schema [`internal/config/schema.json`](internal/config/schema.json); a `"$schema"` key pointing at it is allowed. Unknown keys and values outside the schema are errors. `aicode -check-config` loads the config and every profile (inline and `~/.config/aicode/*.json`) without calling any API. After editing, `/profile <name>` re-reads the file; prompt keys (`skill_dirs`, `instruction_files`, `builtin_skills`) also need `/reload`, and `mcp` and `hook_files` need a restart.
@@ -65,6 +65,24 @@ Every key is described in the JSON Schema [`internal/config/schema.json`](intern
 `aicode -p glm` picks a profile, `/profile glm` and `/model luna` switch at runtime. A plain `~/.config/aicode/<name>.json` also works as a profile. The API key can also come from `OPENROUTER_API_KEY`, `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`. Project hooks from `.claude/settings.json` run only after you trust the project once.
 
 Older versions read YAML (`config.yml`). Convert it once with the same keys, e.g. `yq -o json config.yml > config.json`; aicode stops with a hint while only the YAML file exists.
+
+### MCP
+
+MCP servers start on first use. Their tools never enter the tool list directly: the agent finds them with `tool_search` (by keywords, or `server` to list one server's tools) and calls them with `mcp_call`. `tools` and `exclude_tools` limit what the agent can see and call, with glob patterns on the tool name (`*`, `?`, `[a-z]`):
+
+```json
+"mcp": {
+  "github": {
+    "command": "github-mcp-server",
+    "args": ["stdio"],
+    "description": "GitHub issues and pull requests",
+    "tools": ["get_*", "list_*", "search_*", "create_issue"],
+    "exclude_tools": ["*_secret*"]
+  }
+}
+```
+
+A tool is enabled when `tools` is empty or one of its patterns matches, and no `exclude_tools` pattern matches. Hidden tools never show in `tool_search`, and `mcp_call` refuses them without contacting the server. When `tools` is up to 12 exact names, they are listed in the `tool_search` description so the agent can call them without searching. `/mcp` starts the servers and shows each one's status, enabled tools and the number hidden. Subagents load the same config, so the same filters apply.
 
 ## Use
 
@@ -81,7 +99,7 @@ Compaction summarizes the conversation into a structured handoff (updated on lat
 
 Keys: shift+tab toggles read-only, ctrl+g edits the prompt in `$EDITOR`, ctrl+r searches prompt history, `@` picks files, alt+enter or ctrl+j inserts a newline, ctrl+c or esc cancels a turn. Text typed while the agent works is queued and delivered after the next tool results.
 
-Commands: `/help`, `/keys`, `/config`, `/clear`, `/context`, `/reload`, `/compact [focus]`, `/resume`, `/history`, `/copy`, `/model`, `/profile`, `/effort`, `/skills`, `/exit`, and `/<skill-or-command> [args]`. Typing `/` on an empty line opens a picker (fzf by default; set `picker:` in the config to use another command that reads `name<TAB>description` lines and prints the chosen one).
+Commands: `/help`, `/keys`, `/config`, `/clear`, `/context`, `/reload`, `/compact [focus]`, `/resume`, `/history`, `/copy`, `/model`, `/profile`, `/effort`, `/skills`, `/mcp`, `/exit`, and `/<skill-or-command> [args]`. Typing `/` on an empty line opens a picker (fzf by default; set `picker:` in the config to use another command that reads `name<TAB>description` lines and prints the chosen one).
 
 ## External tools
 

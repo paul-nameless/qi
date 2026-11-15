@@ -14,7 +14,8 @@ import (
 )
 
 type toolSearchArgs struct {
-	Query string `json:"query"`
+	Query  string `json:"query"`
+	Server string `json:"server"`
 }
 
 type mcpCallArgs struct {
@@ -23,40 +24,76 @@ type mcpCallArgs struct {
 	Arguments json.RawMessage `json:"arguments"`
 }
 
-func MCPTools(m *mcp.Manager) []*Tool {
-	var servers strings.Builder
+const maxListedTools = 12
+
+func serverLines(m *mcp.Manager) string {
+	var b strings.Builder
 	for _, n := range m.Names() {
-		fmt.Fprintf(&servers, "\n- %s: %s", n, m.Description(n))
+		srv := m.Server(n)
+		line := srv.Description
+		if names := srv.ExactTools(); len(names) > 0 && len(names) <= maxListedTools {
+			line = strings.TrimSpace(line + " (tools: " + strings.Join(names, ", ") + ")")
+		}
+		fmt.Fprintf(&b, "\n- %s: %s", n, line)
 	}
-	search := &Tool{
+	return b.String()
+}
+
+func toolSearch(m *mcp.Manager) *Tool {
+	return &Tool{
 		Def: llm.ToolDef{
 			Name:        "tool_search",
-			Description: "Find tools on the connected MCP servers by keywords. Returns matching tools with their input schemas; call them with mcp_call. Servers:" + servers.String(),
-			Schema:      json.RawMessage(`{"type":"object","properties":{"query":{"type":"string","description":"Keywords, e.g. 'github pull request comments'"}},"required":["query"]}`),
+			Description: "Find tools on the connected MCP servers by keywords, or list one server's tools with server. Returns matching tools with their input schemas; call them with mcp_call. Servers:" + serverLines(m),
+			Schema:      json.RawMessage(`{"type":"object","properties":{"query":{"type":"string","description":"Keywords, e.g. 'github pull request comments'. Optional when server is set"},"server":{"type":"string","description":"Only this server's tools; without query, lists all of them"}}}`),
 		},
 		Label: func(env *Env, in json.RawMessage) string {
 			a, _ := decode[toolSearchArgs](in)
-			return "tool_search " + OneLine(a.Query, 50)
+			label := strings.TrimSpace("tool_search " + a.Server)
+			if a.Server != "" && a.Query != "" {
+				label += ":"
+			}
+			return strings.TrimSpace(label + " " + OneLine(a.Query, 50))
 		},
 		Run: func(ctx context.Context, env *Env, in json.RawMessage, _ func(string)) Result {
 			a, err := decode[toolSearchArgs](in)
 			if err != nil {
 				return errResult("%v", err)
 			}
-			found, errs := m.Search(ctx, a.Query, 10)
-			var b strings.Builder
-			for _, t := range found {
-				fmt.Fprintf(&b, "server: %s\ntool: %s\ndescription: %s\ninput schema: %s\n\n", t.Server, t.Name, OneLine(t.Description, 400), string(t.InputSchema))
-			}
-			for _, e := range errs {
-				fmt.Fprintf(&b, "error: %v\n", e)
-			}
-			if b.Len() == 0 {
-				return Result{Text: "no matching tools; try other keywords", Summary: "no matches"}
-			}
-			return Result{Text: env.capOutput(b.String()), Summary: fmt.Sprintf("%d tools", len(found))}
+			return runToolSearch(ctx, env, m, a)
 		},
 	}
+}
+
+func runToolSearch(ctx context.Context, env *Env, m *mcp.Manager, a toolSearchArgs) Result {
+	var found []mcp.Tool
+	var errs []error
+	switch {
+	case a.Server != "":
+		tools, err := m.ServerTools(ctx, a.Server, a.Query)
+		if err != nil {
+			return errResult("%v", err)
+		}
+		found = tools
+	case strings.TrimSpace(a.Query) != "":
+		found, errs = m.Search(ctx, a.Query, 10)
+	default:
+		return errResult("give query, server or both")
+	}
+	var b strings.Builder
+	for _, t := range found {
+		fmt.Fprintf(&b, "server: %s\ntool: %s\ndescription: %s\ninput schema: %s\n\n", t.Server, t.Name, OneLine(t.Description, 400), string(t.InputSchema))
+	}
+	for _, e := range errs {
+		fmt.Fprintf(&b, "error: %v\n", e)
+	}
+	if b.Len() == 0 {
+		return Result{Text: "no matching tools; try other keywords", Summary: "no matches"}
+	}
+	return Result{Text: env.capOutput(b.String()), Summary: fmt.Sprintf("%d tools", len(found))}
+}
+
+func MCPTools(m *mcp.Manager) []*Tool {
+	search := toolSearch(m)
 	call := &Tool{
 		Def: llm.ToolDef{
 			Name:        "mcp_call",

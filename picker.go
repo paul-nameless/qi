@@ -109,6 +109,7 @@ var builtinCommands = []pickItem{
 	{"profile", "switch the profile"},
 	{"effort", "switch the reasoning effort"},
 	{"skills", "pick a skill"},
+	{"mcp", "show MCP servers and their enabled tools"},
 	{"exit", "quit"},
 }
 

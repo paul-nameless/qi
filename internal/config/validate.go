@@ -28,9 +28,7 @@ func (c Config) validate() error {
 		checks = append(checks, c.checkSubagentModel(fmt.Sprintf("subagent_models.%d", i), m))
 	}
 	for _, name := range sortedKeys(c.MCP) {
-		if strings.TrimSpace(c.MCP[name].Command) == "" {
-			checks = append(checks, fmt.Errorf("key %q: command is required", "mcp."+name))
-		}
+		checks = append(checks, c.MCP[name].validate("mcp."+name))
 	}
 	for _, err := range checks {
 		if err != nil {

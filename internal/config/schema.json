@@ -263,6 +263,16 @@
         "description": {
           "description": "What the server is for, shown to the agent so it knows when to search its tools.",
           "type": "string"
+        },
+        "tools": {
+          "description": "Tools the agent may find and call, as glob patterns matched against the tool name (path.Match: * any run of characters, ? one character, [a-z] a class). Empty or unset: every tool. Up to 12 exact names (no glob characters) are also listed in the tool_search description.",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "exclude_tools": {
+          "description": "Tools to hide even when tools matches them, as glob patterns like tools. Hidden tools never show in tool_search and mcp_call refuses them.",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
         }
       }
     }
