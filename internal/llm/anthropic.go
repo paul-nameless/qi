@@ -227,6 +227,8 @@ func (a *Anthropic) Stream(ctx context.Context, req Request, onDelta func(Delta)
 	return runStream(resp.Body, &anthropicStream{model: req.Model, onDelta: onDelta})
 }
 
+const maxContentBlocks = 1024
+
 type anthropicStream struct {
 	model   string
 	onDelta func(Delta)
@@ -244,10 +246,15 @@ func (s *anthropicStream) handle(ev sseEvent) error {
 	switch e.Type {
 	case "message_start":
 		s.usage = e.Message.Usage
-	case "content_block_start":
-		s.startBlock(e)
-	case "content_block_delta":
-		s.delta(e)
+	case "content_block_start", "content_block_delta":
+		if e.Index < 0 || e.Index >= maxContentBlocks {
+			return fmt.Errorf("stream event with content block index %d out of range (0-%d)", e.Index, maxContentBlocks-1)
+		}
+		if e.Type == "content_block_start" {
+			s.startBlock(e)
+		} else {
+			s.delta(e)
+		}
 	case "message_delta":
 		s.messageDelta(e)
 	case "message_stop":
