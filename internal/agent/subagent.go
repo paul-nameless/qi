@@ -4,12 +4,10 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 )
@@ -20,37 +18,6 @@ type SubagentRunner struct {
 	Provider   string
 	ReadOnly   func() bool
 	Cwd        string
-	mu         sync.Mutex
-	running    map[int]context.CancelCauseFunc
-	next       int
-}
-
-var ErrModeChanged = errors.New("stopped because read-only mode was switched on")
-
-func (r *SubagentRunner) StopAll() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	for _, cancel := range r.running {
-		cancel(ErrModeChanged)
-	}
-}
-
-func (r *SubagentRunner) Track(ctx context.Context) (context.Context, func()) {
-	ctx, cancel := context.WithCancelCause(ctx)
-	r.mu.Lock()
-	if r.running == nil {
-		r.running = map[int]context.CancelCauseFunc{}
-	}
-	id := r.next
-	r.next++
-	r.running[id] = cancel
-	r.mu.Unlock()
-	return ctx, func() {
-		r.mu.Lock()
-		delete(r.running, id)
-		r.mu.Unlock()
-		cancel(nil)
-	}
 }
 
 func (r *SubagentRunner) args(prompt, model, provider, effort string) []string {
@@ -77,9 +44,7 @@ func (r *SubagentRunner) args(prompt, model, provider, effort string) []string {
 }
 
 func (r *SubagentRunner) Run(parent context.Context, prompt, model, provider, effort string, progress func(string)) (string, error) {
-	ctx, done := r.Track(parent)
-	defer done()
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
+	ctx, cancel := context.WithTimeout(parent, 30*time.Minute)
 	defer cancel()
 	exe, err := os.Executable()
 	if err != nil {
@@ -116,7 +81,7 @@ func (r *SubagentRunner) Run(parent context.Context, prompt, model, provider, ef
 	}
 	if err := cmd.Wait(); err != nil {
 		if ctx.Err() != nil {
-			return "", context.Cause(ctx)
+			return "", ctx.Err()
 		}
 		return "", fmt.Errorf("%v\n%s", err, strings.Join(tail, "\n"))
 	}

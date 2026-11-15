@@ -54,9 +54,6 @@ func (r *repl) toggleMode() {
 	if ro && !tools.HasSandbox() {
 		r.display.Info("no OS sandbox found (install bubblewrap): read-only relies on the command allowlist only")
 	}
-	if ro && r.runner != nil {
-		r.runner.StopAll()
-	}
 }
 
 func (r *repl) modeName() string {
@@ -253,7 +250,7 @@ func (r *repl) turn(prepare func(context.Context) ([]llm.Block, error), draft st
 		r.display.Error(err.Error())
 	}
 	if stats.Requests > 0 {
-		r.display.Info(stats.String(r.agent.ContextTokens()))
+		r.display.Info(stats.String(r.agent.ContextShort()))
 	}
 	return draft
 }

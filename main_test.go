@@ -2,11 +2,9 @@ package main
 
 import (
 	"context"
-	"errors"
 	"os"
 	"testing"
 
-	"github.com/paul-nameless/aicode/internal/agent"
 	"github.com/paul-nameless/aicode/internal/config"
 	"github.com/paul-nameless/aicode/internal/llm"
 	"github.com/paul-nameless/aicode/internal/tools"
@@ -45,18 +43,6 @@ func TestReadOnlyWiring(t *testing.T) {
 	a3, _, _ := buildAgent(config.Config{Model: "m", ReadOnly: true}, options{}, t.TempDir(), nopProvider{}, display, true, false)
 	if !a3.Env.ReadOnly() {
 		t.Error("read_only: true in config not applied")
-	}
-}
-
-func TestToggleModeStopsSubagents(t *testing.T) {
-	display := devNullPrinter(t)
-	a, runner, _ := buildAgent(config.Config{Model: "m"}, options{}, t.TempDir(), nopProvider{}, display, true, false)
-	r := &repl{agent: a, display: display, runner: runner}
-	ctx, done := runner.Track(context.Background())
-	defer done()
-	r.toggleMode()
-	if !a.ReadOnly() || !errors.Is(context.Cause(ctx), agent.ErrModeChanged) {
-		t.Error("switching to read-only did not stop running subagents")
 	}
 }
 
@@ -105,5 +91,15 @@ profiles:
 	}
 	if a.Cfg.Provider != "or" {
 		t.Errorf("CLI -provider came back after /profile: %q", a.Cfg.Provider)
+	}
+}
+
+func TestSubagentModeIsFixedAtLaunch(t *testing.T) {
+	display := devNullPrinter(t)
+	a, runner, _ := buildAgent(config.Config{Model: "m"}, options{}, t.TempDir(), nopProvider{}, display, true, false)
+	r := &repl{agent: a, display: display, runner: runner}
+	r.toggleMode()
+	if !runner.ReadOnly() {
+		t.Error("subagents launched after switching to read-only would not get -read-only")
 	}
 }

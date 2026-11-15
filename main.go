@@ -275,7 +275,7 @@ func runHeadless(a *agent.Agent, display *ui.Printer, hooks *agent.Hooks, prompt
 	}
 	final, stats, err := a.Turn(ctx, blocks)
 	display.EndBlock()
-	display.Info(stats.String(a.ContextTokens()) + " · " + resourceUsage())
+	display.Info(stats.String(a.ContextShort()) + " · " + resourceUsage())
 	if err != nil {
 		return err
 	}

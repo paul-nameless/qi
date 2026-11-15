@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -68,7 +67,7 @@ func TestSelectHookFilesAndRoots(t *testing.T) {
 	}
 }
 
-func TestSubagentArgsAndStopAll(t *testing.T) {
+func TestSubagentArgs(t *testing.T) {
 	ro := true
 	r := &SubagentRunner{Profile: "p", Provider: "openrouter", ReadOnly: func() bool { return ro }}
 	args := strings.Join(r.args("do it", "m", "", "low"), " ")
@@ -78,12 +77,6 @@ func TestSubagentArgsAndStopAll(t *testing.T) {
 	ro = false
 	if strings.Contains(strings.Join(r.args("x", "m", "anth", ""), " "), "-read-only") {
 		t.Error("read-only flag without read-only mode")
-	}
-	ctx, done := r.Track(context.Background())
-	defer done()
-	r.StopAll()
-	if context.Cause(ctx) != ErrModeChanged {
-		t.Errorf("cause %v", context.Cause(ctx))
 	}
 }
 

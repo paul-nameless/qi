@@ -234,8 +234,8 @@ type TurnStats struct {
 	Usage    llm.Usage
 }
 
-func (s TurnStats) String(ctxTokens int) string {
-	return fmt.Sprintf("%d req · in %s%s · out %s · context %s", s.Requests, fmtTokens(s.Usage.Input), cachedPct(s.Usage), fmtTokens(s.Usage.Output), fmtTokens(ctxTokens))
+func (s TurnStats) String(context string) string {
+	return fmt.Sprintf("%d req · in %s%s · out %s · context %s", s.Requests, fmtTokens(s.Usage.Input), cachedPct(s.Usage), fmtTokens(s.Usage.Output), context)
 }
 
 func cachedPct(u llm.Usage) string {
@@ -254,7 +254,15 @@ func (a *Agent) ContextUsage() string {
 	if !known || window <= 0 {
 		return "context ~" + fmtTokens(n)
 	}
-	return fmt.Sprintf("context ~%s of %s (%.1f%%)", fmtTokens(n), fmtTokens(window), float64(n)*100/float64(window))
+	return fmt.Sprintf("context ~%s of %s (%s)", fmtTokens(n), fmtTokens(window), pct(n, window))
+}
+
+func (a *Agent) ContextShort() string {
+	n := a.ContextTokens()
+	if window, known := a.Cfg.Window(); known && window > 0 {
+		return fmt.Sprintf("%s (%s)", fmtTokens(n), pct(n, window))
+	}
+	return fmtTokens(n)
 }
 
 func fmtTokens(n int) string {
