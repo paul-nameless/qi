@@ -282,8 +282,17 @@ func TestSystemPromptStaticPartIsDirectoryFree(t *testing.T) {
 	os.WriteFile(filepath.Join(home, "CLAUDE.md"), []byte("global rules"), 0o600)
 	os.WriteFile(filepath.Join(proj, "CLAUDE.md"), []byte("project rules"), 0o600)
 	skills := []Skill{{Name: "g", Description: "global", Path: filepath.Join(home, "skills/g/SKILL.md")}, {Name: "p", Description: "proj", Path: filepath.Join(proj, ".claude/skills/p/SKILL.md")}}
-	sys, n := BuildSystemPrompt(proj, []string{filepath.Join(home, "CLAUDE.md"), filepath.Join(proj, "CLAUDE.md")}, skills)
-	static, rest := sys[:n], sys[n:]
+	built := BuildSystemPrompt(proj, []string{filepath.Join(home, "CLAUDE.md"), filepath.Join(proj, "CLAUDE.md")}, skills)
+	static, rest := built.Text[:built.Static], built.Text[built.Static:]
+	total := 0
+	var names []string
+	for _, sec := range built.Sections {
+		total += sec.Chars
+		names = append(names, sec.Name)
+	}
+	if total != len(built.Text) || len(names) != 6 || names[0] != "base prompt" || names[2] != "skills (1 global)" || names[3] != "environment" || names[5] != "skills (1 in project)" {
+		t.Errorf("sections %v cover %d of %d chars", names, total, len(built.Text))
+	}
 	if strings.Contains(static, proj) || !strings.Contains(static, "global rules") || !strings.Contains(static, "- g: global") {
 		t.Errorf("static part: %q", static)
 	}
@@ -305,5 +314,28 @@ func TestContextUsageBeforeFirstRequest(t *testing.T) {
 	a := &Agent{System: strings.Repeat("x", 40000), Registry: tools.NewRegistry(), Cfg: config.Config{Model: "claude-opus-5-5", ContextWindow: 200000}}
 	if got, want := a.ContextUsage(), "context ~10.0k of 200k (5.0%)"; got != want {
 		t.Errorf("ContextUsage() = %q, want %q", got, want)
+	}
+}
+
+func TestContextReport(t *testing.T) {
+	a := &Agent{
+		System:   strings.Repeat("s", 4000),
+		Sections: []Section{{"base prompt", 1000}, {"environment", 3000}},
+		Registry: tools.NewRegistry(tools.Read()),
+		Cfg:      config.Config{Model: "claude-opus-5-5", ContextWindow: 200000},
+		Messages: []llm.Message{
+			llm.UserText(strings.Repeat("u", 400)),
+			{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockToolUse, ID: "1", Name: "read", Input: json.RawMessage(`{"file_path":"a"}`)}}},
+			{Role: "user", Blocks: []llm.Block{{Type: llm.BlockToolResult, ToolUseID: "1", Text: strings.Repeat("r", 2000)}}},
+		},
+	}
+	got := a.ContextReport()
+	for _, want := range []string{"of 200k", "system prompt", "base prompt", "environment", "tools (1)", "messages (3)", "user text", "read results", "500", "free"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("report misses %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "assistant text") {
+		t.Errorf("empty rows should be left out:\n%s", got)
 	}
 }

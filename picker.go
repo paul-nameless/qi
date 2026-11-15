@@ -54,6 +54,7 @@ func (r *repl) pick(prompt string, items []pickItem) (string, bool) {
 var builtinCommands = []pickItem{
 	{"help", "show commands and keys"},
 	{"clear", "start a new session"},
+	{"context", "show what takes space in the context"},
 	{"compact", "summarize the conversation to free context"},
 	{"model", "switch the model"},
 	{"profile", "switch the profile"},

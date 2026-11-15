@@ -17,6 +17,7 @@ import (
 const helpText = `Commands:
   /help              this help
   /clear             start a new session
+  /context           show what takes space in the context
   /compact [focus]   summarize the conversation to free context (optional focus for the summary)
   /model [name]      show or switch the model (switching loses the prompt cache)
   /profile [name]    show or switch the profile
@@ -51,6 +52,8 @@ func (r *repl) handleInput(line string) (string, bool) {
 		} else {
 			r.display.Info("new session " + r.agent.Session.ID)
 		}
+	case "context":
+		r.display.Info(r.agent.ContextReport())
 	case "compact":
 		err := r.cancellable(func(ctx context.Context) error { return r.agent.Compact(ctx, args) })
 		if errors.Is(err, context.Canceled) {

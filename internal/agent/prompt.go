@@ -222,17 +222,39 @@ func isGitRepo(cwd string) bool {
 
 const skillsIntro = "\n# Skills\n\nSkills are instruction files for specific tasks. When a task matches a skill, read its SKILL.md with the read tool before starting and follow it.\n\n"
 
-func BuildSystemPrompt(cwd string, instructionFiles []string, skills []Skill) (string, int) {
+type Section struct {
+	Name  string
+	Chars int
+}
+
+type SystemPrompt struct {
+	Text     string
+	Static   int
+	Sections []Section
+}
+
+type promptBuilder struct {
+	b        strings.Builder
+	sections []Section
+}
+
+func (p *promptBuilder) section(name string, write func(b *strings.Builder)) {
+	start := p.b.Len()
+	write(&p.b)
+	p.sections = append(p.sections, Section{name, p.b.Len() - start})
+}
+
+func BuildSystemPrompt(cwd string, instructionFiles []string, skills []Skill) SystemPrompt {
 	roots := ProjectRoots(cwd)
-	var b strings.Builder
-	b.WriteString(basePrompt)
+	var p promptBuilder
+	p.section("base prompt", func(b *strings.Builder) { b.WriteString(basePrompt) })
 	var projectInst []instruction
 	for _, inst := range loadInstructions(instructionFiles) {
 		if inProject(inst.path, roots) {
 			projectInst = append(projectInst, inst)
 			continue
 		}
-		b.WriteString("\n\n" + inst.text)
+		p.section(config.ShortHome(inst.path), func(b *strings.Builder) { b.WriteString("\n\n" + inst.text) })
 	}
 	var global, project []Skill
 	for _, s := range skills {
@@ -245,27 +267,37 @@ func BuildSystemPrompt(cwd string, instructionFiles []string, skills []Skill) (s
 		}
 	}
 	if len(global) > 0 {
-		b.WriteString("\n" + skillsIntro)
-		writeSkills(&b, global)
+		p.section(fmt.Sprintf("skills (%d global)", len(global)), func(b *strings.Builder) {
+			b.WriteString("\n" + skillsIntro)
+			writeSkills(b, global)
+		})
 	}
-	static := b.Len()
+	static := p.b.Len()
 	git := "no"
 	if isGitRepo(cwd) {
 		git = "yes"
 	}
-	fmt.Fprintf(&b, "\n\n<env>\nWorking directory: %s\nPlatform: %s\nDate: %s\nGit repository: %s\n</env>\n", cwd, runtime.GOOS, time.Now().Format("2006-01-02"), git)
+	p.section("environment", func(b *strings.Builder) {
+		fmt.Fprintf(b, "\n\n<env>\nWorking directory: %s\nPlatform: %s\nDate: %s\nGit repository: %s\n</env>\n", cwd, runtime.GOOS, time.Now().Format("2006-01-02"), git)
+	})
 	for _, inst := range projectInst {
-		b.WriteString("\n" + inst.text + "\n")
+		name := inst.path
+		if rel, err := filepath.Rel(cwd, inst.path); err == nil && !strings.HasPrefix(rel, "..") {
+			name = rel
+		}
+		p.section(name, func(b *strings.Builder) { b.WriteString("\n" + inst.text + "\n") })
 	}
-	switch {
-	case len(project) > 0 && len(global) > 0:
-		b.WriteString("\n# More skills in this project\n\n")
-		writeSkills(&b, project)
-	case len(project) > 0:
-		b.WriteString(skillsIntro)
-		writeSkills(&b, project)
+	if len(project) > 0 {
+		p.section(fmt.Sprintf("skills (%d in project)", len(project)), func(b *strings.Builder) {
+			if len(global) > 0 {
+				b.WriteString("\n# More skills in this project\n\n")
+			} else {
+				b.WriteString(skillsIntro)
+			}
+			writeSkills(b, project)
+		})
 	}
-	return b.String(), static
+	return SystemPrompt{Text: p.b.String(), Static: static, Sections: p.sections}
 }
 
 func writeSkills(b *strings.Builder, skills []Skill) {

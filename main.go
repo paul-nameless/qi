@@ -96,7 +96,8 @@ func run(o options) error {
 	a.Registry = tools.NewRegistry(toolset...)
 	roots := agent.ProjectRoots(cwd)
 	skills := agent.LoadSkills(agent.ExpandPaths(roots, cfg.SkillDirs))
-	a.System, a.StaticSystem = agent.BuildSystemPrompt(cwd, agent.ExpandPaths(roots, cfg.InstructionFile), skills)
+	sys := agent.BuildSystemPrompt(cwd, agent.ExpandPaths(roots, cfg.InstructionFile), skills)
+	a.System, a.StaticSystem, a.Sections = sys.Text, sys.Static, sys.Sections
 
 	if o.sessionID != "" && !session.ValidID(o.sessionID) {
 		return fmt.Errorf("invalid session id %q", o.sessionID)

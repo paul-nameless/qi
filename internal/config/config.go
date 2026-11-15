@@ -94,6 +94,13 @@ func ExpandHome(p string) string {
 	return p
 }
 
+func ShortHome(p string) string {
+	if rel, err := filepath.Rel(Home(), p); err == nil && !strings.HasPrefix(rel, "..") {
+		return filepath.Join("~", rel)
+	}
+	return p
+}
+
 func Load(path, profile string) (Config, error) {
 	return Resolve(path, profile, "", "", "")
 }

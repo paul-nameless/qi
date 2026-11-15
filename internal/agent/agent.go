@@ -37,6 +37,7 @@ type Agent struct {
 	Session      *session.Session
 	System       string
 	StaticSystem int
+	Sections     []Section
 	Messages     []llm.Message
 	UI           Display
 	OnStop       StopHook
