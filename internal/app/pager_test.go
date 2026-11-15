@@ -17,7 +17,7 @@ func TestPager(t *testing.T) {
 	t.Setenv("QI_SESSION_DIR", t.TempDir())
 	out := filepath.Join(t.TempDir(), "paged")
 	a := newTestAgent(t, config.Config{Pager: "cat > " + out})
-	s := writeSession(t, a.Cwd, "hello pager")
+	s := writeSession(t, a.Cwd(), "hello pager")
 	cur, ld, err := session.Open(s.Path)
 	if err != nil {
 		t.Fatal(err)
@@ -37,7 +37,7 @@ func TestPager(t *testing.T) {
 	if strings.Contains(string(data), "more lines") {
 		t.Errorf("history cut a tool result: %q", data)
 	}
-	a.Cfg.Pager = "no-such-pager-xyz"
+	editConfig(a, func(c *config.Config) { c.Pager = "no-such-pager-xyz" })
 	if err := r.showHistory(); err == nil || !strings.Contains(err.Error(), "pager is off") {
 		t.Errorf("missing pager: %v", err)
 	}

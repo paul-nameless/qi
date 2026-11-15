@@ -82,14 +82,14 @@ func (r *repl) run() error {
 		r.toggleMode()
 		return r.prompt()
 	}
-	r.editor.IsImage = func(text string) []string { return imagePaths(r.agent.Cwd, text) }
-	if r.toolOn(r.agent.Cfg.Picker) {
+	r.editor.IsImage = func(text string) []string { return imagePaths(r.agent.Cwd(), text) }
+	if r.toolOn(r.agent.Config().Picker) {
 		r.editor.OnSlash = r.slashPicker
 	}
-	if r.toolOn(r.agent.Cfg.HistoryPicker) {
+	if r.toolOn(r.agent.Config().HistoryPicker) {
 		r.editor.OnHistory = r.historyPicker
 	}
-	if r.toolOn(r.agent.Cfg.FilePicker) {
+	if r.toolOn(r.agent.Config().FilePicker) {
 		r.editor.OnAt = r.filePicker
 	}
 	r.handleSignals()
@@ -122,7 +122,7 @@ func (r *repl) run() error {
 		}
 		if text != "" {
 			draft = r.turn(func(ctx context.Context) ([]llm.Block, error) {
-				return submitPrompt(ctx, r.agent, r.hooks, text, images...)
+				return submitPrompt(ctx, r.agent, r.display, r.hooks, text, images...)
 			}, draft)
 		}
 		for q := r.agent.DrainQueue(); len(q) > 0 && !r.lastCancelled; q = r.agent.DrainQueue() {
@@ -136,9 +136,9 @@ func (r *repl) run() error {
 }
 
 func (r *repl) banner() {
-	where := r.agent.Session.ID
+	where := r.agent.Session().ID
 	r.display.Line(r.display.Color(ui.Bold, "qi") + r.display.Color(ui.Dim, fmt.Sprintf(" %s · %s · %s · %s · session %s", r.opts.version, r.agent.Model(), r.modeName(), r.agent.ContextUsage(), where)))
-	if n := len(r.agent.Messages); n > 0 {
+	if n := len(r.agent.Messages()); n > 0 {
 		r.printHistory()
 	}
 	r.display.Info("/help for commands")
@@ -258,13 +258,12 @@ func (r *repl) closeResources() {
 	if r.mcp != nil {
 		r.mcp.Close()
 	}
-	if r.agent.Session != nil {
-		r.agent.Session.Close()
+	if s := r.agent.Session(); s != nil {
+		s.Close()
 	}
 }
 
 func (r *repl) cancellable(fn func(ctx context.Context) error) error {
-	r.stopIdle()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	r.mu.Lock()
@@ -295,7 +294,7 @@ func (r *repl) turn(prepare func(context.Context) ([]llm.Block, error), draft st
 			defer ui.CleanupOnPanic()
 			draftCh <- r.editor.Collect(collectCtx, draft, ui.Steer{
 				OnQueue: func(s string) {
-					blocks, err := submitPrompt(ctx, r.agent, r.hooks, s)
+					blocks, err := submitPrompt(ctx, r.agent, r.display, r.hooks, s)
 					if err != nil {
 						r.display.Error(err.Error())
 						return
@@ -333,7 +332,7 @@ func (r *repl) turn(prepare func(context.Context) ([]llm.Block, error), draft st
 }
 
 func (r *repl) armIdle() {
-	ttl, err := time.ParseDuration(r.agent.Cfg.CacheTTL)
+	ttl, err := time.ParseDuration(r.agent.Config().CacheTTL)
 	if err != nil || ttl <= 5*time.Minute {
 		return
 	}
@@ -397,7 +396,7 @@ func (r *repl) switchProfile(name string) error {
 }
 
 func (r *repl) switchModel(name string) error {
-	cfg, err := r.resolve(r.agent.Cfg.Profile)
+	cfg, err := r.resolve(r.agent.Config().Profile)
 	if err != nil {
 		return err
 	}
@@ -475,16 +474,15 @@ func (r *repl) apply(cfg config.Config, baseProvider string) error {
 		return err
 	}
 	r.agent.Reconfigure(cfg, newProvider(cfg, key))
-	r.agent.Env.Allow, r.agent.Env.BashTimeout = cfg.ReadOnlyAllow, cfg.BashTimeout
 	if r.runner != nil {
 		r.runner.Profile, r.runner.Provider = cfg.Profile, baseProvider
-		r.agent.Registry.Replace(tools.Subagent(cfg.Model, withProvider(cfg.SubagentModels, baseProvider), cfg.SubagentEfforts))
+		r.agent.ReplaceTool(tools.Subagent(cfg.Model, withProvider(cfg.SubagentModels, baseProvider), cfg.SubagentEfforts))
 	}
 	return nil
 }
 
 func (r *repl) modelList() string {
-	cfg := r.agent.Cfg
+	cfg := r.agent.Config()
 	var b strings.Builder
 	fmt.Fprintf(&b, "model: %s", cfg.Model)
 	if cfg.Provider != "" {
@@ -506,7 +504,8 @@ func (r *repl) modelList() string {
 const historyShown = 40
 
 func (r *repl) printHistory() {
-	msgs := r.agent.Messages
+	all := r.agent.Messages()
+	msgs := all
 	if len(msgs) > historyShown {
 		r.display.Info(fmt.Sprintf("… %d earlier messages", len(msgs)-historyShown))
 		msgs = msgs[len(msgs)-historyShown:]
@@ -528,7 +527,7 @@ func (r *repl) printHistory() {
 			}
 		}
 	}
-	r.display.Info(fmt.Sprintf("resumed %d messages", len(r.agent.Messages)))
+	r.display.Info(fmt.Sprintf("resumed %d messages", len(all)))
 }
 
 func firstLines(s string, n int) string {
@@ -550,8 +549,7 @@ func queuedText(blocks []llm.Block) string {
 }
 
 func (r *repl) newSession() error {
-	r.stopIdle()
-	s, err := session.Create(r.agent.Cwd, "", r.agent.Model(), "interactive", false)
+	s, err := session.Create(r.agent.Cwd(), "", r.agent.Model(), "interactive", false)
 	if err != nil {
 		return err
 	}

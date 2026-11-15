@@ -39,5 +39,5 @@ func (r *repl) notifyTurn(final string, err error, took time.Duration) {
 	if r.term == nil || !r.term.Away() {
 		return
 	}
-	notifyAsync(r.agent.Cfg, r.agent.Cwd, turnMessage(final, err, took), r.display)
+	notifyAsync(r.agent.Config(), r.agent.Cwd(), turnMessage(final, err, took), r.display)
 }

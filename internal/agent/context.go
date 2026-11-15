@@ -15,19 +15,22 @@ type usageRow struct {
 }
 
 func (a *Agent) ContextReport() string {
-	rows := []usageRow{a.systemRow(), a.toolsRow(), messagesRow(a.Messages)}
+	a.busy.Lock()
+	defer a.busy.Unlock()
+	l := a.snapshot()
+	rows := []usageRow{systemRow(l.system), a.toolsRow(), messagesRow(a.conv.messages)}
 	total := 0
 	for _, r := range rows {
 		total += r.tokens
 	}
-	window, known := a.Cfg.Window()
+	window, known := l.cfg.Window()
 	var b strings.Builder
 	head := "context ~" + fmtTokens(total)
 	if known && window > 0 {
 		head += fmt.Sprintf(" of %s (%s)", fmtTokens(window), pct(total, window))
 	}
-	head += " · compacts at " + fmtTokens(a.Cfg.CompactTokens())
-	if n := a.ContextTokens(); n > 0 {
+	head += " · compacts at " + fmtTokens(l.cfg.CompactTokens())
+	if n := l.ctxTokens; n > 0 {
 		head += " · last request " + fmtTokens(n)
 	}
 	b.WriteString(head + "\n")
@@ -63,9 +66,9 @@ func pct(n, of int) string {
 	return fmt.Sprintf("%.1f%%", float64(n)*100/float64(of))
 }
 
-func (a *Agent) systemRow() usageRow {
-	r := usageRow{name: "system prompt", tokens: len(a.System) / 4}
-	for _, s := range a.Sections {
+func systemRow(sp SystemPrompt) usageRow {
+	r := usageRow{name: "system prompt", tokens: len(sp.Text) / 4}
+	for _, s := range sp.Sections {
 		r.sub = append(r.sub, usageRow{name: s.Name, tokens: s.Chars / 4})
 	}
 	return r
@@ -73,10 +76,7 @@ func (a *Agent) systemRow() usageRow {
 
 func (a *Agent) toolsRow() usageRow {
 	var r usageRow
-	if a.Registry == nil {
-		return usageRow{name: "tools (0)"}
-	}
-	defs := a.Registry.Defs()
+	defs := a.conv.registry.Defs()
 	for _, d := range defs {
 		n := (len(d.Name) + len(d.Description) + len(d.Schema)) / 4
 		r.tokens += n

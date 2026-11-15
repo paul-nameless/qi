@@ -16,11 +16,11 @@ func TestCopy(t *testing.T) {
 	if err := r.copyAnswer(""); err == nil {
 		t.Error("nothing to copy")
 	}
-	r.agent.Messages = []llm.Message{
+	setMessages(r.agent, []llm.Message{
 		answer("old\n```sh\nold code\n```"),
 		llm.UserText("```\nuser code\n```"),
 		answer("text\n```go\nfunc a() {}\n\n```\nmid\n~~~\nlast ``` inside\n~~~\nend"),
-	}
+	})
 	cases := []struct{ args, want string }{
 		{"", "text\n```go\nfunc a() {}\n\n```\nmid\n~~~\nlast ``` inside\n~~~\nend"},
 		{"code", "last ``` inside"},
@@ -33,7 +33,7 @@ func TestCopy(t *testing.T) {
 			t.Errorf("/copy %s: %q", c.args, data)
 		}
 	}
-	r.agent.Messages = append(r.agent.Messages, answer("no code here"))
+	setMessages(r.agent, append(r.agent.Messages(), answer("no code here")))
 	os.Remove(out)
 	if err := r.copyAnswer("code"); err != nil {
 		t.Fatal(err)
@@ -44,11 +44,11 @@ func TestCopy(t *testing.T) {
 	if err := r.copyAnswer("bogus"); err == nil {
 		t.Error("bad argument accepted")
 	}
-	r.agent.Cfg.CopyCmd = "no-such-tool-xyz"
+	editConfig(r.agent, func(c *config.Config) { c.CopyCmd = "no-such-tool-xyz" })
 	if err := r.copyAnswer(""); err == nil || !strings.Contains(err.Error(), "copy_cmd is off") {
 		t.Errorf("missing tool: %v", err)
 	}
-	r.agent.Cfg.CopyCmd = "echo nope >&2; false"
+	editConfig(r.agent, func(c *config.Config) { c.CopyCmd = "echo nope >&2; false" })
 	if err := r.copyAnswer(""); err == nil || err.Error() != "copy_cmd: nope" {
 		t.Errorf("failing tool: %v", err)
 	}

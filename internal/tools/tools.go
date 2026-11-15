@@ -33,13 +33,15 @@ func errResult(format string, a ...any) Result {
 type Hook func(ctx context.Context, call llm.Block) (block bool, reason string, input json.RawMessage)
 type PostHook func(ctx context.Context, call llm.Block, res Result) string
 
+type SubagentFunc func(ctx context.Context, prompt, model, provider, effort string, progress func(string)) (string, error)
+
 type Env struct {
 	Cwd         string
 	ReadOnly    func() bool
 	Allow       []string
 	BashTimeout int
 	SpillDir    string
-	Subagent    func(ctx context.Context, prompt, model, provider, effort string, progress func(string)) (string, error)
+	Subagent    SubagentFunc
 	PreHook     Hook
 	PostHook    PostHook
 	files       fileTimes

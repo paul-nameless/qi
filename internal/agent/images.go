@@ -39,17 +39,17 @@ func imageLoad(msgs []llm.Message) (count, size int) {
 }
 
 func (a *Agent) evictImages() {
-	count, size := imageLoad(a.Messages)
+	count, size := imageLoad(a.conv.messages)
 	if count <= maxImages && size <= maxImageData {
 		return
 	}
 	removed, first := 0, -1
-	for i := 0; i < len(a.Messages)-1 && (count > keepImages || size > keepImageData); i++ {
-		m, n, s := dropImages(a.Messages[i], count-keepImages, size-keepImageData)
+	for i := 0; i < len(a.conv.messages)-1 && (count > keepImages || size > keepImageData); i++ {
+		m, n, s := dropImages(a.conv.messages[i], count-keepImages, size-keepImageData)
 		if n == 0 {
 			continue
 		}
-		a.Messages[i] = m
+		a.conv.messages[i] = m
 		count, size, removed = count-n, size-s, removed+n
 		if first < 0 {
 			first = i
@@ -58,13 +58,13 @@ func (a *Agent) evictImages() {
 	if first < 0 {
 		return
 	}
-	for i := first + 1; i < len(a.Messages); i++ {
-		if a.Messages[i].Role == "assistant" {
-			a.Messages[i] = withoutReasoning(a.Messages[i])
+	for i := first + 1; i < len(a.conv.messages); i++ {
+		if a.conv.messages[i].Role == "assistant" {
+			a.conv.messages[i] = withoutReasoning(a.conv.messages[i])
 		}
 	}
-	a.SetContextTokens(a.EstimateTokens())
-	a.UI.Info(fmt.Sprintf("removed the %d oldest images from the context (over %d images or %d MB)", removed, maxImages, maxImageData>>20))
+	a.SetContextTokens(a.estimateTokens())
+	a.ui.Info(fmt.Sprintf("removed the %d oldest images from the context (over %d images or %d MB)", removed, maxImages, maxImageData>>20))
 }
 
 func dropImages(m llm.Message, wantCount, wantSize int) (llm.Message, int, int) {

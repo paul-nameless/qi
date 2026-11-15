@@ -126,20 +126,20 @@ func mustExecutable(t *testing.T) string {
 
 func TestFilePicker(t *testing.T) {
 	r := &repl{agent: newTestAgent(t, config.Config{}), display: devNullPrinter(t)}
-	cwd := r.agent.Cwd
+	cwd := r.agent.Cwd()
 	cases := []struct{ command, want string }{
 		{"printf '%s\\n' 'a b.txt' " + shellQuote(cwd+"/sub/x.go") + " /etc/hosts \"it's\"", `'a b.txt' sub/x.go /etc/hosts "it's" `},
 		{"printf 'z.go\\n' > {file}", "z.go "},
 		{"printf 'main.go\\tdesc\\n' | {picker}", "main.go "},
 	}
 	for _, c := range cases {
-		r.agent.Cfg.FilePicker = c.command
+		editConfig(r.agent, func(cfg *config.Config) { cfg.FilePicker = c.command })
 		got, ok := r.filePicker()
 		if !ok || got != c.want {
 			t.Errorf("%s: got %q, %v; want %q", c.command, got, ok, c.want)
 		}
 	}
-	r.agent.Cfg.FilePicker = "false"
+	editConfig(r.agent, func(c *config.Config) { c.FilePicker = "false" })
 	if _, ok := r.filePicker(); ok {
 		t.Error("failing picker should cancel")
 	}
@@ -156,11 +156,11 @@ func TestHistoryPicker(t *testing.T) {
 	if strings.Join(names, "|") != "old|new|two⏎lines x" {
 		t.Errorf("items %q", names)
 	}
-	r.agent.Cfg.HistoryPicker = "grep lines"
+	editConfig(r.agent, func(c *config.Config) { c.HistoryPicker = "grep lines" })
 	if got, ok := r.historyPicker(entries); !ok || got != "two\nlines\tx" {
 		t.Errorf("got %q, %v", got, ok)
 	}
-	r.agent.Cfg.HistoryPicker = "{picker} | head -1"
+	editConfig(r.agent, func(c *config.Config) { c.HistoryPicker = "{picker} | head -1" })
 	if got, _ := r.historyPicker(entries); got != "old" {
 		t.Errorf("newest first: got %q", got)
 	}
@@ -213,8 +213,7 @@ func TestListFiles(t *testing.T) {
 	if got := strings.Join(listFiles(repo, 10), " "); got != ".gitignore top.txt deep/x/y.go ignored/i.txt" {
 		t.Errorf("git files first, then the rest: %q", got)
 	}
-	r := &repl{agent: newTestAgent(t, config.Config{FilePicker: "{picker} | tail -1"}), display: devNullPrinter(t)}
-	r.agent.Cwd = repo
+	r := &repl{agent: newTestAgentWith(t, config.Config{FilePicker: "{picker} | tail -1"}, repo, nopProvider{}, devNullPrinter(t)), display: devNullPrinter(t)}
 	if got, ok := r.filePicker(); !ok || got != "ignored/i.txt " {
 		t.Errorf("file picker gets the list on stdin: %q %v", got, ok)
 	}

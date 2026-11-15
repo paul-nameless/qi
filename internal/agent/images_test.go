@@ -26,29 +26,29 @@ func imageRound(i int) []llm.Message {
 func TestEvictImagesDropsOldestPastTheLimit(t *testing.T) {
 	a := newAgent(t, &fakeProvider{})
 	for i := 0; i < maxImages; i++ {
-		a.Messages = append(a.Messages, imageRound(i)...)
+		a.conv.messages = append(a.conv.messages, imageRound(i)...)
 	}
 	a.evictImages()
-	if n, _ := imageLoad(a.Messages); n != maxImages {
+	if n, _ := imageLoad(a.conv.messages); n != maxImages {
 		t.Fatalf("at the limit nothing should change, have %d images", n)
 	}
-	a.Messages = append(a.Messages, imageRound(maxImages)...)
+	a.conv.messages = append(a.conv.messages, imageRound(maxImages)...)
 	a.evictImages()
-	if n, _ := imageLoad(a.Messages); n != keepImages {
+	if n, _ := imageLoad(a.conv.messages); n != keepImages {
 		t.Fatalf("have %d images after eviction, want %d", n, keepImages)
 	}
-	first := a.Messages[1].Blocks[0]
+	first := a.conv.messages[1].Blocks[0]
 	if len(first.Images) != 0 || !strings.Contains(first.Text, "[image shot0.png removed") {
 		t.Errorf("oldest result: %q", first.Text)
 	}
-	if len(a.Messages[0].Blocks) != 2 {
+	if len(a.conv.messages[0].Blocks) != 2 {
 		t.Error("reasoning before the first change must stay")
 	}
-	last := a.Messages[len(a.Messages)-2]
+	last := a.conv.messages[len(a.conv.messages)-2]
 	if last.Blocks[0].Type == llm.BlockReasoning {
 		t.Error("reasoning after the first change must be dropped")
 	}
-	kept := a.Messages[len(a.Messages)-1].Blocks[0]
+	kept := a.conv.messages[len(a.conv.messages)-1].Blocks[0]
 	if len(kept.Images) != 1 {
 		t.Error("newest image must stay")
 	}
@@ -97,12 +97,12 @@ func TestEvictImagesKeepsTheNewestMessage(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		imgs = append(imgs, llm.Block{Type: llm.BlockImage, Data: big, Source: fmt.Sprintf("b%d.webp", i)})
 	}
-	a.Messages = []llm.Message{
+	a.conv.messages = []llm.Message{
 		{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockToolUse, ID: "x", Name: "read", Input: json.RawMessage(`{}`)}}},
 		{Role: "user", Blocks: []llm.Block{{Type: llm.BlockToolResult, ToolUseID: "x", Text: "images", Images: imgs}}},
 	}
 	a.evictImages()
-	if n, _ := imageLoad(a.Messages); n != 5 {
+	if n, _ := imageLoad(a.conv.messages); n != 5 {
 		t.Errorf("images of the newest message were evicted: %d left", n)
 	}
 }
@@ -112,10 +112,10 @@ func TestEvictImagesBySize(t *testing.T) {
 	for i := 0; i < 30; i++ {
 		r := imageRound(i)
 		r[1].Blocks[0].Images[0].Data = strings.Repeat("A", 1<<20)
-		a.Messages = append(a.Messages, r...)
+		a.conv.messages = append(a.conv.messages, r...)
 	}
 	a.evictImages()
-	n, size := imageLoad(a.Messages)
+	n, size := imageLoad(a.conv.messages)
 	if size > keepImageData || n != keepImageData>>20 {
 		t.Errorf("after size eviction: %d images, %d bytes", n, size)
 	}
@@ -125,9 +125,9 @@ func TestCompactionEvictsImagesFirst(t *testing.T) {
 	p := &fakeProvider{replies: []llm.Message{{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: "summary"}}}}}
 	a := newAgent(t, p)
 	for i := 0; i < 130; i++ {
-		a.Messages = append(a.Messages, imageRound(i)...)
+		a.conv.messages = append(a.conv.messages, imageRound(i)...)
 	}
-	a.Messages = append(a.Messages, llm.Message{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: "ok"}}})
+	a.conv.messages = append(a.conv.messages, llm.Message{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: "ok"}}})
 	if err := a.Compact(context.Background(), ""); err != nil {
 		t.Fatal(err)
 	}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -28,31 +29,58 @@ type Display interface {
 
 type StopHook func(ctx context.Context, lastText string, active bool) (cont bool, reason string)
 
-type Agent struct {
-	Cfg          config.Config
-	Cwd          string
-	Provider     llm.Provider
-	Registry     *tools.Registry
-	Env          *tools.Env
-	Session      *session.Session
-	System       string
-	StaticSystem int
-	Sections     []Section
-	Messages     []llm.Message
-	UI           Display
-	OnStop       StopHook
-	Headless     bool
+type Options struct {
+	Config   config.Config
+	Cwd      string
+	Provider llm.Provider
+	UI       Display
+	Headless bool
+	ReadOnly bool
+	Tools    []*tools.Tool
+	Subagent tools.SubagentFunc
+	SpillDir string
+}
 
-	readOnly  atomic.Bool
-	announced bool
-	mu        sync.Mutex
+type Agent struct {
+	cwd      string
+	ui       Display
+	headless bool
+	env      *tools.Env
+	readOnly atomic.Bool
+
+	mu   sync.Mutex
+	live live
+
+	busy sync.Mutex
+	conv conversation
+}
+
+type live struct {
+	cfg       config.Config
+	provider  llm.Provider
+	session   *session.Session
+	system    SystemPrompt
 	steer     []llm.Block
 	ctxTokens int
-	busy      sync.Mutex
+}
 
+type conversation struct {
+	messages     []llm.Message
+	registry     *tools.Registry
+	onStop       StopHook
+	announced    bool
 	paused       bool
 	thrashAt     int
 	windowWarned bool
+}
+
+func New(o Options) *Agent {
+	a := &Agent{cwd: o.Cwd, ui: o.UI, headless: o.Headless}
+	a.readOnly.Store(o.ReadOnly)
+	a.env = &tools.Env{Cwd: o.Cwd, ReadOnly: a.ReadOnly, Allow: o.Config.ReadOnlyAllow, BashTimeout: o.Config.BashTimeout, SpillDir: o.SpillDir, Subagent: o.Subagent}
+	a.live = live{cfg: o.Config, provider: o.Provider}
+	a.conv.registry = tools.NewRegistry(o.Tools...)
+	return a
 }
 
 const (
@@ -66,38 +94,61 @@ func (a *Agent) SetReadOnly(v bool) {
 	a.readOnly.Store(v)
 }
 
+func (a *Agent) Cwd() string { return a.cwd }
+
+func (a *Agent) snapshot() live {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.live
+}
+
+func (a *Agent) Config() config.Config { return a.snapshot().cfg }
+
+func (a *Agent) Model() string { return a.snapshot().cfg.Model }
+
+func (a *Agent) Session() *session.Session { return a.snapshot().session }
+
+func (a *Agent) System() string { return a.snapshot().system.Text }
+
+func (a *Agent) Messages() []llm.Message {
+	a.busy.Lock()
+	defer a.busy.Unlock()
+	return slices.Clone(a.conv.messages)
+}
+
+func (a *Agent) setSession(s *session.Session) {
+	a.mu.Lock()
+	old := a.live.session
+	a.live.session = s
+	a.mu.Unlock()
+	if old != nil && old != s {
+		old.Close()
+	}
+}
+
+func (a *Agent) resetConversation(msgs []llm.Message) {
+	a.conv.messages = msgs
+	a.env.ForgetFiles()
+	a.conv.announced = false
+	a.conv.paused, a.conv.thrashAt = false, 0
+}
+
 func (a *Agent) Reset(s *session.Session) {
 	a.busy.Lock()
 	defer a.busy.Unlock()
-	if a.Session != nil {
-		a.Session.Close()
-	}
-	a.Session = s
-	a.Messages = nil
-	if a.Env != nil {
-		a.Env.ForgetFiles()
-	}
-	a.announced = false
-	a.paused, a.thrashAt = false, 0
+	a.setSession(s)
+	a.resetConversation(nil)
 	a.SetContextTokens(0)
 }
 
 func (a *Agent) Load(s *session.Session, ld session.Loaded) {
 	a.busy.Lock()
 	defer a.busy.Unlock()
-	if a.Session != nil && a.Session != s {
-		a.Session.Close()
-	}
-	a.Session = s
-	a.Messages = ld.Messages
-	if a.Env != nil {
-		a.Env.ForgetFiles()
-	}
-	a.announced = false
-	a.paused, a.thrashAt = false, 0
-	a.RestoreMode()
+	a.setSession(s)
+	a.resetConversation(ld.Messages)
+	a.restoreMode()
 	if ld.CtxTokens == 0 {
-		ld.CtxTokens = a.EstimateTokens()
+		ld.CtxTokens = a.estimateTokens()
 	}
 	a.SetContextTokens(ld.CtxTokens)
 }
@@ -107,16 +158,32 @@ func (a *Agent) Reconfigure(cfg config.Config, p llm.Provider) {
 	defer a.busy.Unlock()
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.Cfg = cfg
-	a.Provider = p
-	a.windowWarned = false
-	a.paused, a.thrashAt = false, 0
+	a.live.cfg = cfg
+	a.live.provider = p
+	a.env.Allow, a.env.BashTimeout = cfg.ReadOnlyAllow, cfg.BashTimeout
+	a.conv.windowWarned = false
+	a.conv.paused, a.conv.thrashAt = false, 0
+}
+
+func (a *Agent) ReplaceTool(t *tools.Tool) {
+	a.busy.Lock()
+	defer a.busy.Unlock()
+	a.conv.registry.Replace(t)
+}
+
+func (a *Agent) SetHooks(pre tools.Hook, post tools.PostHook, stop StopHook) {
+	a.busy.Lock()
+	defer a.busy.Unlock()
+	a.env.PreHook, a.env.PostHook = pre, post
+	a.conv.onStop = stop
 }
 
 func (a *Agent) SetSystem(sp SystemPrompt) {
 	a.busy.Lock()
 	defer a.busy.Unlock()
-	a.System, a.StaticSystem, a.Sections = sp.Text, sp.Static, sp.Sections
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.live.system = sp
 }
 
 func (a *Agent) SetEffort(effort string) {
@@ -124,38 +191,32 @@ func (a *Agent) SetEffort(effort string) {
 	defer a.busy.Unlock()
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.Cfg.ReasoningEffort = effort
-}
-
-func (a *Agent) Model() string {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.Cfg.Model
+	a.live.cfg.ReasoningEffort = effort
 }
 
 func (a *Agent) ContextTokens() int {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return a.ctxTokens
+	return a.live.ctxTokens
 }
 
 func (a *Agent) SetContextTokens(n int) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.ctxTokens = n
+	a.live.ctxTokens = n
 }
 
 func (a *Agent) Queue(blocks []llm.Block) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.steer = append(a.steer, blocks...)
+	a.live.steer = append(a.live.steer, blocks...)
 }
 
 func (a *Agent) DrainQueue() []llm.Block {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	q := a.steer
-	a.steer = nil
+	q := a.live.steer
+	a.live.steer = nil
 	return q
 }
 
@@ -173,42 +234,39 @@ func lastModeNote(msgs []llm.Message) (readOnly, found bool) {
 	return false, false
 }
 
-func (a *Agent) RestoreMode() {
-	if ro, ok := lastModeNote(a.Messages); ok {
-		a.announced = ro
+func (a *Agent) restoreMode() {
+	if ro, ok := lastModeNote(a.conv.messages); ok {
+		a.conv.announced = ro
 	}
 }
 
 func (a *Agent) restoreModeAfter(hadNote bool) {
-	ro, ok := lastModeNote(a.Messages)
+	ro, ok := lastModeNote(a.conv.messages)
 	switch {
 	case ok:
-		a.announced = ro
+		a.conv.announced = ro
 	case hadNote:
-		a.announced = !a.ReadOnly()
+		a.conv.announced = !a.ReadOnly()
 	default:
-		a.announced = false
+		a.conv.announced = false
 	}
 }
 
 func (a *Agent) changesBlock() (llm.Block, bool) {
-	if a.Env == nil {
-		return llm.Block{}, false
-	}
-	text, paths := a.Env.FileChanges()
+	text, paths := a.env.FileChanges()
 	if text == "" {
 		return llm.Block{}, false
 	}
-	a.UI.Info("changed on disk, sent to the model: " + strings.Join(paths, ", "))
+	a.ui.Info("changed on disk, sent to the model: " + strings.Join(paths, ", "))
 	return llm.Block{Type: llm.BlockText, Text: text}, true
 }
 
 func (a *Agent) modeBlock() (llm.Block, bool) {
 	ro := a.ReadOnly()
-	if ro == a.announced {
+	if ro == a.conv.announced {
 		return llm.Block{}, false
 	}
-	a.announced = ro
+	a.conv.announced = ro
 	if ro {
 		return llm.Block{Type: llm.BlockText, Text: readOnlyNote}, true
 	}
@@ -216,41 +274,42 @@ func (a *Agent) modeBlock() (llm.Block, bool) {
 }
 
 func (a *Agent) appendMsg(m llm.Message, u *llm.Usage) {
-	a.Messages = append(a.Messages, m)
-	if a.Session != nil {
-		if err := a.Session.Message(m, a.Model(), u); err != nil {
-			a.UI.Error("session: " + err.Error())
+	a.conv.messages = append(a.conv.messages, m)
+	l := a.snapshot()
+	if l.session != nil {
+		if err := l.session.Message(m, l.cfg.Model, u); err != nil {
+			a.ui.Error("session: " + err.Error())
 		}
 	}
 }
 
-func (a *Agent) request(msgs []llm.Message) llm.Request {
+func (a *Agent) request(l live, msgs []llm.Message) llm.Request {
 	sid := ""
-	if a.Session != nil {
-		sid = a.Session.ID
+	if l.session != nil {
+		sid = l.session.ID
 	}
 	return llm.Request{
-		Model:           a.Model(),
-		System:          a.System,
-		StaticSystem:    a.StaticSystem,
+		Model:           l.cfg.Model,
+		System:          l.system.Text,
+		StaticSystem:    l.system.Static,
 		Messages:        msgs,
-		Tools:           a.Registry.Defs(),
-		MaxTokens:       a.Cfg.MaxTokens,
-		ReasoningEffort: a.Cfg.ReasoningEffort,
+		Tools:           a.conv.registry.Defs(),
+		MaxTokens:       l.cfg.MaxTokens,
+		ReasoningEffort: l.cfg.ReasoningEffort,
 		SessionID:       sid,
-		CacheTTL:        a.Cfg.CacheTTL,
+		CacheTTL:        l.cfg.CacheTTL,
 	}
 }
 
-func (a *Agent) onDelta(d llm.Delta) {
+func (a *Agent) onDelta(d llm.Delta, showReasoning bool) {
 	switch d.Kind {
 	case llm.DeltaText:
-		if !a.Headless {
-			a.UI.Text(d.Text)
+		if !a.headless {
+			a.ui.Text(d.Text)
 		}
 	case llm.DeltaReasoning:
-		if a.Cfg.ShowReasoningOn() {
-			a.UI.Reasoning(d.Text)
+		if showReasoning {
+			a.ui.Reasoning(d.Text)
 		}
 	}
 }
@@ -276,7 +335,7 @@ func (a *Agent) ContextUsage() string {
 	if n == 0 {
 		n = a.EstimateTokens()
 	}
-	window, known := a.Cfg.Window()
+	window, known := a.Config().Window()
 	if !known || window <= 0 {
 		return "context ~" + fmtTokens(n)
 	}
@@ -285,7 +344,7 @@ func (a *Agent) ContextUsage() string {
 
 func (a *Agent) ContextShort() string {
 	n := a.ContextTokens()
-	if window, known := a.Cfg.Window(); known && window > 0 {
+	if window, known := a.Config().Window(); known && window > 0 {
 		return fmt.Sprintf("%s (%s)", fmtTokens(n), pct(n, window))
 	}
 	return fmtTokens(n)
@@ -312,7 +371,7 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 	if a.needsCompaction() {
 		if err := a.compact(ctx, compactOpts{auto: true}); err != nil {
 			compactFailed = true
-			a.UI.Error("compaction failed: " + err.Error())
+			a.ui.Error("compaction failed: " + err.Error())
 		}
 	}
 	if cb, ok := a.changesBlock(); ok {
@@ -322,29 +381,30 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 		blocks = append(blocks, mb)
 	}
 	a.appendMsg(llm.Message{Role: "user", Blocks: blocks}, nil)
+	maxRounds := a.Config().MaxRounds
 	stopActive := false
 	overflowRetried := false
 	for round := 0; ; round++ {
-		if a.Cfg.MaxRounds > 0 && round >= a.Cfg.MaxRounds {
-			return "", stats, fmt.Errorf("stopped after %d model requests (max_rounds)", a.Cfg.MaxRounds)
+		if maxRounds > 0 && round >= maxRounds {
+			return "", stats, fmt.Errorf("stopped after %d model requests (max_rounds)", maxRounds)
 		}
 		if !compactFailed && a.needsCompaction() {
 			if err := a.compact(ctx, compactOpts{auto: true, midTurn: true}); err != nil {
 				compactFailed = true
-				a.UI.Error("compaction failed: " + err.Error())
+				a.ui.Error("compaction failed: " + err.Error())
 			}
 		}
 		a.evictImages()
 		msg, usage, err := a.stream(ctx)
-		a.UI.EndBlock()
+		a.ui.EndBlock()
 		if err != nil && !overflowRetried && ctx.Err() == nil && contextTooLong(err) {
 			overflowRetried = true
-			a.UI.Info("context too long for the model; compacting and retrying")
+			a.ui.Info("context too long for the model; compacting and retrying")
 			cerr := a.compact(ctx, compactOpts{midTurn: true, overflow: true})
 			if cerr == nil {
 				continue
 			}
-			a.UI.Error("compaction failed: " + cerr.Error())
+			a.ui.Error("compaction failed: " + cerr.Error())
 		}
 		if err != nil {
 			if round == 0 && (ctx.Err() != nil || rejected(err)) {
@@ -361,18 +421,18 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 		if usage.Input > 0 {
 			a.SetContextTokens(usage.Input + usage.Output)
 			a.pauseIfOver(usage.Input)
-			a.thrashAt = 0
+			a.conv.thrashAt = 0
 		} else {
-			a.SetContextTokens(a.EstimateTokens())
+			a.SetContextTokens(a.estimateTokens())
 		}
 
 		calls := msg.ToolUses()
-		if a.Headless && len(calls) > 0 && strings.TrimSpace(msg.Text()) != "" {
-			a.UI.Info(strings.TrimSpace(msg.Text()))
+		if a.headless && len(calls) > 0 && strings.TrimSpace(msg.Text()) != "" {
+			a.ui.Info(strings.TrimSpace(msg.Text()))
 		}
 		var next []llm.Block
 		if len(calls) > 0 {
-			next = a.Registry.Execute(ctx, a.Env, calls, a.UI)
+			next = a.conv.registry.Execute(ctx, a.env, calls, a.ui)
 			if ctx.Err() != nil {
 				a.appendMsg(llm.Message{Role: "user", Blocks: next}, nil)
 				return "", stats, context.Canceled
@@ -381,13 +441,13 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 				next = append(next, cb)
 			}
 		} else {
-			if a.OnStop != nil {
-				if cont, reason := a.OnStop(ctx, msg.Text(), stopActive); cont {
+			if a.conv.onStop != nil {
+				if cont, reason := a.conv.onStop(ctx, msg.Text(), stopActive); cont {
 					stopActive = true
 					if strings.TrimSpace(reason) == "" {
 						reason = "A Stop hook asked you to continue working."
 					}
-					a.UI.Info("stop hook: " + tools.OneLine(reason, 120))
+					a.ui.Info("stop hook: " + tools.OneLine(reason, 120))
 					next = append(next, llm.Block{Type: llm.BlockText, Text: reason})
 				}
 			}
@@ -427,24 +487,30 @@ func rejected(err error) bool {
 }
 
 func (a *Agent) dropLast() {
-	if len(a.Messages) == 0 {
+	if len(a.conv.messages) == 0 {
 		return
 	}
-	a.Messages = a.Messages[:len(a.Messages)-1]
-	if a.Session != nil {
-		if err := a.Session.Drop(); err != nil {
-			a.UI.Error("session: " + err.Error())
+	a.conv.messages = a.conv.messages[:len(a.conv.messages)-1]
+	if s := a.Session(); s != nil {
+		if err := s.Drop(); err != nil {
+			a.ui.Error("session: " + err.Error())
 		}
 	}
 }
 
 func (a *Agent) EstimateTokens() int {
-	n := len(a.System)
-	for _, d := range a.Registry.Defs() {
+	a.busy.Lock()
+	defer a.busy.Unlock()
+	return a.estimateTokens()
+}
+
+func (a *Agent) estimateTokens() int {
+	n := len(a.System())
+	for _, d := range a.conv.registry.Defs() {
 		n += len(d.Description) + len(d.Schema)
 	}
 	n /= 4
-	for _, m := range a.Messages {
+	for _, m := range a.conv.messages {
 		n += msgTokens(m)
 	}
 	return n
@@ -459,14 +525,16 @@ func streamBackoff(attempt int) time.Duration {
 func (a *Agent) stream(ctx context.Context) (llm.Message, llm.Usage, error) {
 	for attempt := 0; ; attempt++ {
 		emitted := false
-		msg, usage, err := a.Provider.Stream(ctx, a.request(a.Messages), func(d llm.Delta) {
+		l := a.snapshot()
+		show := l.cfg.ShowReasoningOn()
+		msg, usage, err := l.provider.Stream(ctx, a.request(l, a.conv.messages), func(d llm.Delta) {
 			emitted = true
-			a.onDelta(d)
+			a.onDelta(d, show)
 		})
 		if err == nil || emitted || attempt == streamAttempts-1 || ctx.Err() != nil || !llm.Retryable(err) {
 			return msg, usage, err
 		}
-		a.UI.Info("retrying: " + tools.OneLine(err.Error(), 100))
+		a.ui.Info("retrying: " + tools.OneLine(err.Error(), 100))
 		if err := llm.Sleep(ctx, streamBackoff(attempt)); err != nil {
 			return msg, usage, err
 		}

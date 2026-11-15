@@ -82,9 +82,7 @@ func testRepl(t *testing.T, cfg config.Config, p llm.Provider) (*repl, capture) 
 	if cfg.CompactAt == (config.Threshold{}) {
 		cfg.CompactAt = config.Threshold{Tokens: 1 << 30}
 	}
-	a := newTestAgent(t, cfg)
-	a.Provider = p
-	a.UI = display
+	a := newTestAgentWith(t, cfg, t.TempDir(), p, display)
 	r := &repl{agent: a, display: display, hooks: &agent.Hooks{}}
 	if err := r.newSession(); err != nil {
 		t.Fatal(err)
@@ -157,10 +155,10 @@ func TestHandleInput(t *testing.T) {
 
 func TestHandleInputClearStartsNewSession(t *testing.T) {
 	r, out := testRepl(t, config.Config{Model: "m"}, nopProvider{})
-	old := r.agent.Session.ID
+	old := r.agent.Session().ID
 	r.handleInput("/clear")
-	if r.agent.Session.ID == old || r.hooks.SessionID != r.agent.Session.ID || !strings.Contains(out.String(), "new session "+r.agent.Session.ID) {
-		t.Errorf("clear: old %s new %s hooks %s", old, r.agent.Session.ID, r.hooks.SessionID)
+	if id := r.agent.Session().ID; id == old || r.hooks.SessionID != id || !strings.Contains(out.String(), "new session "+id) {
+		t.Errorf("clear: old %s new %s hooks %s", old, id, r.hooks.SessionID)
 	}
 }
 
@@ -248,8 +246,8 @@ func TestTurnCancel(t *testing.T) {
 	if !r.lastCancelled || !strings.Contains(out.String(), "interrupted") {
 		t.Errorf("cancelled %v output:\n%s", r.lastCancelled, out.String())
 	}
-	if len(r.agent.Messages) != 0 {
-		t.Errorf("cancelled first request left %d messages", len(r.agent.Messages))
+	if n := len(r.agent.Messages()); n != 0 {
+		t.Errorf("cancelled first request left %d messages", n)
 	}
 	if r.cancelTurn() {
 		t.Error("cancelTurn still finds the finished turn")
@@ -297,7 +295,7 @@ func TestIdleTimer(t *testing.T) {
 		return textReply("summary"), nil
 	}}
 	r, _ = testRepl(t, config.Config{Model: "m", CacheTTL: "1h", CompactAt: config.Threshold{Tokens: 1000}, CompactIdleAt: config.Threshold{Tokens: 10}}, p)
-	r.agent.Messages = []llm.Message{llm.UserText("hello"), textReply("hi")}
+	setMessages(r.agent, []llm.Message{llm.UserText("hello"), textReply("hi")})
 	r.agent.SetContextTokens(500)
 	r.armIdle()
 	if r.idle == nil {
@@ -317,8 +315,8 @@ func TestIdleTimer(t *testing.T) {
 	default:
 		t.Error("idle compaction did not run")
 	}
-	if !strings.HasPrefix(r.agent.Messages[0].Text(), "This session was compacted") {
-		t.Errorf("messages after idle compaction: %+v", r.agent.Messages)
+	if msgs := r.agent.Messages(); !strings.HasPrefix(msgs[0].Text(), "This session was compacted") {
+		t.Errorf("messages after idle compaction: %+v", msgs)
 	}
 }
 

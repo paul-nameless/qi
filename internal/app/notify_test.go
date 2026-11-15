@@ -10,7 +10,8 @@ import (
 
 	"github.com/paul-nameless/qi/internal/agent"
 	"github.com/paul-nameless/qi/internal/config"
-	"github.com/paul-nameless/qi/internal/tools"
+	"github.com/paul-nameless/qi/internal/llm"
+	"github.com/paul-nameless/qi/internal/session"
 	"github.com/paul-nameless/qi/internal/ui"
 )
 
@@ -30,9 +31,9 @@ func TestNotifyTurn(t *testing.T) {
 	cfg := config.Config{NotifyCmd: "printf '%s|%s\\n' {title} {msg} >> " + out}
 	r := &repl{agent: newTestAgent(t, cfg), display: devNullPrinter(t)}
 	r.notifyTurn("no terminal", nil, time.Minute)
-	notifyAsync(cfg, r.agent.Cwd, turnMessage("it's done\nsecond line", nil, 2*time.Second), r.display)
+	notifyAsync(cfg, r.agent.Cwd(), turnMessage("it's done\nsecond line", nil, 2*time.Second), r.display)
 	got := waitFile(t, out)
-	want := "qi · " + filepath.Base(r.agent.Cwd) + "|done in 2s: it's done second line\n"
+	want := "qi · " + filepath.Base(r.agent.Cwd()) + "|done in 2s: it's done second line\n"
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
@@ -71,10 +72,23 @@ func TestTurnMessage(t *testing.T) {
 }
 
 func newTestAgent(t *testing.T, cfg config.Config) *agent.Agent {
+	return newTestAgentWith(t, cfg, t.TempDir(), nopProvider{}, devNullPrinter(t))
+}
+
+func newTestAgentWith(t *testing.T, cfg config.Config, cwd string, p llm.Provider, display agent.Display) *agent.Agent {
 	if cfg.Picker == "" {
 		cfg.Picker = "cat"
 	}
-	a, _, toolset := buildAgent(cfg, options{}, t.TempDir(), nopProvider{}, devNullPrinter(t), true, true)
-	a.Registry = tools.NewRegistry(toolset...)
+	a, _ := buildAgent(cfg, options{}, cwd, p, display, true, true)
 	return a
+}
+
+func setMessages(a *agent.Agent, msgs []llm.Message) {
+	a.Load(a.Session(), session.Loaded{Messages: msgs})
+}
+
+func editConfig(a *agent.Agent, edit func(*config.Config)) {
+	cfg := a.Config()
+	edit(&cfg)
+	a.Reconfigure(cfg, nopProvider{})
 }

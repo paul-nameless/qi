@@ -36,7 +36,7 @@ func TestQuitStopsMCPServersThatIgnoreEOF(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a.Session = s
+	a.Reset(s)
 	r := &repl{agent: a, display: devNullPrinter(t), mcp: manager}
 	start := time.Now()
 	r.quit()

@@ -74,7 +74,7 @@ func runHeadless(a *agent.Agent, display *ui.Printer, hooks *agent.Hooks, prompt
 		<-sig
 		cancel()
 	}()
-	blocks, err := submitPrompt(ctx, a, hooks, prompt)
+	blocks, err := submitPrompt(ctx, a, display, hooks, prompt)
 	if err != nil {
 		return err
 	}

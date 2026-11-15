@@ -16,7 +16,6 @@ import (
 	"github.com/paul-nameless/qi/internal/llm"
 	"github.com/paul-nameless/qi/internal/mcp"
 	"github.com/paul-nameless/qi/internal/session"
-	"github.com/paul-nameless/qi/internal/tools"
 	"github.com/paul-nameless/qi/internal/ui"
 )
 
@@ -37,20 +36,20 @@ func devNullPrinter(t *testing.T) *ui.Printer {
 
 func TestReadOnlyWiring(t *testing.T) {
 	display := devNullPrinter(t)
-	a, runner, _ := buildAgent(config.Config{Model: "m"}, options{}, t.TempDir(), nopProvider{}, display, true, false)
-	if a.Env.ReadOnly() || runner.ReadOnly() {
+	a, runner := buildAgent(config.Config{Model: "m"}, options{}, t.TempDir(), nopProvider{}, display, true, false)
+	if a.ReadOnly() || runner.ReadOnly() {
 		t.Fatal("read-only on by default")
 	}
 	a.SetReadOnly(true)
-	if !a.Env.ReadOnly() || !runner.ReadOnly() {
-		t.Error("env or subagent runner does not follow the agent's read-only mode")
+	if !runner.ReadOnly() {
+		t.Error("subagent runner does not follow the agent's read-only mode")
 	}
-	a2, _, _ := buildAgent(config.Config{Model: "m"}, options{readOnly: true}, t.TempDir(), nopProvider{}, display, true, false)
-	if !a2.Env.ReadOnly() {
+	a2, _ := buildAgent(config.Config{Model: "m"}, options{readOnly: true}, t.TempDir(), nopProvider{}, display, true, false)
+	if !a2.ReadOnly() {
 		t.Error("-read-only flag not applied")
 	}
-	a3, _, _ := buildAgent(config.Config{Model: "m", ReadOnly: true}, options{}, t.TempDir(), nopProvider{}, display, true, false)
-	if !a3.Env.ReadOnly() {
+	a3, _ := buildAgent(config.Config{Model: "m", ReadOnly: true}, options{}, t.TempDir(), nopProvider{}, display, true, false)
+	if !a3.ReadOnly() {
 		t.Error("read_only: true in config not applied")
 	}
 }
@@ -83,8 +82,7 @@ func TestModelSwitchKeepsSubagentsOnProfileProvider(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, runner, _ := buildAgent(cfg, o, dir, nopProvider{}, devNullPrinter(t), true, false)
-	a.Registry = tools.NewRegistry()
+	a, runner := buildAgent(cfg, o, dir, nopProvider{}, devNullPrinter(t), true, false)
 	r := &repl{agent: a, display: devNullPrinter(t), runner: runner, opts: o}
 	if err := r.switchProfile("p"); err != nil {
 		t.Fatal(err)
@@ -92,20 +90,20 @@ func TestModelSwitchKeepsSubagentsOnProfileProvider(t *testing.T) {
 	if err := r.switchModel("haiku"); err != nil {
 		t.Fatal(err)
 	}
-	if a.Cfg.Provider != "anth" || runner.Provider != "or" {
-		t.Errorf("after /model haiku: agent provider %q, subagent default %q", a.Cfg.Provider, runner.Provider)
+	if a.Config().Provider != "anth" || runner.Provider != "or" {
+		t.Errorf("after /model haiku: agent provider %q, subagent default %q", a.Config().Provider, runner.Provider)
 	}
 	if err := r.switchModel("some-raw-model"); err != nil {
 		t.Fatal(err)
 	}
-	if a.Cfg.Provider != "or" {
-		t.Errorf("CLI -provider came back after /profile: %q", a.Cfg.Provider)
+	if a.Config().Provider != "or" {
+		t.Errorf("CLI -provider came back after /profile: %q", a.Config().Provider)
 	}
 }
 
 func TestSubagentModeIsFixedAtLaunch(t *testing.T) {
 	display := devNullPrinter(t)
-	a, runner, _ := buildAgent(config.Config{Model: "m"}, options{}, t.TempDir(), nopProvider{}, display, true, false)
+	a, runner := buildAgent(config.Config{Model: "m"}, options{}, t.TempDir(), nopProvider{}, display, true, false)
 	r := &repl{agent: a, display: display, runner: runner}
 	r.toggleMode()
 	if !runner.ReadOnly() {
@@ -117,32 +115,31 @@ func TestReloadRereadsInstructionsAndSkills(t *testing.T) {
 	dir := t.TempDir()
 	off := false
 	cfg := config.Config{Model: "m", InstructionFile: []string{"CLAUDE.md"}, SkillDirs: []string{".claude/skills"}, BuiltinSkills: &off}
-	a, runner, _ := buildAgent(cfg, options{}, dir, nopProvider{}, devNullPrinter(t), true, false)
-	a.Registry = tools.NewRegistry()
+	a, runner := buildAgent(cfg, options{}, dir, nopProvider{}, devNullPrinter(t), true, false)
 	r := &repl{agent: a, display: devNullPrinter(t), runner: runner}
 	os.WriteFile(dir+"/CLAUDE.md", []byte("rule one"), 0o600)
 	r.reload()
-	if !strings.Contains(a.System, "rule one") || len(r.skills) != 0 {
-		t.Fatalf("first reload: skills %d, prompt %q", len(r.skills), a.System)
+	if !strings.Contains(a.System(), "rule one") || len(r.skills) != 0 {
+		t.Fatalf("first reload: skills %d, prompt %q", len(r.skills), a.System())
 	}
 	os.WriteFile(dir+"/CLAUDE.md", []byte("rule two"), 0o600)
 	os.MkdirAll(dir+"/.claude/skills/s", 0o755)
 	os.WriteFile(dir+"/.claude/skills/s/SKILL.md", []byte("---\nname: s\ndescription: does s\n---\nbody"), 0o600)
 	r.reload()
-	if !strings.Contains(a.System, "rule two") || strings.Contains(a.System, "rule one") || len(r.skills) != 1 || !strings.Contains(a.System, "- s: does s") {
-		t.Errorf("second reload: skills %d, prompt %q", len(r.skills), a.System)
+	if sys := a.System(); !strings.Contains(sys, "rule two") || strings.Contains(sys, "rule one") || len(r.skills) != 1 || !strings.Contains(sys, "- s: does s") {
+		t.Errorf("second reload: skills %d, prompt %q", len(r.skills), sys)
 	}
 }
 
 func TestPastedTempImagesAreKeptWithTheSession(t *testing.T) {
 	t.Setenv("QI_SESSION_DIR", t.TempDir())
-	a, _, _ := buildAgent(config.Config{Model: "m"}, options{}, t.TempDir(), nopProvider{}, devNullPrinter(t), true, false)
-	s, err := session.Create(a.Cwd, "", "m", "interactive", false)
+	a, _ := buildAgent(config.Config{Model: "m"}, options{}, t.TempDir(), nopProvider{}, devNullPrinter(t), true, false)
+	s, err := session.Create(a.Cwd(), "", "m", "interactive", false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	a.Session = s
+	a.Reset(s)
 	src := filepath.Join(t.TempDir(), "Screenshot 1.png")
 	img := image.NewRGBA(image.Rect(0, 0, 40, 20))
 	var buf bytes.Buffer
@@ -152,7 +149,7 @@ func TestPastedTempImagesAreKeptWithTheSession(t *testing.T) {
 	if err := os.WriteFile(src, buf.Bytes(), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	blocks := userBlocks(a, "look", []string{src})
+	blocks := userBlocks(a.Cwd(), s.Path, devNullPrinter(t), "look", []string{src})
 	if len(blocks) != 3 || blocks[1].Type != llm.BlockImage || blocks[1].Width != 40 {
 		t.Fatalf("blocks: %+v", blocks)
 	}
@@ -188,7 +185,7 @@ func TestSubagentKeepsParentMCPFilters(t *testing.T) {
 		t.Fatalf("parent profile servers: %+v", parent)
 	}
 	writeFile(`{"mcp": {"notes": {"command": "notes"}, "extra": {"command": "extra"}}, "profiles": {"p": {"mcp": {"gh2": {"command": "gh"}}}}}`)
-	_, runner, _ := buildAgent(parentCfg, options{configPath: path, profile: "p"}, dir, nopProvider{}, devNullPrinter(t), true, false)
+	_, runner := buildAgent(parentCfg, options{configPath: path, profile: "p"}, dir, nopProvider{}, devNullPrinter(t), true, false)
 	env, err := runner.Env()
 	if err != nil {
 		t.Fatal(err)
@@ -239,8 +236,7 @@ func TestProfileSwitchKeepsMCPSetup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, runner, _ := buildAgent(cfg, o, dir, nopProvider{}, devNullPrinter(t), true, false)
-	a.Registry = tools.NewRegistry()
+	a, runner := buildAgent(cfg, o, dir, nopProvider{}, devNullPrinter(t), true, false)
 	manager := mcp.NewManager(cfg.MCP)
 	r := &repl{agent: a, display: devNullPrinter(t), runner: runner, opts: o, mcp: manager}
 	for _, p := range []string{"more", "none"} {

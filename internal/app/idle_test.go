@@ -21,10 +21,9 @@ func (p slowSummary) Stream(context.Context, llm.Request, func(llm.Delta)) (llm.
 }
 
 func TestStopIdleWaitsForIdleCompaction(t *testing.T) {
-	a := newTestAgent(t, config.Config{Model: "m", CacheTTL: "5m10ms", CompactAt: config.Threshold{Tokens: 1000}, CompactIdleAt: config.Threshold{Tokens: 10}})
 	p := slowSummary{called: make(chan struct{})}
-	a.Provider = p
-	a.Messages = []llm.Message{llm.UserText("hello"), {Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: "hi"}}}}
+	a := newTestAgentWith(t, config.Config{Model: "m", CacheTTL: "5m10ms", CompactAt: config.Threshold{Tokens: 1000}, CompactIdleAt: config.Threshold{Tokens: 10}}, t.TempDir(), p, devNullPrinter(t))
+	setMessages(a, []llm.Message{llm.UserText("hello"), {Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: "hi"}}}})
 	a.SetContextTokens(500)
 	r := &repl{agent: a, display: devNullPrinter(t)}
 	r.armIdle()
@@ -34,7 +33,7 @@ func TestStopIdleWaitsForIdleCompaction(t *testing.T) {
 		t.Fatal("idle compaction never started")
 	}
 	r.stopIdle()
-	if len(a.Messages) == 0 || !strings.Contains(a.Messages[0].Text(), "the summary") {
-		t.Errorf("stopIdle returned before idle compaction finished: %d messages", len(a.Messages))
+	if msgs := a.Messages(); len(msgs) == 0 || !strings.Contains(msgs[0].Text(), "the summary") {
+		t.Errorf("stopIdle returned before idle compaction finished: %d messages", len(msgs))
 	}
 }

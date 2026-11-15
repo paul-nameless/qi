@@ -31,30 +31,30 @@ func pick(run runner, command, picker, prompt string, items []pickItem) (string,
 }
 
 func (r *repl) pick(prompt string, items []pickItem) (string, bool) {
-	return r.pickWith(r.agent.Cfg.Picker, prompt, items)
+	return r.pickWith(r.agent.Config().Picker, prompt, items)
 }
 
 func (r *repl) pickWith(command, prompt string, items []pickItem) (string, bool) {
-	return pick(r.runTTY, command, r.agent.Cfg.Picker, prompt, items)
+	return pick(r.runTTY, command, r.agent.Config().Picker, prompt, items)
 }
 
 func (r *repl) filePicker() (string, bool) {
-	files := strings.Join(listFiles(r.agent.Cwd, fileListLimit), "\n") + "\n"
-	lines, ok := choose(r.runTTY, r.agent.Cfg.FilePicker, r.agent.Cfg.Picker, "@ ", strings.NewReader(files))
+	files := strings.Join(listFiles(r.agent.Cwd(), fileListLimit), "\n") + "\n"
+	lines, ok := choose(r.runTTY, r.agent.Config().FilePicker, r.agent.Config().Picker, "@ ", strings.NewReader(files))
 	if !ok {
 		return "", false
 	}
 	parts := make([]string, len(lines))
 	for i, l := range lines {
 		name, _, _ := strings.Cut(l, "\t")
-		parts[i] = quotePath(relPath(r.agent.Cwd, name))
+		parts[i] = quotePath(relPath(r.agent.Cwd(), name))
 	}
 	return strings.Join(parts, " ") + " ", true
 }
 
 func (r *repl) historyPicker(entries []string) (string, bool) {
 	items, back := historyItems(entries)
-	name, ok := r.pickWith(r.agent.Cfg.HistoryPicker, "history ", items)
+	name, ok := r.pickWith(r.agent.Config().HistoryPicker, "history ", items)
 	if !ok {
 		return "", false
 	}
@@ -171,7 +171,7 @@ func (r *repl) skillItems() []pickItem {
 }
 
 func (r *repl) modelItems() []pickItem {
-	cfg := r.agent.Cfg
+	cfg := r.agent.Config()
 	items := []pickItem{{cfg.Model, "current"}}
 	seen := map[string]bool{cfg.Model: true}
 	add := func(name, desc string) {
@@ -195,12 +195,12 @@ func (r *repl) modelItems() []pickItem {
 
 func (r *repl) profileItems() []pickItem {
 	var items []pickItem
-	for _, p := range r.agent.Cfg.ProfileNames() {
+	for _, p := range r.agent.Config().ProfileNames() {
 		desc := ""
 		if pc, err := r.resolve(p); err == nil {
 			desc = pc.Model + " via " + pc.Provider
 		}
-		if p == r.agent.Cfg.Profile {
+		if p == r.agent.Config().Profile {
 			desc += " (current)"
 		}
 		items = append(items, pickItem{p, desc})
@@ -209,7 +209,7 @@ func (r *repl) profileItems() []pickItem {
 }
 
 func (r *repl) effortItems() []pickItem {
-	current := effortName(r.agent.Cfg.ReasoningEffort)
+	current := effortName(r.agent.Config().ReasoningEffort)
 	items := make([]pickItem, len(efforts))
 	for i, e := range efforts {
 		if e.name == current {

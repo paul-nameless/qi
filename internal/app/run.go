@@ -58,15 +58,14 @@ func run(o options) error {
 		cfg.MaxRounds = 200
 	}
 	cfg.DefaultCacheTTL(headless)
-	a, runner, toolset := buildAgent(cfg, o, cwd, newProvider(cfg, key), display, headless, isSub)
-	env := a.Env
 	var manager *mcp.Manager
+	var extra []*tools.Tool
 	if len(cfg.MCP) > 0 {
 		manager = mcp.NewManager(cfg.MCP)
 		defer manager.Close()
-		toolset = append(toolset, tools.MCPTools(manager)...)
+		extra = tools.MCPTools(manager)
 	}
-	a.Registry = tools.NewRegistry(toolset...)
+	a, runner := buildAgent(cfg, o, cwd, newProvider(cfg, key), display, headless, isSub, extra...)
 	roots := agent.ProjectRoots(cwd)
 	skills, sys := agent.LoadPrompt(cwd, cfg)
 	a.SetSystem(sys)
@@ -82,14 +81,14 @@ func run(o options) error {
 	if err := openSession(a, o, cfg, cwd, resume, headless, isSub); err != nil {
 		return err
 	}
-	defer a.Session.Close()
-	hooks.Session, hooks.SessionID, hooks.ReadOnly = a.Session.Path, a.Session.ID, a.ReadOnly
+	defer a.Session().Close()
+	hooks.Session, hooks.SessionID, hooks.ReadOnly = a.Session().Path, a.Session().ID, a.ReadOnly
 	if !hooks.Empty() {
-		env.PreHook = hooks.PreToolUse
-		env.PostHook = hooks.PostToolUse
+		var stop agent.StopHook
 		if !isSub {
-			a.OnStop = hooks.Stop
+			stop = hooks.Stop
 		}
+		a.SetHooks(hooks.PreToolUse, hooks.PostToolUse, stop)
 	}
 	if isSub {
 		hooks.SkipPrompt = true
@@ -151,7 +150,7 @@ func openSession(a *agent.Agent, o options, cfg config.Config, cwd, resume strin
 	if err != nil {
 		return err
 	}
-	a.Session = s
+	a.Reset(s)
 	return nil
 }
 
@@ -187,30 +186,37 @@ func loadHooks(roots, configured []string, headless bool, display *ui.Printer) (
 	return h, nil
 }
 
-func submitPrompt(ctx context.Context, a *agent.Agent, hooks *agent.Hooks, prompt string, images ...string) ([]llm.Block, error) {
+func submitPrompt(ctx context.Context, a *agent.Agent, display notifier, hooks *agent.Hooks, prompt string, images ...string) ([]llm.Block, error) {
 	blocked, reason, extra := hooks.UserPromptSubmit(ctx, prompt)
 	if blocked {
 		return nil, fmt.Errorf("prompt blocked by hook: %s", reason)
 	}
-	blocks := userBlocks(a, prompt, images)
+	sessionPath := ""
+	if s := a.Session(); s != nil {
+		sessionPath = s.Path
+	}
+	blocks := userBlocks(a.Cwd(), sessionPath, display, prompt, images)
 	if extra != "" {
 		blocks = append(blocks, llm.Block{Type: llm.BlockText, Text: "<hook-context>\n" + extra + "\n</hook-context>"})
 	}
 	return blocks, nil
 }
 
-func buildAgent(cfg config.Config, o options, cwd string, p llm.Provider, display agent.Display, headless, isSub bool) (*agent.Agent, *agent.SubagentRunner, []*tools.Tool) {
-	a := &agent.Agent{Cfg: cfg, Cwd: cwd, Provider: p, UI: display, Headless: headless}
-	a.SetReadOnly(o.readOnly || cfg.ReadOnly)
-	a.Env = &tools.Env{Cwd: cwd, ReadOnly: a.ReadOnly, Allow: cfg.ReadOnlyAllow, BashTimeout: cfg.BashTimeout}
-	toolset := []*tools.Tool{tools.Read(), tools.Write(), tools.Edit(), tools.Bash()}
+func buildAgent(cfg config.Config, o options, cwd string, p llm.Provider, display agent.Display, headless, isSub bool, extra ...*tools.Tool) (*agent.Agent, *agent.SubagentRunner) {
+	opts := agent.Options{Config: cfg, Cwd: cwd, Provider: p, UI: display, Headless: headless, ReadOnly: o.readOnly || cfg.ReadOnly}
+	opts.Tools = []*tools.Tool{tools.Read(), tools.Write(), tools.Edit(), tools.Bash()}
 	var runner *agent.SubagentRunner
 	if !isSub {
-		runner = &agent.SubagentRunner{ConfigPath: o.configPath, Profile: cfg.Profile, Provider: cfg.Provider, ReadOnly: a.ReadOnly, Cwd: cwd, MCP: cfg.MCP}
-		a.Env.Subagent = runner.Run
-		toolset = append(toolset, tools.Subagent(cfg.Model, cfg.SubagentModels, cfg.SubagentEfforts))
+		runner = &agent.SubagentRunner{ConfigPath: o.configPath, Profile: cfg.Profile, Provider: cfg.Provider, Cwd: cwd, MCP: cfg.MCP}
+		opts.Subagent = runner.Run
+		opts.Tools = append(opts.Tools, tools.Subagent(cfg.Model, cfg.SubagentModels, cfg.SubagentEfforts))
 	}
-	return a, runner, toolset
+	opts.Tools = append(opts.Tools, extra...)
+	a := agent.New(opts)
+	if runner != nil {
+		runner.ReadOnly = a.ReadOnly
+	}
+	return a, runner
 }
 
 func newProvider(cfg config.Config, key string) llm.Provider {

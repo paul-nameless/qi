@@ -175,10 +175,9 @@ func pinAgent(t *testing.T, cfg config.Config, cwd string) *agent.Agent {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, _, toolset := buildAgent(cfg, options{}, cwd, newProvider(cfg, key), devNullPrinter(t), true, false)
-	a.Registry = tools.NewRegistry(append(toolset, tools.MCPTools(mcp.NewManager(cfg.MCP))...)...)
+	a, _ := buildAgent(cfg, options{}, cwd, newProvider(cfg, key), devNullPrinter(t), true, false, tools.MCPTools(mcp.NewManager(cfg.MCP))...)
 	_, sys := agent.LoadPrompt(cwd, cfg)
 	a.SetSystem(sys)
-	a.Messages = pinHistory(cfg.Model)
+	setMessages(a, pinHistory(cfg.Model))
 	return a
 }

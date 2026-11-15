@@ -57,10 +57,14 @@ func toolCall(id, cmd string) llm.Message {
 }
 
 func newAgent(t *testing.T, p *fakeProvider) *Agent {
-	a := &Agent{Cfg: config.Config{CompactAt: config.Threshold{Tokens: 1 << 30}, Model: "m"}, Cwd: t.TempDir(), Provider: p, UI: nopDisplay{}}
-	a.Env = &tools.Env{Cwd: a.Cwd, ReadOnly: a.ReadOnly, SpillDir: t.TempDir()}
-	a.Registry = tools.NewRegistry(tools.Bash())
-	return a
+	return New(Options{
+		Config:   config.Config{CompactAt: config.Threshold{Tokens: 1 << 30}, Model: "m"},
+		Cwd:      t.TempDir(),
+		Provider: p,
+		UI:       nopDisplay{},
+		Tools:    []*tools.Tool{tools.Bash()},
+		SpillDir: t.TempDir(),
+	})
 }
 
 func lastText(m llm.Message) string {
@@ -104,7 +108,7 @@ func TestModeNoteSentOnChangeOnly(t *testing.T) {
 	a.SetReadOnly(false)
 	_, _, _ = a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "three"}})
 	users := []string{}
-	for _, m := range a.Messages {
+	for _, m := range a.conv.messages {
 		if m.Role == "user" {
 			users = append(users, lastText(m))
 		}
@@ -130,7 +134,7 @@ func TestCancelDuringToolsKeepsLogValid(t *testing.T) {
 	if err != context.Canceled {
 		t.Fatalf("err %v", err)
 	}
-	last := a.Messages[len(a.Messages)-1]
+	last := a.conv.messages[len(a.conv.messages)-1]
 	if last.Role != "user" || len(last.Blocks) != 1 || last.Blocks[0].ToolUseID != "c1" || !last.Blocks[0].IsError {
 		t.Fatalf("expected interrupted result, got %+v", last)
 	}
@@ -139,8 +143,8 @@ func TestCancelDuringToolsKeepsLogValid(t *testing.T) {
 func TestCompactBeforeNewPrompt(t *testing.T) {
 	p := &fakeProvider{replies: []llm.Message{{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: "SUMMARY"}}}}}
 	a := newAgent(t, p)
-	a.Cfg.CompactAt = config.Threshold{Tokens: 100}
-	a.Messages = []llm.Message{llm.UserText("old"), {Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: "old answer"}}}}
+	a.live.cfg.CompactAt = config.Threshold{Tokens: 100}
+	a.conv.messages = []llm.Message{llm.UserText("old"), {Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: "old answer"}}}}
 	a.SetContextTokens(500)
 	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "new request"}}); err != nil {
 		t.Fatal(err)
@@ -157,11 +161,11 @@ func TestCompactBeforeNewPrompt(t *testing.T) {
 func TestCompactRejectsEmptySummary(t *testing.T) {
 	p := &fakeProvider{replies: []llm.Message{{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockToolUse, ID: "x", Name: "bash", Input: json.RawMessage(`{}`)}}}}}
 	a := newAgent(t, p)
-	a.Messages = []llm.Message{llm.UserText("old")}
+	a.conv.messages = []llm.Message{llm.UserText("old")}
 	if err := a.Compact(context.Background(), ""); err == nil {
 		t.Fatal("expected error")
 	}
-	if len(a.Messages) != 1 {
+	if len(a.conv.messages) != 1 {
 		t.Error("history replaced despite failed compaction")
 	}
 }
@@ -170,7 +174,7 @@ func TestStopHookContinuesOnceWithActiveFlag(t *testing.T) {
 	p := &fakeProvider{}
 	a := newAgent(t, p)
 	var actives []bool
-	a.OnStop = func(ctx context.Context, last string, active bool) (bool, string) {
+	a.conv.onStop = func(ctx context.Context, last string, active bool) (bool, string) {
 		actives = append(actives, active)
 		if !active {
 			a.Queue([]llm.Block{{Type: llm.BlockText, Text: "queued note"}})
@@ -192,14 +196,14 @@ func TestCompactRejectsToolCallsAndTriesOncePerTurn(t *testing.T) {
 	summaryWithTool := llm.Message{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: "Let me check first."}, {Type: llm.BlockToolUse, ID: "x", Name: "bash", Input: json.RawMessage(`{"command":"ls"}`)}}}
 	p := &fakeProvider{replies: []llm.Message{summaryWithTool, toolCall("c1", "echo a"), toolCall("c2", "echo b")}}
 	a := newAgent(t, p)
-	a.Cfg.CompactAt = config.Threshold{Tokens: 10}
-	a.Messages = []llm.Message{llm.UserText("old")}
+	a.live.cfg.CompactAt = config.Threshold{Tokens: 10}
+	a.conv.messages = []llm.Message{llm.UserText("old")}
 	a.SetContextTokens(500)
 	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "go"}}); err != nil {
 		t.Fatal(err)
 	}
-	if a.Messages[0].Text() != "old" {
-		t.Errorf("history replaced by a tool-calling reply: %q", a.Messages[0].Text())
+	if a.conv.messages[0].Text() != "old" {
+		t.Errorf("history replaced by a tool-calling reply: %q", a.conv.messages[0].Text())
 	}
 	compactions := 0
 	for _, req := range p.requests {
@@ -216,7 +220,7 @@ func TestStopHookEmptyReason(t *testing.T) {
 	p := &fakeProvider{}
 	a := newAgent(t, p)
 	n := 0
-	a.OnStop = func(context.Context, string, bool) (bool, string) {
+	a.conv.onStop = func(context.Context, string, bool) (bool, string) {
 		n++
 		return n == 1, ""
 	}
@@ -231,8 +235,8 @@ func TestStopHookEmptyReason(t *testing.T) {
 
 func TestRestoreMode(t *testing.T) {
 	a := newAgent(t, &fakeProvider{})
-	a.Messages = []llm.Message{{Role: "user", Blocks: []llm.Block{{Type: llm.BlockText, Text: "x"}, {Type: llm.BlockText, Text: readOnlyNote}}}}
-	a.RestoreMode()
+	a.conv.messages = []llm.Message{{Role: "user", Blocks: []llm.Block{{Type: llm.BlockText, Text: "x"}, {Type: llm.BlockText, Text: readOnlyNote}}}}
+	a.restoreMode()
 	if mb, ok := a.modeBlock(); !ok || mb.Text != yoloNote {
 		t.Errorf("resumed yolo session after read-only should announce yolo: %v %v", mb, ok)
 	}
@@ -247,20 +251,20 @@ func (r *rejectProvider) Stream(ctx context.Context, req llm.Request, onDelta fu
 
 func TestRejectedPromptIsRolledBack(t *testing.T) {
 	a := newAgent(t, &fakeProvider{})
-	a.Provider = &rejectProvider{}
-	a.Messages = []llm.Message{llm.UserText("earlier")}
+	a.live.provider = &rejectProvider{}
+	a.conv.messages = []llm.Message{llm.UserText("earlier")}
 	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "bad"}}); err == nil {
 		t.Fatal("expected error")
 	}
-	if len(a.Messages) != 1 || a.Messages[0].Text() != "earlier" {
-		t.Errorf("rejected prompt kept in history: %+v", a.Messages)
+	if len(a.conv.messages) != 1 || a.conv.messages[0].Text() != "earlier" {
+		t.Errorf("rejected prompt kept in history: %+v", a.conv.messages)
 	}
 }
 
 func TestMaxRounds(t *testing.T) {
 	p := &fakeProvider{replies: []llm.Message{toolCall("1", "true"), toolCall("2", "true"), toolCall("3", "true")}}
 	a := newAgent(t, p)
-	a.Cfg.MaxRounds = 2
+	a.live.cfg.MaxRounds = 2
 	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "go"}}); err == nil || !strings.Contains(err.Error(), "max_rounds") {
 		t.Errorf("expected max_rounds error, got %v", err)
 	}
@@ -311,23 +315,20 @@ func TestFmtTokens(t *testing.T) {
 }
 
 func TestContextUsageBeforeFirstRequest(t *testing.T) {
-	a := &Agent{System: strings.Repeat("x", 40000), Registry: tools.NewRegistry(), Cfg: config.Config{Model: "claude-opus-5-5", ContextWindow: 200000}}
+	a := New(Options{Config: config.Config{Model: "claude-opus-5-5", ContextWindow: 200000}})
+	a.SetSystem(SystemPrompt{Text: strings.Repeat("x", 40000)})
 	if got, want := a.ContextUsage(), "context ~10.0k of 200k (5.0%)"; got != want {
 		t.Errorf("ContextUsage() = %q, want %q", got, want)
 	}
 }
 
 func TestContextReport(t *testing.T) {
-	a := &Agent{
-		System:   strings.Repeat("s", 4000),
-		Sections: []Section{{"base prompt", 1000}, {"environment", 3000}},
-		Registry: tools.NewRegistry(tools.Read()),
-		Cfg:      config.Config{Model: "claude-opus-5-5", ContextWindow: 200000},
-		Messages: []llm.Message{
-			llm.UserText(strings.Repeat("u", 400)),
-			{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockToolUse, ID: "1", Name: "read", Input: json.RawMessage(`{"file_path":"a"}`)}}},
-			{Role: "user", Blocks: []llm.Block{{Type: llm.BlockToolResult, ToolUseID: "1", Text: strings.Repeat("r", 2000)}}},
-		},
+	a := New(Options{Tools: []*tools.Tool{tools.Read()}, Config: config.Config{Model: "claude-opus-5-5", ContextWindow: 200000}})
+	a.SetSystem(SystemPrompt{Text: strings.Repeat("s", 4000), Sections: []Section{{"base prompt", 1000}, {"environment", 3000}}})
+	a.conv.messages = []llm.Message{
+		llm.UserText(strings.Repeat("u", 400)),
+		{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockToolUse, ID: "1", Name: "read", Input: json.RawMessage(`{"file_path":"a"}`)}}},
+		{Role: "user", Blocks: []llm.Block{{Type: llm.BlockToolResult, ToolUseID: "1", Text: strings.Repeat("r", 2000)}}},
 	}
 	got := a.ContextReport()
 	for _, want := range []string{"of 200k", "system prompt", "base prompt", "environment", "tools (1)", "messages (3)", "user text", "read results", "500", "free"} {

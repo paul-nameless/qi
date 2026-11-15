@@ -12,7 +12,6 @@ import (
 
 	"github.com/paul-nameless/qi/internal/config"
 	"github.com/paul-nameless/qi/internal/llm"
-	"github.com/paul-nameless/qi/internal/tools"
 )
 
 const (
@@ -81,7 +80,7 @@ func TestStreamRetryAttempts(t *testing.T) {
 			return ctx.Err()
 		}
 		url, n := scriptedServer(t, c.script)
-		a := &Agent{Cfg: config.Config{Model: "claude-haiku-5-5", MaxTokens: 10}, Provider: llm.NewAnthropic(url, "k"), UI: nopDisplay{}, Registry: tools.NewRegistry()}
+		a := New(Options{Config: config.Config{Model: "claude-haiku-5-5", MaxTokens: 10}, Provider: llm.NewAnthropic(url, "k"), UI: nopDisplay{}})
 		_, _, err := a.stream(context.Background())
 		llm.Sleep = old
 		if !c.check(err) || n.Load() != c.requests || len(slept) != c.sleeps {

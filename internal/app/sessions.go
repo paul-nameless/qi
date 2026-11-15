@@ -77,11 +77,10 @@ func (r *repl) resume(ref string) error {
 	if err != nil || path == "" {
 		return err
 	}
-	if path == r.agent.Session.Path {
-		r.display.Info("already in session " + r.agent.Session.ID)
+	if path == r.agent.Session().Path {
+		r.display.Info("already in session " + r.agent.Session().ID)
 		return nil
 	}
-	r.stopIdle()
 	s, ld, err := session.Open(path)
 	if err != nil {
 		return err
@@ -95,7 +94,7 @@ func (r *repl) resume(ref string) error {
 
 func (r *repl) resumeTarget(ref string) (string, error) {
 	if ref != "" {
-		return sessionPath(r.agent.Cwd, ref)
+		return sessionPath(r.agent.Cwd(), ref)
 	}
-	return pickSession(r.runTTY, r.agent.Cfg, r.agent.Cwd, r.agent.Session.ID)
+	return pickSession(r.runTTY, r.agent.Config(), r.agent.Cwd(), r.agent.Session().ID)
 }

@@ -204,10 +204,11 @@ var overflowMessages = []string{
 }
 
 func (a *Agent) summarize(ctx context.Context, opts compactOpts, keepsTail bool) (string, llm.Usage, error) {
-	prompt := compactPrompt(a.Messages, opts.focus, keepsTail)
-	msg, usage, err := a.Provider.Stream(ctx, a.request(summaryRequest(a.Messages, prompt, opts.overflow)), func(llm.Delta) {})
+	prompt := compactPrompt(a.conv.messages, opts.focus, keepsTail)
+	l := a.snapshot()
+	msg, usage, err := l.provider.Stream(ctx, a.request(l, summaryRequest(a.conv.messages, prompt, opts.overflow)), func(llm.Delta) {})
 	if err != nil && !opts.overflow && contextTooLong(err) {
-		msg, usage, err = a.Provider.Stream(ctx, a.request(summaryRequest(a.Messages, prompt, true)), func(llm.Delta) {})
+		msg, usage, err = l.provider.Stream(ctx, a.request(l, summaryRequest(a.conv.messages, prompt, true)), func(llm.Delta) {})
 	}
 	summary := strings.TrimSpace(msg.Text())
 	switch {
@@ -224,61 +225,62 @@ func (a *Agent) summarize(ctx context.Context, opts compactOpts, keepsTail bool)
 }
 
 func (a *Agent) compact(ctx context.Context, opts compactOpts) error {
-	if len(a.Messages) == 0 {
+	if len(a.conv.messages) == 0 {
 		return errors.New("nothing to compact")
 	}
 	a.evictImages()
 	before := a.ContextTokens()
 	threshold := opts.threshold
 	if threshold == 0 {
-		threshold = a.Cfg.CompactTokens()
+		threshold = a.Config().CompactTokens()
 	}
-	a.UI.ToolStart("compact", fmt.Sprintf("compacting %s tokens", fmtTokens(before)))
+	a.ui.ToolStart("compact", fmt.Sprintf("compacting %s tokens", fmtTokens(before)))
 	var tail []llm.Message
-	if !opts.midTurn && !endsWithToolResults(a.Messages) {
-		tail = keepTail(a.Messages, min(keepTokens, threshold/4))
+	if !opts.midTurn && !endsWithToolResults(a.conv.messages) {
+		tail = keepTail(a.conv.messages, min(keepTokens, threshold/4))
 	}
 	summary, usage, err := a.summarize(ctx, opts, len(tail) > 0)
 	if err != nil {
-		a.UI.ToolDone("compact", false, "compaction failed")
+		a.ui.ToolDone("compact", false, "compaction failed")
 		return err
 	}
 	text := compactLead + summary
 	if opts.midTurn {
 		text += compactContinue
 	}
-	_, hadNote := lastModeNote(a.Messages)
-	a.Messages = append([]llm.Message{llm.UserText(text)}, tail...)
+	_, hadNote := lastModeNote(a.conv.messages)
+	a.conv.messages = append([]llm.Message{llm.UserText(text)}, tail...)
 	a.restoreModeAfter(hadNote)
-	if a.Session != nil {
-		if err := a.Session.Compaction(text, tail, a.Model()); err != nil {
-			a.UI.Error("session: " + err.Error())
+	if l := a.snapshot(); l.session != nil {
+		if err := l.session.Compaction(text, tail, l.cfg.Model); err != nil {
+			a.ui.Error("session: " + err.Error())
 		}
 	}
-	after := a.EstimateTokens()
+	after := a.estimateTokens()
 	a.SetContextTokens(after)
-	a.UI.ToolDone("compact", true, fmt.Sprintf("compacted %s → %s tokens%s", fmtTokens(before), fmtTokens(after), cachedPct(usage)))
-	a.paused, a.thrashAt = false, 0
+	a.ui.ToolDone("compact", true, fmt.Sprintf("compacted %s → %s tokens%s", fmtTokens(before), fmtTokens(after), cachedPct(usage)))
+	a.conv.paused, a.conv.thrashAt = false, 0
 	if opts.auto || opts.overflow {
-		a.thrashAt = threshold * (thrashShare - 1) / thrashShare
+		a.conv.thrashAt = threshold * (thrashShare - 1) / thrashShare
 		a.pauseIfOver(after)
 	}
 	return nil
 }
 
 func (a *Agent) pauseIfOver(tokens int) {
-	if a.thrashAt > 0 && tokens > a.thrashAt {
-		a.paused, a.thrashAt = true, 0
-		a.UI.Info(fmt.Sprintf("context is still %s tokens right after compaction, too close to the threshold; automatic compaction is paused until /compact or /clear, raise compact_at", fmtTokens(tokens)))
+	if a.conv.thrashAt > 0 && tokens > a.conv.thrashAt {
+		a.conv.paused, a.conv.thrashAt = true, 0
+		a.ui.Info(fmt.Sprintf("context is still %s tokens right after compaction, too close to the threshold; automatic compaction is paused until /compact or /clear, raise compact_at", fmtTokens(tokens)))
 	}
 }
 
 func (a *Agent) needsCompaction() bool {
-	if a.Cfg.WindowGuessed() && !a.windowWarned {
-		a.windowWarned = true
-		a.UI.Info("context window of " + a.Model() + " is unknown; compact_at percentages assume 200k, set context_window")
+	cfg := a.Config()
+	if cfg.WindowGuessed() && !a.conv.windowWarned {
+		a.conv.windowWarned = true
+		a.ui.Info("context window of " + cfg.Model + " is unknown; compact_at percentages assume 200k, set context_window")
 	}
-	return !a.paused && a.ContextTokens() > a.Cfg.CompactTokens()
+	return !a.conv.paused && a.ContextTokens() > cfg.CompactTokens()
 }
 
 func (a *Agent) Compact(ctx context.Context, focus string) error {
@@ -294,8 +296,8 @@ func (a *Agent) TryCompactIdle(ctx context.Context) error {
 		return nil
 	}
 	defer a.busy.Unlock()
-	idle := a.Cfg.CompactIdleTokens()
-	if a.paused || a.ContextTokens() < idle {
+	idle := a.Config().CompactIdleTokens()
+	if a.conv.paused || a.ContextTokens() < idle {
 		return nil
 	}
 	return a.compact(ctx, compactOpts{auto: true, threshold: idle})

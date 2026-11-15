@@ -57,20 +57,20 @@ func (r *repl) copyAnswer(args string) error {
 	var text, what string
 	switch args {
 	case "":
-		text, what = lastAnswer(r.agent.Messages), "answer"
+		text, what = lastAnswer(r.agent.Messages()), "answer"
 	case "code":
-		text, what = lastCodeBlock(r.agent.Messages), "code block"
+		text, what = lastCodeBlock(r.agent.Messages()), "code block"
 	default:
 		return errors.New("usage: /copy or /copy code")
 	}
 	if text == "" {
 		return errors.New("no " + what + " to copy")
 	}
-	cmd := r.agent.Cfg.CopyCmd
+	cmd := r.agent.Config().CopyCmd
 	if !r.toolOn(cmd) {
 		return fmt.Errorf("copy_cmd is off (%s not found)", firstWord(cmd))
 	}
-	if _, err := runQuiet(cmd, r.agent.Cfg.Picker, nil, text); err != nil {
+	if _, err := runQuiet(cmd, r.agent.Config().Picker, nil, text); err != nil {
 		return fmt.Errorf("copy_cmd: %w", err)
 	}
 	r.display.Info(fmt.Sprintf("copied %s (%d lines)", what, strings.Count(text, "\n")+1))

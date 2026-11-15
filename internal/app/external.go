@@ -248,7 +248,7 @@ func (r *repl) view(key, command, content, ext string) error {
 		defer os.Remove(file)
 		vars["file"], stdin = file, nil
 	}
-	cmd := toolCmd(command, r.agent.Cfg.Picker, vars)
+	cmd := toolCmd(command, r.agent.Config().Picker, vars)
 	cmd.Stdin = stdin
 	if err := r.runTTY(cmd); err != nil {
 		return fmt.Errorf("%s: %w", key, err)
@@ -265,11 +265,11 @@ func firstWord(command string) string {
 }
 
 func (r *repl) toolOn(command string) bool {
-	return toolAvailable(command, r.agent.Cfg.Picker)
+	return toolAvailable(command, r.agent.Config().Picker)
 }
 
 func (r *repl) toolKeys() [][2]string {
-	cfg := r.agent.Cfg
+	cfg := r.agent.Config()
 	return [][2]string{
 		{"picker", cfg.Picker},
 		{"notify_cmd", cfg.NotifyCmd},

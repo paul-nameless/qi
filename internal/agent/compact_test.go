@@ -100,8 +100,8 @@ func TestKeepTail(t *testing.T) {
 func TestSummaryRequestKeepsHistoryUnchanged(t *testing.T) {
 	p := &scriptedProvider{steps: []func(llm.Request) (llm.Message, error){reply(assistantText("SUMMARY"))}}
 	a := newAgent(t, &fakeProvider{})
-	a.Provider = p
-	a.Messages = closedHistory()
+	a.live.provider = p
+	a.conv.messages = closedHistory()
 	orig := closedHistory()
 	if err := a.Compact(context.Background(), "the auth bug"); err != nil {
 		t.Fatal(err)
@@ -113,10 +113,10 @@ func TestSummaryRequestKeepsHistoryUnchanged(t *testing.T) {
 	if ask := sent[len(sent)-1].Text(); !strings.Contains(ask, "## Next steps") || !strings.Contains(ask, compactWithTail) || !strings.HasSuffix(ask, "Focus on: the auth bug") || strings.Contains(ask, "earlier work") {
 		t.Errorf("prompt: %q", ask)
 	}
-	if !strings.HasPrefix(a.Messages[0].Text(), compactLead+"SUMMARY") || a.Messages[len(a.Messages)-1].Text() != "all read" {
-		t.Errorf("new history: %+v", a.Messages)
+	if !strings.HasPrefix(a.conv.messages[0].Text(), compactLead+"SUMMARY") || a.conv.messages[len(a.conv.messages)-1].Text() != "all read" {
+		t.Errorf("new history: %+v", a.conv.messages)
 	}
-	a.Messages = append(a.Messages, assistantText("more"))
+	a.conv.messages = append(a.conv.messages, assistantText("more"))
 	p.steps = append(p.steps, reply(assistantText("SUMMARY 2")))
 	if err := a.Compact(context.Background(), ""); err != nil {
 		t.Fatal(err)
@@ -129,8 +129,8 @@ func TestSummaryRequestKeepsHistoryUnchanged(t *testing.T) {
 func TestSummaryClipsOnlyWhenTooLong(t *testing.T) {
 	p := &scriptedProvider{steps: []func(llm.Request) (llm.Message, error){overflow, reply(assistantText("SUMMARY"))}}
 	a := newAgent(t, &fakeProvider{})
-	a.Provider = p
-	a.Messages = history()
+	a.live.provider = p
+	a.conv.messages = history()
 	if err := a.Compact(context.Background(), ""); err != nil {
 		t.Fatal(err)
 	}
@@ -151,16 +151,16 @@ func TestSummaryClipsOnlyWhenTooLong(t *testing.T) {
 func TestCompactRejectsCutOffSummary(t *testing.T) {
 	cut := llm.Message{Role: "assistant", Blocks: []llm.Block{{Type: llm.BlockText, Text: "## Objective\nhalf"}, {Type: llm.BlockText, Text: "\n" + llm.CutOffMarker}}}
 	a := newAgent(t, &fakeProvider{replies: []llm.Message{cut}})
-	a.Messages = history()
-	if err := a.Compact(context.Background(), ""); err == nil || len(a.Messages) != len(history()) {
+	a.conv.messages = history()
+	if err := a.Compact(context.Background(), ""); err == nil || len(a.conv.messages) != len(history()) {
 		t.Errorf("cut-off summary accepted: %v", err)
 	}
 }
 
 func TestCompactReannouncesModeLostToSummary(t *testing.T) {
 	a := newAgent(t, &fakeProvider{replies: []llm.Message{assistantText("SUMMARY")}})
-	a.Messages = append([]llm.Message{{Role: "user", Blocks: []llm.Block{{Type: llm.BlockText, Text: "go"}, {Type: llm.BlockText, Text: readOnlyNote}}}}, history()[1:]...)
-	a.announced = true
+	a.conv.messages = append([]llm.Message{{Role: "user", Blocks: []llm.Block{{Type: llm.BlockText, Text: "go"}, {Type: llm.BlockText, Text: readOnlyNote}}}}, history()[1:]...)
+	a.conv.announced = true
 	if err := a.Compact(context.Background(), ""); err != nil {
 		t.Fatal(err)
 	}
@@ -173,8 +173,8 @@ func TestOverflowCompactsAndRetriesOnce(t *testing.T) {
 	summary := reply(assistantText("SUMMARY"))
 	p := &scriptedProvider{steps: []func(llm.Request) (llm.Message, error){overflow, summary}}
 	a := newAgent(t, &fakeProvider{})
-	a.Provider = p
-	a.Messages = history()[:4]
+	a.live.provider = p
+	a.conv.messages = history()[:4]
 	final, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "go on"}})
 	if err != nil || final != "done" {
 		t.Fatalf("final %q err %v", final, err)
@@ -187,8 +187,8 @@ func TestOverflowCompactsAndRetriesOnce(t *testing.T) {
 	}
 
 	p = &scriptedProvider{steps: []func(llm.Request) (llm.Message, error){overflow, summary, overflow, summary}}
-	a.Provider = p
-	a.Messages = history()[:4]
+	a.live.provider = p
+	a.conv.messages = history()[:4]
 	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "go on"}}); !contextTooLong(err) {
 		t.Fatalf("second overflow should be returned, got %v", err)
 	}
@@ -200,15 +200,15 @@ func TestOverflowCompactsAndRetriesOnce(t *testing.T) {
 func TestThrashPausesAutoCompaction(t *testing.T) {
 	p := &scriptedProvider{steps: []func(llm.Request) (llm.Message, error){reply(assistantText("SUMMARY"))}}
 	a := newAgent(t, &fakeProvider{})
-	a.Provider = p
-	a.System = strings.Repeat("s", 4000)
-	a.Cfg.CompactAt = config.Threshold{Tokens: 1000}
-	a.Messages = history()
+	a.live.provider = p
+	a.live.system.Text = strings.Repeat("s", 4000)
+	a.live.cfg.CompactAt = config.Threshold{Tokens: 1000}
+	a.conv.messages = history()
 	a.SetContextTokens(20000)
 	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "next"}}); err != nil {
 		t.Fatal(err)
 	}
-	if !a.paused {
+	if !a.conv.paused {
 		t.Fatal("compaction that cannot get under the threshold should pause")
 	}
 	before := len(p.requests)
@@ -221,8 +221,8 @@ func TestThrashPausesAutoCompaction(t *testing.T) {
 			t.Error("compacted again while paused")
 		}
 	}
-	if err := a.Compact(context.Background(), ""); err != nil || a.paused {
-		t.Errorf("manual compaction should clear the pause: %v %v", err, a.paused)
+	if err := a.Compact(context.Background(), ""); err != nil || a.conv.paused {
+		t.Errorf("manual compaction should clear the pause: %v %v", err, a.conv.paused)
 	}
 }
 
@@ -231,12 +231,12 @@ func TestCompactionSurvivesResume(t *testing.T) {
 	t.Setenv("QI_SESSION_DIR", t.TempDir())
 	p := &scriptedProvider{steps: []func(llm.Request) (llm.Message, error){reply(assistantText("SUMMARY"))}}
 	a := newAgent(t, &fakeProvider{})
-	a.Provider = p
-	s, err := session.Create(a.Cwd, "", "m", "interactive", false)
+	a.live.provider = p
+	s, err := session.Create(a.cwd, "", "m", "interactive", false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	a.Session = s
+	a.live.session = s
 	for _, m := range history() {
 		a.appendMsg(m, nil)
 	}
@@ -249,8 +249,8 @@ func TestCompactionSurvivesResume(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(ld.Messages, a.Messages) {
-		t.Errorf("resumed history differs:\n%+v\n%+v", ld.Messages, a.Messages)
+	if !reflect.DeepEqual(ld.Messages, a.conv.messages) {
+		t.Errorf("resumed history differs:\n%+v\n%+v", ld.Messages, a.conv.messages)
 	}
 }
 
@@ -284,22 +284,22 @@ func TestContextTooLong(t *testing.T) {
 func TestFailedOverflowCompactionDropsPrompt(t *testing.T) {
 	p := &scriptedProvider{steps: []func(llm.Request) (llm.Message, error){overflow, overflow, overflow}}
 	a := newAgent(t, &fakeProvider{})
-	a.Provider = p
-	a.Messages = history()[:4]
+	a.live.provider = p
+	a.conv.messages = history()[:4]
 	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "huge paste"}}); !contextTooLong(err) {
 		t.Fatalf("want the overflow error, got %v", err)
 	}
 	if len(p.requests) != 2 {
 		t.Errorf("overflow compaction must not retry its own clipped request: %d requests", len(p.requests))
 	}
-	if !reflect.DeepEqual(a.Messages, history()[:4]) {
-		t.Errorf("rejected prompt should be dropped, history kept: %+v", a.Messages)
+	if !reflect.DeepEqual(a.conv.messages, history()[:4]) {
+		t.Errorf("rejected prompt should be dropped, history kept: %+v", a.conv.messages)
 	}
 
 	p = &scriptedProvider{steps: []func(llm.Request) (llm.Message, error){overflow, overflow, overflow}}
-	a.Provider = p
-	a.Messages = history()
-	if err := a.Compact(context.Background(), ""); err == nil || len(p.requests) != 2 || !reflect.DeepEqual(a.Messages, history()) {
+	a.live.provider = p
+	a.conv.messages = history()
+	if err := a.Compact(context.Background(), ""); err == nil || len(p.requests) != 2 || !reflect.DeepEqual(a.conv.messages, history()) {
 		t.Errorf("manual compaction: err %v, %d requests", err, len(p.requests))
 	}
 }
@@ -307,9 +307,9 @@ func TestFailedOverflowCompactionDropsPrompt(t *testing.T) {
 func TestSummaryRequestMatchesTurnRequest(t *testing.T) {
 	p := &scriptedProvider{}
 	a := newAgent(t, &fakeProvider{})
-	a.Provider = p
-	a.System = "system prompt"
-	a.Cfg.MaxTokens, a.Cfg.ReasoningEffort, a.Cfg.CacheTTL = 1000, "low", "1h"
+	a.live.provider = p
+	a.live.system.Text = "system prompt"
+	a.live.cfg.MaxTokens, a.live.cfg.ReasoningEffort, a.live.cfg.CacheTTL = 1000, "low", "1h"
 	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "hi"}}); err != nil {
 		t.Fatal(err)
 	}
@@ -342,10 +342,10 @@ func TestTryCompactIdle(t *testing.T) {
 	for _, tc := range cases {
 		p := &fakeProvider{}
 		a := newAgent(t, p)
-		a.Cfg.CompactIdleAt = config.Threshold{Tokens: 100}
-		a.Messages = history()
+		a.live.cfg.CompactIdleAt = config.Threshold{Tokens: 100}
+		a.conv.messages = history()
 		a.SetContextTokens(tc.tokens)
-		a.paused = tc.paused
+		a.conv.paused = tc.paused
 		if tc.busy {
 			a.busy.Lock()
 		}
@@ -360,37 +360,37 @@ func TestTryCompactIdle(t *testing.T) {
 		}
 	}
 	a := newAgent(t, &fakeProvider{})
-	a.paused = true
+	a.conv.paused = true
 	a.Reset(nil)
-	if a.paused {
+	if a.conv.paused {
 		t.Error("/clear must lift the compaction pause")
 	}
 }
 
 func TestMidTurnCompactionKeepsNoTail(t *testing.T) {
 	a := newAgent(t, &fakeProvider{})
-	a.Messages = history()
+	a.conv.messages = history()
 	if err := a.compact(context.Background(), compactOpts{midTurn: true}); err != nil {
 		t.Fatal(err)
 	}
-	if len(a.Messages) != 1 || !strings.HasSuffix(a.Messages[0].Text(), compactContinue) {
-		t.Errorf("mid-turn compaction leaves an open tool round; it must keep no tail: %+v", a.Messages)
+	if len(a.conv.messages) != 1 || !strings.HasSuffix(a.conv.messages[0].Text(), compactContinue) {
+		t.Errorf("mid-turn compaction leaves an open tool round; it must keep no tail: %+v", a.conv.messages)
 	}
 	p := &scriptedProvider{}
-	a.Provider = p
-	a.Messages = history()
+	a.live.provider = p
+	a.conv.messages = history()
 	if err := a.Compact(context.Background(), ""); err != nil {
 		t.Fatal(err)
 	}
-	if len(a.Messages) != 1 || strings.HasSuffix(a.Messages[0].Text(), compactContinue) || !strings.Contains(p.requests[0].Messages[len(history())].Text(), compactNoTail) {
-		t.Errorf("history ending in unanswered tool results (a cancelled turn) keeps no tail and asks for the current state: %+v", a.Messages)
+	if len(a.conv.messages) != 1 || strings.HasSuffix(a.conv.messages[0].Text(), compactContinue) || !strings.Contains(p.requests[0].Messages[len(history())].Text(), compactNoTail) {
+		t.Errorf("history ending in unanswered tool results (a cancelled turn) keeps no tail and asks for the current state: %+v", a.conv.messages)
 	}
-	a.Messages = closedHistory()
+	a.conv.messages = closedHistory()
 	if err := a.compact(context.Background(), compactOpts{}); err != nil {
 		t.Fatal(err)
 	}
-	if len(a.Messages) == 1 || strings.HasSuffix(a.Messages[0].Text(), compactContinue) {
-		t.Errorf("between turns the tail is kept: %+v", a.Messages)
+	if len(a.conv.messages) == 1 || strings.HasSuffix(a.conv.messages[0].Text(), compactContinue) {
+		t.Errorf("between turns the tail is kept: %+v", a.conv.messages)
 	}
 }
 
@@ -405,30 +405,30 @@ func TestClipKeepsPreviousSummary(t *testing.T) {
 func TestThrashPauseFromMeasuredUsage(t *testing.T) {
 	p := &fakeProvider{replies: []llm.Message{assistantText("SUMMARY")}, usage: llm.Usage{Input: 5000}}
 	a := newAgent(t, p)
-	a.Cfg.CompactAt = config.Threshold{Tokens: 4000}
-	a.Messages = history()
+	a.live.cfg.CompactAt = config.Threshold{Tokens: 4000}
+	a.conv.messages = history()
 	a.SetContextTokens(20000)
 	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "next"}}); err != nil {
 		t.Fatal(err)
 	}
-	if !a.paused {
+	if !a.conv.paused {
 		t.Error("real usage above the threshold right after compaction should pause")
 	}
-	a.Reconfigure(a.Cfg, p)
-	if a.paused {
+	a.Reconfigure(a.live.cfg, p)
+	if a.conv.paused {
 		t.Error("/model and /profile should lift the pause")
 	}
 }
 
 func TestIdleCompactionSizesTailFromIdleThreshold(t *testing.T) {
 	a := newAgent(t, &fakeProvider{})
-	a.Cfg.CompactIdleAt = config.Threshold{Tokens: 400}
-	a.Messages = history()
+	a.live.cfg.CompactIdleAt = config.Threshold{Tokens: 400}
+	a.conv.messages = history()
 	a.SetContextTokens(20000)
 	if err := a.TryCompactIdle(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	for _, m := range a.Messages {
+	for _, m := range a.conv.messages {
 		if msgTokens(m) > 100 {
 			t.Errorf("tail budget should come from compact_idle_at: kept %d tokens", msgTokens(m))
 		}

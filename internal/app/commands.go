@@ -52,7 +52,6 @@ func (r *repl) handleInput(line string) (string, bool) {
 	if strings.Contains(name, "/") {
 		return line, false
 	}
-	r.stopIdle()
 	args = strings.TrimSpace(args)
 	switch name {
 	case "exit", "quit":
@@ -67,7 +66,7 @@ func (r *repl) handleInput(line string) (string, bool) {
 		if err := r.newSession(); err != nil {
 			r.display.Error(err.Error())
 		} else {
-			r.display.Info("new session " + r.agent.Session.ID)
+			r.display.Info("new session " + r.agent.Session().ID)
 		}
 	case "reload":
 		r.reload()
@@ -106,7 +105,7 @@ func (r *repl) handleInput(line string) (string, bool) {
 				r.display.Error(err.Error())
 			}
 		}
-		r.display.Info("effort: " + effortName(r.agent.Cfg.ReasoningEffort))
+		r.display.Info("effort: " + effortName(r.agent.Config().ReasoningEffort))
 	case "mcp":
 		r.showMCP()
 	case "skills":
@@ -145,7 +144,7 @@ func (r *repl) showMCP() {
 }
 
 func (r *repl) noMCP() string {
-	if len(r.agent.Cfg.MCP) > 0 {
+	if len(r.agent.Config().MCP) > 0 {
 		return "qi started without MCP servers; restart to use the ones in this profile"
 	}
 	return "no MCP servers configured (add \"mcp\" to " + r.configFile() + ")"
@@ -198,11 +197,11 @@ func mcpLine(s mcp.Status, startErr error) string {
 }
 
 func (r *repl) reload() {
-	before := r.agent.System
-	skills, sys := agent.LoadPrompt(r.agent.Cwd, r.agent.Cfg)
+	before := r.agent.System()
+	skills, sys := agent.LoadPrompt(r.agent.Cwd(), r.agent.Config())
 	r.agent.SetSystem(sys)
 	r.skills = skills
-	r.commands = agent.LoadCommands(agent.ProjectRoots(r.agent.Cwd))
+	r.commands = agent.LoadCommands(agent.ProjectRoots(r.agent.Cwd()))
 	note := "unchanged"
 	if sys.Text != before {
 		note = "changed; the next request rewrites the prompt cache"
@@ -270,7 +269,12 @@ func expandArgs(body, args string, positional bool) string {
 	return body
 }
 
-func userBlocks(a *agent.Agent, text string, images []string) []llm.Block {
+type notifier interface {
+	Info(string)
+	Error(string)
+}
+
+func userBlocks(cwd, sessionPath string, ui notifier, text string, images []string) []llm.Block {
 	blocks := []llm.Block{{Type: llm.BlockText, Text: text}}
 	for _, tok := range pathTokens(text) {
 		if tools.ImageType(tok) == "" {
@@ -278,16 +282,16 @@ func userBlocks(a *agent.Agent, text string, images []string) []llm.Block {
 		}
 		p := tok
 		if !filepath.IsAbs(p) {
-			p = filepath.Join(a.Cwd, p)
+			p = filepath.Join(cwd, p)
 		}
-		if img, note, err := attachImage(a, p); err == nil {
+		if img, note, err := attachImage(sessionPath, ui, p); err == nil {
 			blocks = append(blocks, img, note)
 		}
 	}
 	for _, p := range images {
-		img, note, err := attachImage(a, p)
+		img, note, err := attachImage(sessionPath, ui, p)
 		if err != nil {
-			a.UI.Error("image " + p + ": " + err.Error())
+			ui.Error("image " + p + ": " + err.Error())
 			continue
 		}
 		blocks = append(blocks, img, note)
@@ -295,8 +299,8 @@ func userBlocks(a *agent.Agent, text string, images []string) []llm.Block {
 	return blocks
 }
 
-func attachImage(a *agent.Agent, path string) (llm.Block, llm.Block, error) {
-	img, note, err := tools.LoadImage(keepTempImage(a, path))
+func attachImage(sessionPath string, ui notifier, path string) (llm.Block, llm.Block, error) {
+	img, note, err := tools.LoadImage(keepTempImage(sessionPath, path))
 	if err != nil {
 		return llm.Block{}, llm.Block{}, err
 	}
@@ -304,14 +308,14 @@ func attachImage(a *agent.Agent, path string) (llm.Block, llm.Block, error) {
 	if img.Width > 0 {
 		info += fmt.Sprintf(" (%d×%d)", img.Width, img.Height)
 	}
-	a.UI.Info(info)
+	ui.Info(info)
 	return img, llm.Block{Type: llm.BlockText, Text: "<attached-image>" + note + "</attached-image>"}, nil
 }
 
-func keepTempImage(a *agent.Agent, path string) string {
+func keepTempImage(sessionPath, path string) string {
 	tmp, err := filepath.EvalSymlinks(os.TempDir())
 	src, err2 := filepath.EvalSymlinks(path)
-	if a.Session == nil || err != nil || err2 != nil || !strings.HasPrefix(src, tmp+string(filepath.Separator)) {
+	if sessionPath == "" || err != nil || err2 != nil || !strings.HasPrefix(src, tmp+string(filepath.Separator)) {
 		return path
 	}
 	if st, err := os.Stat(src); err != nil || !st.Mode().IsRegular() || st.Size() > 50<<20 {
@@ -322,7 +326,7 @@ func keepTempImage(a *agent.Agent, path string) string {
 		return path
 	}
 	sum := sha256.Sum256(data)
-	dir := strings.TrimSuffix(a.Session.Path, ".jsonl") + "-images"
+	dir := strings.TrimSuffix(sessionPath, ".jsonl") + "-images"
 	dst := filepath.Join(dir, hex.EncodeToString(sum[:6])+strings.ToLower(filepath.Ext(path)))
 	if os.MkdirAll(dir, 0o700) != nil || os.WriteFile(dst, data, 0o600) != nil {
 		return path
