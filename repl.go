@@ -186,10 +186,19 @@ func (r *repl) stop() {
 		r.display.ClearFooter()
 		r.term.Suspend()
 	}
-	_ = syscall.Kill(os.Getpid(), syscall.SIGSTOP)
+	stopSelf()
 	if !child {
 		r.term.Resume()
 		r.display.RenderPrompt()
+	}
+}
+
+func stopSelf() {
+	cont := make(chan os.Signal, 1)
+	signal.Notify(cont, syscall.SIGCONT)
+	defer signal.Stop(cont)
+	if syscall.Kill(os.Getpid(), syscall.SIGSTOP) == nil {
+		<-cont
 	}
 }
 
