@@ -3,11 +3,14 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/paul-nameless/qi/internal/config"
 	"github.com/paul-nameless/qi/internal/mcp/mcptest"
@@ -156,5 +159,64 @@ func TestManagerStartRetriesFailedServer(t *testing.T) {
 	}
 	if st := m.Status(); st[0].State != Started || len(st[0].Tools) != 4 {
 		t.Errorf("after retry: %+v", st)
+	}
+}
+
+func TestColdServerDoesNotBlockOthers(t *testing.T) {
+	fake, _ := fakeServer(t, config.MCPServer{})
+	m := NewManager(map[string]config.MCPServer{"fake": fake, "slow": {Command: "sleep", Args: []string{"30"}}})
+	defer m.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	slowDone := make(chan error, 1)
+	go func() { slowDone <- m.Start(ctx, "slow") }()
+	time.Sleep(100 * time.Millisecond)
+	start := time.Now()
+	if _, err := m.ServerTools(context.Background(), "fake", ""); err != nil {
+		t.Fatal(err)
+	}
+	_ = m.Status()
+	if d := time.Since(start); d > time.Second {
+		t.Errorf("fake server and Status waited %v behind the cold one", d)
+	}
+	select {
+	case err := <-slowDone:
+		t.Fatalf("slow server returned early: %v", err)
+	default:
+	}
+	cancel()
+	if err := <-slowDone; !errors.Is(err, context.Canceled) {
+		t.Errorf("slow server: %v", err)
+	}
+}
+
+func TestStartErrorIncludesStderr(t *testing.T) {
+	m := NewManager(map[string]config.MCPServer{"bad": {Command: "sh", Args: []string{"-c", "echo first >&2; echo 'missing API token' >&2; exit 1"}}})
+	defer m.Close()
+	err := m.Start(context.Background(), "bad")
+	if err == nil || !strings.Contains(err.Error(), "mcp server bad exited; stderr: first | missing API token") {
+		t.Errorf("start error: %v", err)
+	}
+	if st := m.Status(); st[0].State != Failed || !strings.Contains(st[0].Err.Error(), "missing API token") {
+		t.Errorf("status: %+v", st)
+	}
+}
+
+func TestTailWriterKeepsLastLines(t *testing.T) {
+	var w tailWriter
+	for i := range 2000 {
+		fmt.Fprintf(&w, "line %d\n", i)
+	}
+	if got := w.String(); got != "line 1995 | line 1996 | line 1997 | line 1998 | line 1999" {
+		t.Errorf("tail %q", got)
+	}
+}
+
+func TestCloseDuringStart(t *testing.T) {
+	fake, _ := fakeServer(t, config.MCPServer{})
+	m := NewManager(map[string]config.MCPServer{"fake": fake})
+	m.Close()
+	if err := m.Start(context.Background(), "fake"); err == nil || !strings.Contains(err.Error(), "shutting down") {
+		t.Errorf("start after close: %v", err)
 	}
 }

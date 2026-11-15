@@ -60,6 +60,7 @@ type rpcError struct {
 type client struct {
 	name    string
 	cmd     *exec.Cmd
+	stderr  *tailWriter
 	stdin   io.WriteCloser
 	mu      sync.Mutex
 	writeMu sync.Mutex
@@ -77,7 +78,8 @@ func start(name string, srv config.MCPServer) (*client, error) {
 		cmd.Env = append(cmd.Env, k+"="+v)
 	}
 	proc.Detach(cmd, proc.Session)
-	cmd.Stderr = io.Discard
+	stderr := &tailWriter{}
+	cmd.Stderr = stderr
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -89,7 +91,7 @@ func start(name string, srv config.MCPServer) (*client, error) {
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start mcp server %s: %w", name, err)
 	}
-	c := &client{name: name, cmd: cmd, stdin: stdin, pending: map[int64]chan rpcMsg{}, done: make(chan struct{})}
+	c := &client{name: name, cmd: cmd, stderr: stderr, stdin: stdin, pending: map[int64]chan rpcMsg{}, done: make(chan struct{})}
 	go c.readLoop(stdout)
 	return c, nil
 }
@@ -223,6 +225,22 @@ func (c *client) toolNames() []string {
 	return names
 }
 
+func (c *client) exited() bool {
+	select {
+	case <-c.done:
+		return true
+	default:
+		return false
+	}
+}
+
+func (c *client) withStderr(err error) error {
+	if tail := c.stderr.String(); tail != "" {
+		return fmt.Errorf("%w; stderr: %s", err, tail)
+	}
+	return err
+}
+
 func (c *client) close() {
 	c.stdin.Close()
 	select {
@@ -234,13 +252,19 @@ func (c *client) close() {
 
 type Manager struct {
 	servers map[string]config.MCPServer
+	starts  map[string]*sync.Mutex
 	mu      sync.Mutex
 	clients map[string]*client
 	errs    map[string]error
+	closed  bool
 }
 
 func NewManager(servers map[string]config.MCPServer) *Manager {
-	return &Manager{servers: servers, clients: map[string]*client{}, errs: map[string]error{}}
+	starts := map[string]*sync.Mutex{}
+	for name := range servers {
+		starts[name] = &sync.Mutex{}
+	}
+	return &Manager{servers: servers, starts: starts, clients: map[string]*client{}, errs: map[string]error{}}
 }
 
 func (m *Manager) Names() []string {
@@ -265,40 +289,64 @@ func (m *Manager) server(name string) (config.MCPServer, error) {
 }
 
 func (m *Manager) get(ctx context.Context, name string) (*client, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if c, ok := m.clients[name]; ok {
-		select {
-		case <-c.done:
-			c.close()
-			delete(m.clients, name)
-		default:
-			return c, nil
-		}
-	}
-	if err, ok := m.errs[name]; ok {
-		return nil, err
-	}
 	srv, err := m.server(name)
 	if err != nil {
 		return nil, err
 	}
-	c, err := start(name, srv)
-	if err == nil {
-		ictx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		err = c.initialize(ictx)
-		cancel()
-		if err != nil {
-			c.close()
-		}
+	lock := m.starts[name]
+	lock.Lock()
+	defer lock.Unlock()
+	if c, err, ok := m.current(name); ok {
+		return c, err
 	}
+	c, err := launch(ctx, name, srv)
+	return m.store(ctx, name, c, err)
+}
+
+func (m *Manager) current(name string) (*client, error, bool) {
+	m.mu.Lock()
+	c, ok := m.clients[name]
+	if ok && !c.exited() {
+		m.mu.Unlock()
+		return c, nil, true
+	}
+	delete(m.clients, name)
+	err, failed := m.errs[name]
+	m.mu.Unlock()
+	if ok {
+		c.close()
+	}
+	return nil, err, failed
+}
+
+func launch(ctx context.Context, name string, srv config.MCPServer) (*client, error) {
+	c, err := start(name, srv)
+	if err != nil {
+		return nil, err
+	}
+	ictx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if err := c.initialize(ictx); err != nil {
+		c.close()
+		return nil, c.withStderr(err)
+	}
+	c.filter(srv)
+	return c, nil
+}
+
+func (m *Manager) store(ctx context.Context, name string, c *client, err error) (*client, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if err != nil {
 		if ctx.Err() == nil && !errors.Is(err, context.DeadlineExceeded) {
 			m.errs[name] = err
 		}
 		return nil, err
 	}
-	c.filter(srv)
+	if m.closed {
+		go c.close()
+		return nil, fmt.Errorf("mcp server %s: qi is shutting down", name)
+	}
 	m.clients[name] = c
 	return c, nil
 }
@@ -458,11 +506,13 @@ func (m *Manager) status(name string) Status {
 
 func (m *Manager) Close() {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	clients := m.clients
+	m.clients = map[string]*client{}
+	m.closed = true
+	m.mu.Unlock()
 	var wg sync.WaitGroup
-	for _, c := range m.clients {
+	for _, c := range clients {
 		wg.Go(c.close)
 	}
 	wg.Wait()
-	m.clients = map[string]*client{}
 }
