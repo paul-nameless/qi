@@ -3,13 +3,15 @@ package config
 import (
 	"bytes"
 	_ "embed"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 )
 
@@ -17,60 +19,80 @@ import (
 var Schema []byte
 
 func decodeStrict(data []byte, v any) error {
+	data = bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))
 	if len(bytes.TrimSpace(data)) == 0 {
 		return errors.New("empty file, expected a JSON object")
 	}
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(v); err != nil {
+	if err := json.Unmarshal(data, v, json.RejectUnknownMembers(true)); err != nil {
 		return explain(data, err)
-	}
-	if _, err := dec.Token(); err != io.EOF {
-		line, _ := position(data, dec.InputOffset())
-		return fmt.Errorf("line %d: unexpected data after the JSON object", line)
 	}
 	return nil
 }
 
+type badValue struct{ error }
+
 func explain(data []byte, err error) error {
-	var syntax *json.SyntaxError
-	var typ *json.UnmarshalTypeError
+	var syntax *jsontext.SyntacticError
+	var semantic *json.SemanticError
 	switch {
 	case errors.As(err, &syntax):
-		line, col := position(data, syntax.Offset-1)
-		return fmt.Errorf("line %d, column %d: invalid JSON: %s", line, col, syntax.Error())
-	case errors.As(err, &typ):
-		return fmt.Errorf("key %q: expected %s, got %s", typ.Field, jsonKind(typ.Type), typ.Value)
-	case errors.Is(err, io.ErrUnexpectedEOF):
-		return errors.New("invalid JSON: unexpected end of file")
+		return syntaxError(data, syntax)
+	case errors.As(err, &semantic):
+		return semanticError(semantic)
 	}
-	msg := strings.TrimPrefix(err.Error(), "json: ")
-	if field, ok := strings.CutPrefix(msg, "unknown field "); ok {
-		return fmt.Errorf("unknown key %s", field)
-	}
-	if key := failingKey(data); key != "" {
-		return fmt.Errorf("key %q: %s", key, msg)
-	}
-	return errors.New(msg)
+	return err
 }
 
-var unmarshalerType = reflect.TypeFor[json.Unmarshaler]()
+func syntaxError(data []byte, e *jsontext.SyntacticError) error {
+	line, col := position(data, e.ByteOffset)
+	switch {
+	case errors.Is(e.Err, jsontext.ErrDuplicateName):
+		return fmt.Errorf("line %d: duplicate key %q", line, keyPath(e.JSONPointer))
+	case errors.Is(e.Err, io.ErrUnexpectedEOF):
+		return errors.New("invalid JSON: unexpected end of file")
+	case strings.Contains(e.Err.Error(), "after top-level value"):
+		return fmt.Errorf("line %d, column %d: unexpected data after the JSON object", line, col)
+	}
+	return fmt.Errorf("line %d, column %d: invalid JSON: %v", line, col, e.Err)
+}
 
-func failingKey(data []byte) string {
-	var keys map[string]json.RawMessage
-	if json.Unmarshal(data, &keys) != nil {
-		return ""
+func semanticError(e *json.SemanticError) error {
+	key := keyPath(e.JSONPointer)
+	var bad badValue
+	switch {
+	case errors.Is(e, json.ErrUnknownName):
+		return fmt.Errorf("unknown key %q", key)
+	case key == "":
+		return fmt.Errorf("expected a JSON object, got %s", kindName(e.JSONKind, nil))
+	case errors.As(e.Err, &bad):
+		return fmt.Errorf("key %q: %v", key, bad.error)
 	}
-	for f := range reflect.TypeFor[Config]().Fields() {
-		raw, ok := keys[jsonName(f)]
-		if !ok || !reflect.PointerTo(f.Type).Implements(unmarshalerType) {
-			continue
+	return fmt.Errorf("key %q: expected %s, got %s", key, goKind(e.GoType), kindName(e.JSONKind, e.JSONValue))
+}
+
+func keyPath(p jsontext.Pointer) string {
+	return strings.Join(slices.Collect(p.Tokens()), ".")
+}
+
+func kindName(k jsontext.Kind, v jsontext.Value) string {
+	switch k {
+	case '"':
+		return "a string"
+	case '0':
+		if len(v) > 0 {
+			return "the number " + string(v)
 		}
-		if json.Unmarshal(raw, reflect.New(f.Type).Interface()) != nil {
-			return jsonName(f)
-		}
+		return "a number"
+	case 't', 'f':
+		return "a boolean"
+	case 'n':
+		return "null"
+	case '{':
+		return "an object"
+	case '[':
+		return "an array"
 	}
-	return ""
+	return "an invalid value"
 }
 
 func position(data []byte, offset int64) (int, int) {
@@ -80,35 +102,60 @@ func position(data []byte, offset int64) (int, int) {
 	return line, col
 }
 
-func jsonKind(t reflect.Type) string {
+func goKind(t reflect.Type) string {
+	if t == nil {
+		return "another type"
+	}
 	switch t.Kind() {
 	case reflect.String:
 		return "a string"
 	case reflect.Bool:
 		return "true or false"
-	case reflect.Int, reflect.Int64, reflect.Int32, reflect.Float64:
-		return "a number"
+	case reflect.Int, reflect.Int64, reflect.Int32:
+		return "a whole number"
 	case reflect.Slice:
 		return "an array"
 	case reflect.Map, reflect.Struct:
 		return "an object"
 	case reflect.Pointer:
-		return jsonKind(t.Elem())
+		return goKind(t.Elem())
 	}
 	return t.String()
 }
 
 func clearKeys(c *Config, raw []byte) error {
-	var keys map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &keys); err != nil {
-		return explain(raw, err)
+	keys, err := objectKeys(raw)
+	if err != nil {
+		return err
 	}
 	v := reflect.ValueOf(c).Elem()
-	t := v.Type()
-	for i := range t.NumField() {
-		f := t.Field(i)
+	for _, f := range reflect.VisibleFields(v.Type()) {
 		if _, ok := keys[jsonName(f)]; ok && f.IsExported() {
-			v.Field(i).SetZero()
+			v.FieldByIndex(f.Index).SetZero()
+		}
+	}
+	return nil
+}
+
+func objectKeys(raw []byte) (map[string]jsontext.Value, error) {
+	var keys map[string]jsontext.Value
+	if err := json.Unmarshal(raw, &keys); err != nil {
+		return nil, explain(raw, err)
+	}
+	return keys, nil
+}
+
+func checkProfile(raw []byte) error {
+	if err := decodeStrict(raw, &Config{}); err != nil {
+		return err
+	}
+	keys, err := objectKeys(raw)
+	if err != nil {
+		return err
+	}
+	for _, k := range []string{"profiles", "default_profile"} {
+		if _, ok := keys[k]; ok {
+			return fmt.Errorf("key %q is not allowed in a profile", k)
 		}
 	}
 	return nil

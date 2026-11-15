@@ -51,7 +51,7 @@ go install github.com/paul-nameless/aicode@latest
 }
 ```
 
-Top-level keys are shared settings; a profile can set any of them and replaces that key's whole value. `api: anthropic` uses the native Messages API. The model picks one of `subagent_models` per subagent, and `/model <name>` switches to it. Other keys:
+Top-level keys are shared settings; a profile can set any of them except `profiles` and `default_profile`, and replaces that key's whole value (`null` resets it to the default). `api: anthropic` uses the native Messages API. The model picks one of `subagent_models` per subagent, and `/model <name>` switches to it. Other keys:
 
 - `cache_ttl`: Anthropic prompt cache TTL (default `1h` interactive, `5m` with `-q`); idle compaction runs 5 minutes before it expires.
 - `compact_at`: compact when context passes this, in tokens (`150000`, `"150k"`) or a share of the window (`"80%"`). `compact_idle_at` is the idle threshold, same syntax.
@@ -60,7 +60,7 @@ Top-level keys are shared settings; a profile can set any of them and replaces t
 - `mcp`: stdio MCP servers, e.g. `{"github": {"command": "github-mcp-server", "args": ["stdio"], "description": "GitHub issues and pull requests"}}`.
 - `builtin_skills`: `false` hides the built-in `aicode-config` skill, which lets the agent read and change these settings.
 
-Every key is described in the JSON Schema [`internal/config/schema.json`](internal/config/schema.json); a `"$schema"` key pointing at it is allowed. Unknown keys are errors. `aicode -check-config` loads the config and every profile without calling any API.
+Every key is described in the JSON Schema [`internal/config/schema.json`](internal/config/schema.json); a `"$schema"` key pointing at it is allowed. Unknown keys and values outside the schema are errors. `aicode -check-config` loads the config and every profile (inline and `~/.config/aicode/*.json`) without calling any API. After editing, `/profile <name>` re-reads the file; prompt keys (`skill_dirs`, `instruction_files`, `builtin_skills`) also need `/reload`, and `mcp` and `hook_files` need a restart.
 
 `aicode -p glm` picks a profile, `/profile glm` and `/model luna` switch at runtime. A plain `~/.config/aicode/<name>.json` also works as a profile. The API key can also come from `OPENROUTER_API_KEY`, `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`. Project hooks from `.claude/settings.json` run only after you trust the project once.
 

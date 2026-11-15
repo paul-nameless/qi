@@ -1,6 +1,13 @@
 package agent
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
+
+func norm(s string) string {
+	return strings.Join(strings.Fields(s), " ")
+}
 
 func TestParseFrontmatterScalars(t *testing.T) {
 	cases := []struct {
@@ -12,6 +19,8 @@ func TestParseFrontmatterScalars(t *testing.T) {
 		{"name: 'it''s'\n", "it's", "", false},
 		{"description: \"tab\\there \\u00e9 \\\"q\\\" \\\\ end\"\n", "", "tab\there é \"q\" \\ end", false},
 		{"name: \"quoted\"   # comment\n", "quoted", "", false},
+		{"description: \"Mia\" is the phone # c\n", "", "\"Mia\" is the phone", false},
+		{"name: \"\\U0001F528 \\x41\"\n", "\U0001F528 A", "", false},
 		{"description: |\n  line one\n  line two\n\n", "", "line one\nline two\n", false},
 		{"description: |-\n  line one\n  line two\n\n", "", "line one\nline two", false},
 		{"description: |+\n  line one\n  line two\n\n\n", "", "line one\nline two\n\n", false},
@@ -40,7 +49,7 @@ func TestParseFrontmatterScalars(t *testing.T) {
 	}
 	for _, c := range cases {
 		m, body := ParseFrontmatter("---\n" + c.in + "---\nbody\n")
-		if m.Name != c.name || m.Description != c.desc || m.DisableModelInvocation != c.hidden || body != "body\n" {
+		if m.Name != norm(c.name) || m.Description != norm(c.desc) || m.DisableModelInvocation != c.hidden || body != "body\n" {
 			t.Errorf("%q: got %q %q %v body %q", c.in, m.Name, m.Description, m.DisableModelInvocation, body)
 		}
 	}

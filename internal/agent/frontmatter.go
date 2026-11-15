@@ -35,22 +35,17 @@ func ParseFrontmatter(data string) (skillMeta, string) {
 }
 
 func frontmatterFields(text string) map[string]string {
-	text = strings.ReplaceAll(text, "\r\n", "\n")
-	lines := strings.Split(text, "\n")
-	broken := strings.HasSuffix(text, "\n")
-	if broken {
-		lines = lines[:len(lines)-1]
-	}
+	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
 	out := map[string]string{}
 	for i := 0; i < len(lines); {
-		key, rest, ok := topLevelKey(lines[i])
+		key, first, ok := topLevelKey(lines[i])
 		i++
 		start := i
 		for i < len(lines) && (strings.TrimSpace(lines[i]) == "" || indentOf(lines[i]) > 0) {
 			i++
 		}
 		if ok {
-			out[key] = scalarValue(rest, lines[start:i], broken || i < len(lines))
+			out[key] = strings.Join(strings.Fields(scalarValue(first, lines[start:i])), " ")
 		}
 	}
 	return out
@@ -60,61 +55,51 @@ func topLevelKey(line string) (string, string, bool) {
 	if line == "" || indentOf(line) > 0 || line[0] == '#' || line[0] == '-' {
 		return "", "", false
 	}
-	key, rest, ok := strings.Cut(line, ":")
-	for ok && rest != "" && rest[0] != ' ' && rest[0] != '\t' {
-		var more string
-		more, rest, ok = strings.Cut(rest, ":")
-		key += ":" + more
-	}
-	if !ok {
+	i := strings.Index(line+" ", ": ")
+	if i < 0 {
 		return "", "", false
 	}
-	key = strings.TrimSpace(key)
-	if len(key) >= 2 && (key[0] == '"' || key[0] == '\'') && key[len(key)-1] == key[0] {
-		key = key[1 : len(key)-1]
-	}
-	return key, strings.TrimSpace(rest), true
+	key := strings.Trim(line[:i], `"'`)
+	return key, strings.TrimSpace(line[min(i+1, len(line)):]), true
 }
 
 func indentOf(line string) int {
 	return len(line) - len(strings.TrimLeft(line, " \t"))
 }
 
-func scalarValue(first string, more []string, broken bool) string {
+func scalarValue(first string, more []string) string {
 	switch {
 	case first == "":
-		return plainContinuation(more, broken)
+		return nextLineValue(more)
 	case first[0] == '|' || first[0] == '>':
-		return blockScalar(first, more, broken)
-	case first[0] == '"':
-		return doubleQuoted(joinQuoted(first, more))
-	case first[0] == '\'':
-		return singleQuoted(joinQuoted(first, more))
+		return strings.Join(more, " ")
+	case first[0] == '"' || first[0] == '\'':
+		return quoted(first, more)
 	}
 	return plainScalar(first, more)
 }
 
-func stripComment(s string) string {
-	if strings.HasPrefix(s, "#") {
-		return ""
+func quoted(first string, more []string) string {
+	s := strings.Join(append([]string{first}, more...), " ")
+	unquote := doubleQuoted
+	if s[0] == '\'' {
+		unquote = singleQuoted
 	}
-	if i := strings.Index(s, " #"); i >= 0 {
-		s = s[:i]
+	v, end := unquote(s)
+	if rest := strings.TrimSpace(s[end:]); rest != "" && rest[0] != '#' {
+		return plainScalar(first, more)
 	}
-	if i := strings.Index(s, "\t#"); i >= 0 {
-		s = s[:i]
-	}
-	return strings.TrimSpace(s)
+	return v
 }
 
-func plainContinuation(more []string, broken bool) string {
+func nextLineValue(more []string) string {
 	for i, l := range more {
 		t := strings.TrimSpace(l)
 		switch {
 		case t == "" || t[0] == '#':
 			continue
 		case t[0] == '"' || t[0] == '\'':
-			return scalarValue(t, more[i+1:], broken)
+			return scalarValue(t, more[i+1:])
 		case t == "-" || strings.HasPrefix(t, "- ") || strings.Contains(t, ": ") || strings.HasSuffix(t, ":"):
 			return ""
 		}
@@ -124,8 +109,7 @@ func plainContinuation(more []string, broken bool) string {
 }
 
 func plainScalar(first string, more []string) string {
-	first = stripComment(first)
-	parts := []string{first}
+	parts := []string{stripComment(first)}
 	for _, l := range more {
 		t := strings.TrimSpace(l)
 		if strings.HasPrefix(t, "#") {
@@ -133,205 +117,70 @@ func plainScalar(first string, more []string) string {
 		}
 		parts = append(parts, stripComment(t))
 	}
-	s := foldLines(parts)
-	switch s {
+	s := strings.Join(parts, " ")
+	switch strings.TrimSpace(s) {
 	case "~", "null", "Null", "NULL":
 		return ""
 	}
 	return s
 }
 
-func foldLines(parts []string) string {
-	var b strings.Builder
-	empties := 0
-	for _, p := range parts {
-		if p == "" {
-			empties++
-			continue
-		}
-		if b.Len() > 0 {
-			if empties == 0 {
-				b.WriteByte(' ')
-			} else {
-				b.WriteString(strings.Repeat("\n", empties))
-			}
-		}
-		b.WriteString(p)
-		empties = 0
+func stripComment(s string) string {
+	if strings.HasPrefix(s, "#") {
+		return ""
 	}
-	return b.String()
+	for _, sep := range []string{" #", "\t#"} {
+		if i := strings.Index(s, sep); i >= 0 {
+			s = s[:i]
+		}
+	}
+	return s
 }
 
-func blockScalar(header string, more []string, broken bool) string {
-	literal := header[0] == '|'
-	chomp, indent := byte(0), 0
-	for _, c := range stripComment(header[1:]) {
-		switch {
-		case c == '-' || c == '+':
-			chomp = byte(c)
-		case c >= '1' && c <= '9':
-			indent = int(c - '0')
-		}
-	}
-	if indent == 0 {
-		for _, l := range more {
-			if strings.TrimSpace(l) != "" {
-				indent = len(l) - len(strings.TrimLeft(l, " "))
-				break
-			}
-		}
-	}
-	lines := make([]string, len(more))
-	for i, l := range more {
-		if len(l) >= indent && strings.TrimSpace(l[:indent]) == "" {
-			lines[i] = l[indent:]
-		} else {
-			lines[i] = strings.TrimLeft(l, " ")
-		}
-	}
-	trailing := 0
-	for len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
-		lines = lines[:len(lines)-1]
-		trailing++
-	}
-	text := foldBlock(lines)
-	if literal {
-		text = strings.Join(lines, "\n")
-	}
-	return chompBlock(text, chomp, trailing, broken)
-}
-
-func foldBlock(lines []string) string {
-	var b strings.Builder
-	empties, started, prevNormal := 0, false, false
-	for _, l := range lines {
-		if l == "" {
-			empties++
-			continue
-		}
-		normal := l[0] != ' ' && l[0] != '\t'
-		switch {
-		case !started:
-			b.WriteString(strings.Repeat("\n", empties))
-		case normal && prevNormal && empties == 0:
-			b.WriteByte(' ')
-		case normal && prevNormal:
-			b.WriteString(strings.Repeat("\n", empties))
-		default:
-			b.WriteString(strings.Repeat("\n", empties+1))
-		}
-		b.WriteString(l)
-		empties, started, prevNormal = 0, true, normal
-	}
-	return b.String()
-}
-
-func chompBlock(text string, chomp byte, trailing int, broken bool) string {
-	if chomp == '-' {
-		return text
-	}
-	ended := text != "" && (trailing > 0 || broken)
-	if chomp != '+' {
-		if ended {
-			return text + "\n"
-		}
-		return text
-	}
-	breaks := trailing
-	if !broken && trailing > 0 {
-		breaks--
-	}
-	if ended {
-		breaks++
-	}
-	return text + strings.Repeat("\n", breaks)
-}
-
-func joinQuoted(first string, more []string) string {
-	return strings.Join(append([]string{first}, more...), "\n")
-}
-
-func quotedLines(s string) string {
-	lines := strings.Split(s, "\n")
-	parts := make([]string, len(lines))
-	for i, l := range lines {
-		if i < len(lines)-1 {
-			l = strings.TrimRight(l, " \t")
-		}
-		if i > 0 {
-			l = strings.TrimLeft(l, " \t")
-		}
-		parts[i] = l
-	}
-	return foldLines(parts)
-}
-
-func singleQuoted(s string) string {
+func singleQuoted(s string) (string, int) {
 	var b strings.Builder
 	for i := 1; i < len(s); i++ {
-		if s[i] != '\'' {
-			b.WriteByte(s[i])
-			continue
-		}
-		if i+1 < len(s) && s[i+1] == '\'' {
-			b.WriteByte('\'')
+		if s[i] == '\'' {
+			if i+1 >= len(s) || s[i+1] != '\'' {
+				return b.String(), i + 1
+			}
 			i++
-			continue
 		}
-		break
+		b.WriteByte(s[i])
 	}
-	return quotedLines(b.String())
+	return b.String(), len(s)
 }
 
-func doubleQuoted(s string) string {
+var hexWidth = map[byte]int{'x': 2, 'u': 4, 'U': 8}
+
+var escapes = map[byte]string{'n': "\n", 't': "\t", 'r': "\r", '"': "\"", '\\': "\\", '/': "/", '0': ""}
+
+func doubleQuoted(s string) (string, int) {
 	var b strings.Builder
-	var seg strings.Builder
-	flush := func() {
-		b.WriteString(quotedLines(seg.String()))
-		seg.Reset()
-	}
 	for i := 1; i < len(s); i++ {
-		c := s[i]
-		if c == '"' {
-			break
+		switch {
+		case s[i] == '"':
+			return b.String(), i + 1
+		case s[i] != '\\' || i+1 >= len(s):
+			b.WriteByte(s[i])
+		default:
+			i += unescape(&b, s[i+1:])
 		}
-		if c != '\\' || i+1 >= len(s) {
-			seg.WriteByte(c)
-			continue
-		}
-		i++
-		if s[i] == '\n' {
-			for i+1 < len(s) && (s[i+1] == ' ' || s[i+1] == '\t') {
-				i++
-			}
-			continue
-		}
-		flush()
-		n := escapeValue(s[i:], &b)
-		i += n - 1
 	}
-	flush()
-	return b.String()
+	return b.String(), len(s)
 }
 
-var simpleEscapes = map[byte]string{
-	'0': "\x00", 'a': "\a", 'b': "\b", 't': "\t", '\t': "\t", 'n': "\n", 'v': "\v", 'f': "\f", 'r': "\r", 'e': "\x1b",
-	' ': " ", '"': "\"", '/': "/", '\\': "\\", 'N': "\u0085", '_': " ", 'L': " ", 'P': " ",
-}
-
-func escapeValue(s string, b *strings.Builder) int {
-	if v, ok := simpleEscapes[s[0]]; ok {
+func unescape(b *strings.Builder, s string) int {
+	if v, ok := escapes[s[0]]; ok {
 		b.WriteString(v)
 		return 1
 	}
-	width := map[byte]int{'x': 2, 'u': 4, 'U': 8}[s[0]]
-	if width > 0 && len(s) > width {
-		if r, err := strconv.ParseUint(s[1:1+width], 16, 32); err == nil {
+	if n := hexWidth[s[0]]; n > 0 && len(s) > n {
+		if r, err := strconv.ParseUint(s[1:1+n], 16, 32); err == nil {
 			b.WriteRune(rune(r))
-			return 1 + width
+			return 1 + n
 		}
 	}
-	b.WriteByte('\\')
 	b.WriteByte(s[0])
 	return 1
 }

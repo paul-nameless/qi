@@ -46,7 +46,7 @@ func TestUnknownKeysAreErrors(t *testing.T) {
 
 	path = writeConfig(t, dir, "config.json", `{"providers": {"or": {"base_url": "u", "key": "k"}}}`)
 	_, err = Load(path, "")
-	wantErr(t, err, path, `unknown key "key"`)
+	wantErr(t, err, path, `unknown key "providers.or.key"`)
 
 	path = writeConfig(t, dir, "config.json", `{"model": "m"}`)
 	file := writeConfig(t, dir, "extra.json", `{"model": "m", "debug": true}`)
@@ -58,8 +58,14 @@ func TestJSONSyntaxAndTypeErrors(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("AICODE_CONFIG_DIR", dir)
 	cases := map[string][]string{
-		"{\n  \"model\": \"m\",\n}\n":   {"line 3", "invalid JSON"},
-		`{"max_tokens": "lots"}`:        {`key "max_tokens"`, "expected a number"},
+		"{\n  \"model\": \"m\",\n}\n":  {"line 2", "invalid JSON"},
+		`{"max_tokens": "lots"}`:       {`key "max_tokens"`, "expected a whole number, got a string"},
+		`{"max_tokens": 1.5}`:          {`key "max_tokens"`, "got the number 1.5"},
+		`[1]`:                          {"expected a JSON object, got an array"},
+		"{\"model\": \"m\"}\n\n  junk": {"line 3, column 3", "unexpected data after the JSON object"},
+		`{"Model": "x"}`:               {`unknown key "Model"`},
+		`{"model": "a", "model": "b"}`: {`duplicate key "model"`},
+		`{"providers": {"a": {"base_url": "x", "base_url": "y"}}}`: {`duplicate key "providers.a.base_url"`},
 		`{"read_only": "yes"}`:          {`key "read_only"`, "expected true or false"},
 		`{"model": "m"} {"model": "n"}`: {"unexpected data after the JSON object"},
 		"  \n":                          {"empty file"},
@@ -70,6 +76,75 @@ func TestJSONSyntaxAndTypeErrors(t *testing.T) {
 		_, err := Load(path, "")
 		wantErr(t, err, append(parts, path)...)
 	}
+}
+
+func TestByteOrderMarkIsSkipped(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("AICODE_CONFIG_DIR", dir)
+	path := writeConfig(t, dir, "config.json", "\xef\xbb\xbf{\"model\": \"m\"}")
+	if c, err := Load(path, ""); err != nil || c.Model != "m" {
+		t.Errorf("BOM: %q %v", c.Model, err)
+	}
+}
+
+func TestProfileKeysAreCaseSensitive(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("AICODE_CONFIG_DIR", dir)
+	path := writeConfig(t, dir, "config.json", `{"providers": {"a": {"base_url": "u"}}, "profiles": {"p": {"Providers": {"b": {"base_url": "v"}}}}}`)
+	_, err := Load(path, "")
+	wantErr(t, err, `profile "p"`, `unknown key "Providers"`)
+}
+
+func TestProfilesCannotNestProfiles(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("AICODE_CONFIG_DIR", dir)
+	path := writeConfig(t, dir, "config.json", `{"profiles": {"p": {"profiles": {"q": {"modle": 1}}}}}`)
+	_, err := Load(path, "")
+	wantErr(t, err, `profile "p"`, `key "profiles" is not allowed in a profile`)
+	path = writeConfig(t, dir, "config.json", `{"model": "m"}`)
+	file := writeConfig(t, dir, "f.json", `{"default_profile": "x"}`)
+	_, err = Load(path, "f")
+	wantErr(t, err, file, `key "default_profile" is not allowed in a profile`)
+}
+
+func TestNullInProfileResetsToDefault(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("AICODE_CONFIG_DIR", dir)
+	path := writeConfig(t, dir, "config.json", `{"max_tokens": 1000, "compact_at": "50k", "read_only_allow": ["x"], "profiles": {"p": {"max_tokens": null, "compact_at": null, "read_only_allow": null}}}`)
+	c, err := Load(path, "p")
+	if err != nil || c.MaxTokens != 32000 || c.CompactAt != (Threshold{Tokens: 150000}) || c.ReadOnlyAllow != nil {
+		t.Errorf("null should reset to defaults: %d %+v %v %v", c.MaxTokens, c.CompactAt, c.ReadOnlyAllow, err)
+	}
+}
+
+func TestValidateMirrorsSchema(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("AICODE_CONFIG_DIR", dir)
+	cases := map[string][]string{
+		`{"api": "antropic"}`:                   {`key "api"`, `"antropic" is not one of openai, anthropic`},
+		`{"cache_ttl": "2h"}`:                   {`key "cache_ttl"`},
+		`{"max_tokens": -5}`:                    {`key "max_tokens"`, "at least 1, got -5"},
+		`{"bash_timeout": -1}`:                  {`key "bash_timeout"`},
+		`{"max_rounds": -1}`:                    {`key "max_rounds"`},
+		`{"reasoning_effort": "huge"}`:          {`key "reasoning_effort"`},
+		`{"subagent_efforts": ["low", "lots"]}`: {`key "subagent_efforts.1"`},
+		`{"subagent_models": [{"model": "m"}]}`: {`key "subagent_models.0"`, "name is required"},
+		`{"subagent_models": [{"name": "n"}]}`:  {"model is required"},
+		`{"subagent_models": [{"name": "n", "model": "m", "provider": "x"}]}`: {`key "subagent_models.0.provider"`, `unknown provider "x"`},
+		`{"mcp": {"gh": {"args": ["stdio"]}}}`:                                {`key "mcp.gh"`, "command is required"},
+		`{"profiles": {"p": {"api": "nope"}}, "default_profile": "p"}`:        {`profile "p"`, `key "api"`},
+	}
+	for in, parts := range cases {
+		path := writeConfig(t, dir, "config.json", in)
+		_, err := Load(path, "")
+		wantErr(t, err, append(parts, path)...)
+	}
+	path := writeConfig(t, dir, "config.json", `{"api": "anthropic", "cache_ttl": "5m", "reasoning_effort": "max", "max_rounds": 0, "subagent_models": [{"name": "n", "model": "m", "provider": "claude"}], "mcp": {"gh": {"command": "gh"}}}`)
+	if _, err := Load(path, ""); err != nil {
+		t.Error(err)
+	}
+	_, err := Resolve(path, "", "", "", "turbo")
+	wantErr(t, err, `key "reasoning_effort"`)
 }
 
 func TestSchemaKeyIsAccepted(t *testing.T) {
@@ -145,10 +220,18 @@ func TestYAMLConfigGivesMigrationHint(t *testing.T) {
 	_, err = Load(filepath.Join(dir, "config.yml"), "")
 	wantErr(t, err, "YAML config is no longer supported", "yq -o json")
 
+	writeConfig(t, dir, "foo.yml", "model: m\n")
+	_, err = Load(filepath.Join(dir, "foo.json"), "")
+	wantErr(t, err, "foo.yml", "foo.json", "yq -o json")
+
 	path := writeConfig(t, dir, "config.json", `{"model": "m"}`)
 	writeConfig(t, dir, "commit.yml", "model: c\n")
 	_, err = Load(path, "commit")
 	wantErr(t, err, "commit.yml", "commit.json")
+
+	writeConfig(t, dir, "work.yml", "model: w\n")
+	_, err = Load(path, "work.yml")
+	wantErr(t, err, "work.yml", "YAML config is no longer supported")
 
 	_, err = Load(path, "nope")
 	wantErr(t, err, `unknown profile "nope"`)
@@ -168,20 +251,30 @@ func TestCheckLoadsEveryProfile(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("AICODE_CONFIG_DIR", dir)
 	path := writeConfig(t, dir, "config.json", `{"profiles": {"ok": {"model": "m"}, "broken": {"provider": "nope"}}}`)
-	wantErr(t, Check(path, ""), `profile "broken"`, `unknown provider "nope"`)
+	wantErr(t, Check(path, ""), path, `profile "broken": key "provider": unknown provider "nope"`)
+
 	path = writeConfig(t, dir, "config.json", `{"profiles": {"ok": {"model": "m"}}}`)
+	writeConfig(t, dir, "settings.json", `{"hooks": {}}`)
 	if err := Check(path, ""); err != nil {
 		t.Error(err)
+	}
+	file := writeConfig(t, dir, "side.json", `{"max_tokens": 0.5}`)
+	wantErr(t, Check(path, ""), file, `key "max_tokens"`)
+	writeConfig(t, dir, "ok.json", `{"modle": 1}`)
+	writeConfig(t, dir, "side.json", `{"model": "s"}`)
+	if err := Check(path, ""); err != nil {
+		t.Errorf("an inline profile shadows the file with the same name: %v", err)
 	}
 }
 
 type schemaNode struct {
-	Ref                  string                `json:"$ref"`
-	Description          string                `json:"description"`
-	Properties           map[string]schemaNode `json:"properties"`
-	AdditionalProperties json.RawMessage       `json:"additionalProperties"`
-	Defs                 map[string]schemaNode `json:"$defs"`
-	Items                *schemaNode           `json:"items"`
+	Ref                  string                     `json:"$ref"`
+	Description          string                     `json:"description"`
+	Properties           map[string]schemaNode      `json:"properties"`
+	AdditionalProperties json.RawMessage            `json:"additionalProperties"`
+	Defs                 map[string]json.RawMessage `json:"$defs"`
+	Items                *schemaNode                `json:"items"`
+	Enum                 []string                   `json:"enum"`
 }
 
 func jsonFields(t reflect.Type) []string {
@@ -222,16 +315,28 @@ func additionalRef(t *testing.T, node schemaNode) string {
 	return ref.Ref
 }
 
+func schemaDef(t *testing.T, root schemaNode, name string, v any) {
+	t.Helper()
+	if err := json.Unmarshal(root.Defs[name], v); err != nil {
+		t.Fatalf("$defs.%s: %v", name, err)
+	}
+}
+
 func TestSchemaMatchesConfig(t *testing.T) {
 	var root schemaNode
 	if err := json.Unmarshal(Schema, &root); err != nil {
 		t.Fatalf("schema.json: %v", err)
 	}
 	checkObject(t, "root", root, reflect.TypeFor[Config]())
-	checkObject(t, "provider", root.Defs["provider"], reflect.TypeFor[Provider]())
-	checkObject(t, "mcp_server", root.Defs["mcp_server"], reflect.TypeFor[MCPServer]())
-	checkObject(t, "subagent_model", root.Defs["subagent_model"], reflect.TypeFor[SubagentModel]())
-	refs := map[string]string{"providers": "#/$defs/provider", "mcp": "#/$defs/mcp_server", "profiles": "#"}
+	defs := map[string]reflect.Type{"provider": reflect.TypeFor[Provider](), "mcp_server": reflect.TypeFor[MCPServer](), "subagent_model": reflect.TypeFor[SubagentModel]()}
+	nodes := map[string]schemaNode{}
+	for name, typ := range defs {
+		var node schemaNode
+		schemaDef(t, root, name, &node)
+		checkObject(t, name, node, typ)
+		nodes[name] = node
+	}
+	refs := map[string]string{"providers": "#/$defs/provider", "mcp": "#/$defs/mcp_server", "profiles": "#/$defs/profile"}
 	for key, want := range refs {
 		if got := additionalRef(t, root.Properties[key]); got != want {
 			t.Errorf("%s values: $ref %q, want %q", key, got, want)
@@ -239,5 +344,25 @@ func TestSchemaMatchesConfig(t *testing.T) {
 	}
 	if items := root.Properties["subagent_models"].Items; items == nil || items.Ref != "#/$defs/subagent_model" {
 		t.Errorf("subagent_models items: %+v", items)
+	}
+	enums := map[string][2][]string{
+		"api":              {root.Properties["api"].Enum, apis},
+		"provider.api":     {nodes["provider"].Properties["api"].Enum, apis},
+		"cache_ttl":        {root.Properties["cache_ttl"].Enum, cacheTTLs},
+		"reasoning_effort": {root.Properties["reasoning_effort"].Enum, efforts},
+		"subagent_efforts": {root.Properties["subagent_efforts"].Items.Enum, efforts},
+	}
+	for key, e := range enums {
+		if !slices.Equal(e[0], e[1]) {
+			t.Errorf("%s: schema enum %v, code accepts %v", key, e[0], e[1])
+		}
+	}
+	var profile struct {
+		Ref        string          `json:"$ref"`
+		Properties map[string]bool `json:"properties"`
+	}
+	schemaDef(t, root, "profile", &profile)
+	if profile.Ref != "#" || len(profile.Properties) != 2 || profile.Properties["profiles"] || profile.Properties["default_profile"] {
+		t.Errorf("profile definition must be the root minus profiles and default_profile: %+v", profile)
 	}
 }

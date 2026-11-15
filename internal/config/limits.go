@@ -2,7 +2,7 @@ package config
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"math"
 	"regexp"
@@ -95,7 +95,7 @@ func scalar(b []byte) (string, bool, error) {
 	case len(b) > 0 && (b[0] == '-' || b[0] >= '0' && b[0] <= '9'):
 		return string(b), true, nil
 	}
-	return "", false, fmt.Errorf("expected a number or a string, got %s", rawKind(b))
+	return "", false, badValue{fmt.Errorf("expected a number or a string, got %s", rawKind(b))}
 }
 
 func rawKind(b []byte) string {
@@ -118,8 +118,11 @@ func (t *Tokens) UnmarshalJSON(b []byte) error {
 		return err
 	}
 	n, err := ParseTokens(s)
+	if err != nil {
+		return badValue{err}
+	}
 	*t = Tokens(n)
-	return err
+	return nil
 }
 
 func (t *Threshold) UnmarshalJSON(b []byte) error {
@@ -127,8 +130,12 @@ func (t *Threshold) UnmarshalJSON(b []byte) error {
 	if !ok || err != nil {
 		return err
 	}
-	*t, err = ParseThreshold(s)
-	return err
+	v, err := ParseThreshold(s)
+	if err != nil {
+		return badValue{err}
+	}
+	*t = v
+	return nil
 }
 
 func (t Threshold) String() string {

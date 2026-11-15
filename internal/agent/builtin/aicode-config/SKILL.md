@@ -1,6 +1,6 @@
 ---
 name: aicode-config
-description: Read and change aicode's own settings. Use when the user asks to change or inspect aicode's config, profiles, providers, models, subagent models, reasoning effort, compaction thresholds, context window, read-only allowlist, MCP servers, hooks, skill or instruction directories, or the picker.
+description: Read and change aicode's own settings. Use when the user asks about aicode's config: profiles, providers, models, effort, compaction, MCP servers, hooks, skills or the picker.
 ---
 
 # aicode config
@@ -24,18 +24,23 @@ aicode is the agent you are running in. Its settings are JSON files.
 ## How settings combine
 
 1. The top-level keys are the shared settings.
-2. The profile is `-p name`, else `default_profile`. Every key a profile sets replaces the top-level value as a whole, including objects (`providers`, `mcp`) and arrays (`subagent_models`).
+2. The profile is `-p name`, else `default_profile`. Every key a profile sets replaces the top-level value as a whole, including objects (`providers`, `mcp`) and arrays (`subagent_models`). `null` resets a key to its default. A profile cannot contain `profiles` or `default_profile`.
 3. `provider` names an entry in `providers` (or the built-ins `claude`, `anthropic`, `openai`) and sets `api`, `base_url`, `api_key`, `api_key_shell` and `cache_control` from it. Connection keys set in the profile itself win over the provider's.
 4. The flags `-provider`, `-model` and `-effort` override everything for one run. `/profile`, `/model` and `/effort` switch at runtime without saving anything.
 
 ## Check your change
 
-Run `aicode -check-config` (add `-config path.json` or `-p name` when relevant). It loads the config and every profile without calling any API and prints the file and key of the first problem. Changes take effect on the next start or the next `/profile` switch.
+Run `aicode -check-config` (add `-config path.json` when relevant). It loads the config, every inline profile and every profile file without calling any API, checks allowed values, and prints the file and key of the first problem.
+
+When a change takes effect in a running session:
+- Most keys: after `/profile <name>`, which re-reads the file.
+- `skill_dirs`, `instruction_files`, `builtin_skills`: `/profile <name>`, then `/reload` to rebuild the system prompt.
+- `mcp`, `hook_files`, `read_only`: only after restarting aicode.
 
 ## Secrets
 
-- Never print, copy or move API keys, and never put one in a file that did not have it. Prefer `api_key_shell` (for example `"pass show openrouter-api-key | head -n 1"`) over `api_key`.
-- Before reading a config file, check for literal keys with `grep -c '"api_key"' FILE`. If there are any, view it redacted, for example `sed -E 's/("api_key": *")[^"]*/\1REDACTED/' FILE`, and keep key values out of edit strings.
+- Treat `api_key` values and every value under `mcp.<name>.env` as secrets: never print, copy or move them, and never put one in a file that did not have it. Prefer `api_key_shell` (for example `"pass show openrouter-api-key | head -n 1"`) over `api_key`.
+- Before reading a config file, check for secrets with `grep -cE '"api_key"|"env"' FILE`. If there are any, don't read the whole file: look at only the lines you need (for example `grep -n '"model"' FILE` or a read with offset and limit) and keep `api_key` lines and the contents of `env` objects out of your output and edit strings.
 
 ## Turning this skill off
 

@@ -137,7 +137,7 @@
     "profiles": {
       "description": "Named profiles, selected with default_profile, -p name or /profile name. Each takes the same keys as the top level and replaces the top-level value of every key it sets. -p name also accepts a file ~/.config/aicode/<name>.json or a path.",
       "type": "object",
-      "additionalProperties": { "$ref": "#" }
+      "additionalProperties": { "$ref": "#/$defs/profile" }
     },
     "default_profile": {
       "description": "Profile used when -p is not given.",
@@ -145,6 +145,14 @@
     }
   },
   "$defs": {
+    "profile": {
+      "description": "A profile: any top-level key except profiles and default_profile.",
+      "$ref": "#",
+      "properties": {
+        "profiles": false,
+        "default_profile": false
+      }
+    },
     "tokens": {
       "description": "A token count: a number (150000) or a string with an optional k or m suffix (\"150k\", \"1.5m\").",
       "oneOf": [

@@ -1,7 +1,7 @@
 package config
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"os"
@@ -37,44 +37,45 @@ type MCPServer struct {
 const DefaultPicker = `fzf --height=40% --reverse --no-multi --bind=ctrl-z:ignore --delimiter='\t' --nth=1 --tabstop=24 --prompt={prompt}`
 
 type Config struct {
-	Schema          string                     `json:"$schema"`
-	Model           string                     `json:"model"`
-	API             string                     `json:"api"`
-	Provider        string                     `json:"provider"`
-	BaseURL         string                     `json:"base_url"`
-	APIKey          string                     `json:"api_key"`
-	APIKeyShell     string                     `json:"api_key_shell"`
-	ReasoningEffort string                     `json:"reasoning_effort"`
-	MaxTokens       int                        `json:"max_tokens"`
-	CacheControl    *bool                      `json:"cache_control"`
-	CacheTTL        string                     `json:"cache_ttl"`
-	CompactAt       Threshold                  `json:"compact_at"`
-	CompactIdleAt   Threshold                  `json:"compact_idle_at"`
-	ContextWindow   Tokens                     `json:"context_window"`
-	MaxRounds       int                        `json:"max_rounds"`
-	ShowReasoning   *bool                      `json:"show_reasoning"`
-	ReadOnly        bool                       `json:"read_only"`
-	ReadOnlyAllow   []string                   `json:"read_only_allow"`
-	BashTimeout     int                        `json:"bash_timeout"`
-	SubagentModels  []SubagentModel            `json:"subagent_models"`
-	SubagentEfforts []string                   `json:"subagent_efforts"`
-	InstructionFile []string                   `json:"instruction_files"`
-	SkillDirs       []string                   `json:"skill_dirs"`
-	HookFiles       []string                   `json:"hook_files"`
-	MCP             map[string]MCPServer       `json:"mcp"`
-	Picker          string                     `json:"picker"`
-	NotifyCmd       string                     `json:"notify_cmd"`
-	FilePicker      string                     `json:"file_picker"`
-	HistoryPicker   string                     `json:"history_picker"`
-	SessionPicker   string                     `json:"session_picker"`
-	Pager           string                     `json:"pager"`
-	CopyCmd         string                     `json:"copy_cmd"`
-	BuiltinSkills   *bool                      `json:"builtin_skills"`
-	Providers       map[string]Provider        `json:"providers"`
-	Profiles        map[string]json.RawMessage `json:"profiles"`
-	DefaultProfile  string                     `json:"default_profile"`
-	Profile         string                     `json:"-"`
+	Schema          string                    `json:"$schema"`
+	Model           string                    `json:"model"`
+	API             string                    `json:"api"`
+	Provider        string                    `json:"provider"`
+	BaseURL         string                    `json:"base_url"`
+	APIKey          string                    `json:"api_key"`
+	APIKeyShell     string                    `json:"api_key_shell"`
+	ReasoningEffort string                    `json:"reasoning_effort"`
+	MaxTokens       int                       `json:"max_tokens"`
+	CacheControl    *bool                     `json:"cache_control"`
+	CacheTTL        string                    `json:"cache_ttl"`
+	CompactAt       Threshold                 `json:"compact_at"`
+	CompactIdleAt   Threshold                 `json:"compact_idle_at"`
+	ContextWindow   Tokens                    `json:"context_window"`
+	MaxRounds       int                       `json:"max_rounds"`
+	ShowReasoning   *bool                     `json:"show_reasoning"`
+	ReadOnly        bool                      `json:"read_only"`
+	ReadOnlyAllow   []string                  `json:"read_only_allow"`
+	BashTimeout     int                       `json:"bash_timeout"`
+	SubagentModels  []SubagentModel           `json:"subagent_models"`
+	SubagentEfforts []string                  `json:"subagent_efforts"`
+	InstructionFile []string                  `json:"instruction_files"`
+	SkillDirs       []string                  `json:"skill_dirs"`
+	HookFiles       []string                  `json:"hook_files"`
+	MCP             map[string]MCPServer      `json:"mcp"`
+	Picker          string                    `json:"picker"`
+	NotifyCmd       string                    `json:"notify_cmd"`
+	FilePicker      string                    `json:"file_picker"`
+	HistoryPicker   string                    `json:"history_picker"`
+	SessionPicker   string                    `json:"session_picker"`
+	Pager           string                    `json:"pager"`
+	CopyCmd         string                    `json:"copy_cmd"`
+	BuiltinSkills   *bool                     `json:"builtin_skills"`
+	Providers       map[string]Provider       `json:"providers"`
+	Profiles        map[string]jsontext.Value `json:"profiles"`
+	DefaultProfile  string                    `json:"default_profile"`
+	Profile         string                    `json:"-"`
 	profileRaw      []byte
+	source          string
 }
 
 func Dir() string {
@@ -122,7 +123,9 @@ func Resolve(path, profile, provider, model, effort string) (Config, error) {
 	if path == "" {
 		path = DefaultPath()
 	}
-	if err := mergeFile(&c, ExpandHome(path), path != DefaultPath()); err != nil {
+	path = ExpandHome(path)
+	c.source = "config " + path
+	if err := mergeFile(&c, path, path != DefaultPath()); err != nil {
 		return c, err
 	}
 	if profile == "" {
@@ -134,16 +137,16 @@ func Resolve(path, profile, provider, model, effort string) (Config, error) {
 		}
 	}
 	if err := c.loadProvider(c.Provider); err != nil {
-		return c, err
+		return c, fmt.Errorf("%s: key \"provider\": %w", c.source, err)
 	}
 	if c.profileRaw != nil {
 		if err := c.overlay(c.profileRaw); err != nil {
-			return c, fmt.Errorf("profile %s: %w", c.Profile, err)
+			return c, fmt.Errorf("%s: %w", c.source, err)
 		}
 	}
 	if provider != "" {
 		if err := c.UseProvider(provider); err != nil {
-			return c, err
+			return c, fmt.Errorf("-provider: %w", err)
 		}
 	}
 	if model != "" {
@@ -153,6 +156,9 @@ func Resolve(path, profile, provider, model, effort string) (Config, error) {
 		c.ReasoningEffort = effort
 	}
 	c.applyDefaults()
+	if err := c.validate(); err != nil {
+		return c, fmt.Errorf("%s: %w", c.source, err)
+	}
 	return c, nil
 }
 
@@ -161,52 +167,86 @@ func Check(path, profile string) error {
 	if err != nil {
 		return err
 	}
-	for _, name := range c.ProfileNames() {
+	names := c.ProfileNames()
+	files, err := profileFiles(ExpandHome(path))
+	if err != nil {
+		return err
+	}
+	for _, name := range files {
+		if _, inline := c.Profiles[name]; !inline {
+			names = append(names, name)
+		}
+	}
+	for _, name := range names {
 		if _, err := Resolve(path, name, "", "", ""); err != nil {
-			return fmt.Errorf("profile %q: %w", name, err)
+			return err
 		}
 	}
 	return nil
 }
 
+func profileFiles(configPath string) ([]string, error) {
+	paths, err := filepath.Glob(filepath.Join(Dir(), "*.json"))
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, p := range paths {
+		base := filepath.Base(p)
+		if p == DefaultPath() || p == configPath || base == "settings.json" {
+			continue
+		}
+		names = append(names, strings.TrimSuffix(base, ".json"))
+	}
+	return names, nil
+}
+
 func (c *Config) applyProfile(name string) error {
-	raw, err := c.profileData(name)
+	raw, source, err := c.profileData(name)
 	if err != nil {
 		return err
 	}
 	if err := c.overlay(raw); err != nil {
-		return fmt.Errorf("profile %s: %w", name, err)
+		return fmt.Errorf("%s: %w", source, err)
 	}
-	c.Profile, c.profileRaw = name, raw
+	c.Profile, c.profileRaw, c.source = name, raw, source
 	return nil
 }
 
-func (c *Config) profileData(name string) ([]byte, error) {
+func (c *Config) profileData(name string) ([]byte, string, error) {
 	if raw, ok := c.Profiles[name]; ok {
-		return raw, nil
+		return raw, fmt.Sprintf("%s: profile %q", c.source, name), nil
 	}
-	path := name
-	if !strings.Contains(path, "/") && !strings.HasSuffix(path, ".json") {
-		path = filepath.Join(Dir(), path+".json")
-	}
-	path = ExpandHome(path)
+	path := profilePath(name)
 	if err := rejectYAML(path); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		if err := legacyYAML(path); err != nil {
-			return nil, err
+			return nil, "", err
 		}
-		return nil, fmt.Errorf("unknown profile %q (not in profiles and no %s)", name, ShortHome(path))
+		return nil, "", fmt.Errorf("unknown profile %q (not in profiles and no %s)", name, ShortHome(path))
 	}
 	if err != nil {
-		return nil, fmt.Errorf("read profile %s: %w", path, err)
+		return nil, "", fmt.Errorf("read profile %s: %w", path, err)
 	}
-	if err := decodeStrict(data, &Config{}); err != nil {
-		return nil, fmt.Errorf("profile file %s: %w", path, err)
+	source := "profile file " + path
+	if err := checkProfile(data); err != nil {
+		return nil, "", fmt.Errorf("%s: %w", source, err)
 	}
-	return data, nil
+	return data, source, nil
+}
+
+func profilePath(name string) string {
+	if strings.Contains(name, "/") {
+		return ExpandHome(name)
+	}
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".json", ".yml", ".yaml":
+		return filepath.Join(Dir(), name)
+	}
+	return filepath.Join(Dir(), name+".json")
 }
 
 func (c *Config) overlay(raw []byte) error {
@@ -275,18 +315,20 @@ func mergeFile(c *Config, path string, required bool) error {
 		return err
 	}
 	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) && !required {
-		return legacyYAML(path)
+	if errors.Is(err, os.ErrNotExist) {
+		if err := legacyYAML(path); err != nil || !required {
+			return err
+		}
 	}
 	if err != nil {
 		return fmt.Errorf("read config %s: %w", path, err)
 	}
 	if err := decodeStrict(data, c); err != nil {
-		return fmt.Errorf("config %s: %w", path, err)
+		return fmt.Errorf("%s: %w", c.source, err)
 	}
 	for _, name := range c.ProfileNames() {
-		if err := decodeStrict(c.Profiles[name], &Config{}); err != nil {
-			return fmt.Errorf("config %s: profile %q: %w", path, name, err)
+		if err := checkProfile(c.Profiles[name]); err != nil {
+			return fmt.Errorf("%s: profile %q: %w", c.source, name, err)
 		}
 	}
 	return nil
