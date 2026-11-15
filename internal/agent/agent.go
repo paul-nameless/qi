@@ -73,6 +73,9 @@ func (a *Agent) Reset(s *session.Session) {
 	}
 	a.Session = s
 	a.Messages = nil
+	if a.Env != nil {
+		a.Env.ForgetFiles()
+	}
 	a.announced = false
 	a.paused, a.thrashAt = false, 0
 	a.SetContextTokens(0)
@@ -159,6 +162,18 @@ func (a *Agent) restoreModeAfter(hadNote bool) {
 	default:
 		a.announced = false
 	}
+}
+
+func (a *Agent) changesBlock() (llm.Block, bool) {
+	if a.Env == nil {
+		return llm.Block{}, false
+	}
+	text, paths := a.Env.FileChanges()
+	if text == "" {
+		return llm.Block{}, false
+	}
+	a.UI.Info("changed on disk, sent to the model: " + strings.Join(paths, ", "))
+	return llm.Block{Type: llm.BlockText, Text: text}, true
 }
 
 func (a *Agent) modeBlock() (llm.Block, bool) {
@@ -265,6 +280,9 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 			a.UI.Error("compaction failed: " + err.Error())
 		}
 	}
+	if cb, ok := a.changesBlock(); ok {
+		blocks = append(blocks, cb)
+	}
 	if mb, ok := a.modeBlock(); ok {
 		blocks = append(blocks, mb)
 	}
@@ -322,6 +340,9 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 			if ctx.Err() != nil {
 				a.appendMsg(llm.Message{Role: "user", Blocks: next}, nil)
 				return "", stats, context.Canceled
+			}
+			if cb, ok := a.changesBlock(); ok {
+				next = append(next, cb)
 			}
 		} else {
 			if a.OnStop != nil {

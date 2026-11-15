@@ -7,7 +7,7 @@ Minimal Go coding agent for the terminal (v2 rewrite). Plan: `docs/plans/aicode-
 - `internal/llm` canonical message types, SSE, provider adapters (`openai.go` chat completions incl. OpenRouter, `anthropic.go`)
 - `internal/agent` turn loop, compaction (`compact.go`: unchanged-history summary request, verbatim tail without reasoning between turns, summary-only mid-turn, overflow retry, thrash pause), steering queue, system prompt, skills, subagent runner, hooks, project trust
 - `internal/config` YAML config with providers and profiles; `limits.go` parses `compact_at`/`compact_idle_at` (tokens or %) and resolves them against `context_window` or a small model table
-- `internal/tools` registry with parallel execution, read/write/edit/bash/subagent, read-only allowlist, `files.go` tracks file mtimes so write refuses to overwrite a file changed since the model last read or wrote it (edit needs no guard: it only replaces exact text)
+- `internal/tools` registry with parallel execution, read/write/edit/bash/subagent, read-only allowlist, `files.go` tracks file mtimes so write refuses to overwrite a file changed since the model last read or wrote it (edit needs no guard: it only replaces exact text); it also snapshots files the model read or wrote, and the agent sends a diff of any outside change with the next tool results or user message
 - `internal/ui` termios, key decoder, line editor, printer with status line, `markdown.go` streaming markdown styling of answers (TTY only; `table.go` aligns tables, `width.go` display width)
 - `internal/session` append-only JSONL sessions
 - `internal/mcp` stdio MCP client (lazy start, tool search); exposed as `tool_search`/`mcp_call` in `internal/tools/mcp.go`
