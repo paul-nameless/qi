@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/paul-nameless/qi/internal/llm"
+	"github.com/paul-nameless/qi/internal/mcp"
 	"github.com/paul-nameless/qi/internal/tools"
 )
 
@@ -43,10 +44,25 @@ func TestMatches(t *testing.T) {
 		{"Bas", "bash", false},
 	}
 	for _, c := range cases {
-		if got := matches(c.matcher, c.tool); got != c.want {
+		var names []string
+		if c.tool != "" {
+			names = hookCall(c.tool, `{}`).Names
+		}
+		m := hookMatcher{Matcher: c.matcher}
+		m.compile()
+		if got := m.matches(names); got != c.want {
 			t.Errorf("matches(%q, %q) = %v", c.matcher, c.tool, got)
 		}
 	}
+}
+
+var hookTools = map[string]*tools.Tool{
+	"read": tools.Read(), "write": tools.Write(), "edit": tools.Edit(), "bash": tools.Bash(),
+	"subagent": tools.Subagent("m", nil, nil), "mcp_call": tools.MCPTools(mcp.NewManager(nil))[1],
+}
+
+func hookCall(name, input string) tools.HookCall {
+	return hookTools[name].HookCall(llm.Block{ID: "1", Name: name, Input: json.RawMessage(input)})
 }
 
 func TestPreToolUse(t *testing.T) {
@@ -54,9 +70,7 @@ func TestPreToolUse(t *testing.T) {
 		{"matcher":"Bash","hooks":[{"type":"command","command":"grep -q 'rm -rf' && { echo no rm >&2; exit 2; } || exit 0"}]},
 		{"matcher":"Write","hooks":[{"type":"command","command":"echo '{\"hookSpecificOutput\":{\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"no writes\"}}'"}]}
 	]}`)
-	call := func(name, input string) llm.Block {
-		return llm.Block{ID: "1", Name: name, Input: json.RawMessage(input)}
-	}
+	call := hookCall
 	if block, reason, _ := h.PreToolUse(context.Background(), call("bash", `{"command":"rm -rf x"}`)); !block || reason != "no rm" {
 		t.Errorf("exit 2: %v %q", block, reason)
 	}
@@ -90,7 +104,7 @@ func TestStopPromptAndPostHooks(t *testing.T) {
 	if blocked, reason, _ := h.UserPromptSubmit(ctx, "my secret"); !blocked || reason != "blocked" {
 		t.Errorf("prompt block: %v %q", blocked, reason)
 	}
-	note := h.PostToolUse(ctx, llm.Block{Name: "edit", Input: json.RawMessage(`{}`)}, tools.Result{Text: "ok"})
+	note := h.PostToolUse(ctx, hookCall("edit", `{}`), tools.Result{Text: "ok"})
 	if !strings.Contains(note, "lint failed") {
 		t.Errorf("post: %q", note)
 	}
@@ -98,24 +112,24 @@ func TestStopPromptAndPostHooks(t *testing.T) {
 
 func TestLegacyDecisionBlock(t *testing.T) {
 	h := writeHooks(t, `{"PreToolUse":[{"hooks":[{"type":"command","command":"echo '{\"decision\":\"block\",\"reason\":\"r\"}'"}]}]}`)
-	if block, reason, _ := h.PreToolUse(context.Background(), llm.Block{Name: "bash", Input: json.RawMessage(`{}`)}); !block || reason != "r" {
+	if block, reason, _ := h.PreToolUse(context.Background(), hookCall("bash", `{}`)); !block || reason != "r" {
 		t.Errorf("legacy block: %v %q", block, reason)
 	}
 }
 
 func TestHookJSONIgnoredOnNonZeroExit(t *testing.T) {
 	h := writeHooks(t, `{"PreToolUse":[{"hooks":[{"type":"command","command":"echo '{\"decision\":\"block\",\"reason\":\"x\"}'; exit 1"}]}]}`)
-	if block, _, _ := h.PreToolUse(context.Background(), llm.Block{Name: "bash", Input: json.RawMessage(`{}`)}); block {
+	if block, _, _ := h.PreToolUse(context.Background(), hookCall("bash", `{}`)); block {
 		t.Error("block JSON honored on exit 1")
 	}
 }
 
 func TestPreToolUseAskAndUpdatedInput(t *testing.T) {
 	h := writeHooks(t, `{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"grep -q danger && echo '{\"hookSpecificOutput\":{\"permissionDecision\":\"ask\"}}' || echo '{\"hookSpecificOutput\":{\"updatedInput\":{\"command\":\"echo safe\"}}}'"}]}]}`)
-	if block, _, _ := h.PreToolUse(context.Background(), llm.Block{Name: "bash", Input: json.RawMessage(`{"command":"danger"}`)}); !block {
+	if block, _, _ := h.PreToolUse(context.Background(), hookCall("bash", `{"command":"danger"}`)); !block {
 		t.Error("ask not treated as block")
 	}
-	_, _, in := h.PreToolUse(context.Background(), llm.Block{Name: "bash", Input: json.RawMessage(`{"command":"ls"}`)})
+	_, _, in := h.PreToolUse(context.Background(), hookCall("bash", `{"command":"ls"}`))
 	if string(in) != `{"command":"echo safe"}` {
 		t.Errorf("updated input %s", in)
 	}
@@ -123,11 +137,11 @@ func TestPreToolUseAskAndUpdatedInput(t *testing.T) {
 
 func TestMCPHookNaming(t *testing.T) {
 	h := writeHooks(t, `{"PreToolUse":[{"matcher":"mcp__github__.*","hooks":[{"type":"command","command":"in=$(cat); echo \"$in\" | grep -q mcp__github__create_issue && echo \"$in\" | grep -q title && { echo denied >&2; exit 2; }; exit 0"}]}]}`)
-	call := llm.Block{Name: "mcp_call", Input: json.RawMessage(`{"server":"github","tool":"create_issue","arguments":{"title":"x"}}`)}
+	call := hookCall("mcp_call", `{"server":"github","tool":"create_issue","arguments":{"title":"x"}}`)
 	if block, reason, _ := h.PreToolUse(context.Background(), call); !block || reason != "denied" {
 		t.Errorf("mcp hook: %v %q", block, reason)
 	}
-	other := llm.Block{Name: "mcp_call", Input: json.RawMessage(`{"server":"slack","tool":"post","arguments":{}}`)}
+	other := hookCall("mcp_call", `{"server":"slack","tool":"post","arguments":{}}`)
 	if block, _, _ := h.PreToolUse(context.Background(), other); block {
 		t.Error("matcher applied to another server")
 	}

@@ -16,6 +16,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/paul-nameless/qi/internal/llm"
+	"github.com/paul-nameless/qi/internal/mcp"
 )
 
 type nopUI struct{}
@@ -174,13 +175,13 @@ func TestHooksWiring(t *testing.T) {
 	var postCalls atomic.Int32
 	env := &Env{
 		Cwd: dir,
-		PreHook: func(ctx context.Context, c llm.Block) (bool, string, json.RawMessage) {
+		PreHook: func(ctx context.Context, c HookCall) (bool, string, json.RawMessage) {
 			if c.ID == "rewrite" {
 				return false, "", json.RawMessage(`{"file_path":"c.txt","content":"z"}`)
 			}
 			return c.ID == "blocked", "nope", nil
 		},
-		PostHook: func(ctx context.Context, c llm.Block, r Result) string { postCalls.Add(1); return "x" },
+		PostHook: func(ctx context.Context, c HookCall, r Result) string { postCalls.Add(1); return "x" },
 	}
 	res := NewRegistry(Write()).Execute(context.Background(), env, []llm.Block{
 		{ID: "blocked", Name: "write", Input: json.RawMessage(`{"file_path":"a.txt","content":"1"}`)},
@@ -339,5 +340,64 @@ func TestPanickingToolBecomesErrorResult(t *testing.T) {
 				t.Errorf("%v: %s after the panic: %+v", names, n, b)
 			}
 		}
+	}
+}
+
+func TestExecuteSchedulesByMetadata(t *testing.T) {
+	var mu sync.Mutex
+	running, maxSerial, lookOverlapped := map[string]bool{}, 0, false
+	tool := func(name string, mutates, parallel bool) *Tool {
+		return &Tool{
+			Def:          llm.ToolDef{Name: name},
+			Mutates:      mutates,
+			ParallelSafe: parallel,
+			Run: func(ctx context.Context, env *Env, in json.RawMessage, _ func(string)) Result {
+				mu.Lock()
+				running[name] = true
+				if running["change"] && running["shell"] {
+					maxSerial = 2
+				}
+				if running["look"] && (running["change"] || running["shell"]) {
+					lookOverlapped = true
+				}
+				mu.Unlock()
+				time.Sleep(30 * time.Millisecond)
+				mu.Lock()
+				running[name] = false
+				mu.Unlock()
+				return Result{Text: name}
+			},
+		}
+	}
+	r := NewRegistry(tool("change", true, false), tool("shell", false, false), tool("look", false, true))
+	calls := []llm.Block{{ID: "1", Name: "change", Input: json.RawMessage(`{}`)}, {ID: "2", Name: "shell", Input: json.RawMessage(`{}`)}, {ID: "3", Name: "look", Input: json.RawMessage(`{}`)}}
+	r.Execute(context.Background(), &Env{Cwd: t.TempDir()}, calls, nopUI{})
+	if maxSerial != 0 {
+		t.Error("a mutating call ran alongside a call that is not parallel-safe")
+	}
+	if !lookOverlapped {
+		t.Error("parallel-safe call did not run alongside the serial ones")
+	}
+	running, maxSerial = map[string]bool{}, 0
+	r = NewRegistry(tool("change", false, false), tool("shell", false, false))
+	r.Execute(context.Background(), &Env{Cwd: t.TempDir()}, calls[:2], nopUI{})
+	if maxSerial != 2 {
+		t.Error("calls ran serially without a mutating tool")
+	}
+}
+
+func TestMCPCallHookUnwrapAndRewrap(t *testing.T) {
+	call := MCPTools(mcp.NewManager(nil))[1]
+	hc := call.HookCall(llm.Block{ID: "1", Name: "mcp_call", Input: json.RawMessage(`{"server":"gh","tool":"create","arguments":{"title":"x"}}`)})
+	if hc.Tool != "mcp__gh__create" || len(hc.Names) != 1 || string(hc.Input) != `{"title":"x"}` {
+		t.Errorf("hook call %+v", hc)
+	}
+	got := call.rewrap(json.RawMessage(`{"server":"gh","tool":"create","arguments":{"title":"x"}}`), json.RawMessage(`{"title":"y"}`))
+	if string(got) != `{"arguments":{"title":"y"},"server":"gh","tool":"create"}` {
+		t.Errorf("rewrap %s", got)
+	}
+	read := Read().HookCall(llm.Block{ID: "2", Name: "read", Input: json.RawMessage(`{"file_path":"a"}`)})
+	if read.Tool != "Read" || strings.Join(read.Names, ",") != "read,Read" || string(read.Input) != `{"file_path":"a"}` {
+		t.Errorf("read hook call %+v", read)
 	}
 }

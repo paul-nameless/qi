@@ -43,6 +43,8 @@ type readArgs struct {
 
 func Read() *Tool {
 	return &Tool{
+		ParallelSafe: true,
+		HookNames:    []string{"Read"},
 		Def: llm.ToolDef{
 			Name:        "read",
 			Description: "Read a file with line numbers (`N<tab>line`), a directory listing, or an image. Reads up to 2000 lines; use offset/limit for more. Images larger than 1568px are scaled down; use crop to see a region at full resolution.",
@@ -221,6 +223,8 @@ func pathKey(env *Env, in json.RawMessage) string {
 
 func Write() *Tool {
 	return &Tool{
+		Mutates:   true,
+		HookNames: []string{"Write"},
 		Def: llm.ToolDef{
 			Name:        "write",
 			Description: "Create or overwrite a file. Prefer edit for changes to existing files.",
@@ -275,6 +279,8 @@ type editArgs struct {
 
 func Edit() *Tool {
 	return &Tool{
+		Mutates:   true,
+		HookNames: []string{"Edit"},
 		Def: llm.ToolDef{
 			Name:        "edit",
 			Description: "Replace old_string with new_string in a file. old_string must match exactly once (include enough surrounding lines) unless replace_all is true. Do not include the line-number prefixes from read.",

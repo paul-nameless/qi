@@ -163,6 +163,7 @@ func writeNotices(b *strings.Builder, l mcp.Listing) {
 
 func MCPTools(m *mcp.Manager) []*Tool {
 	search := toolSearch(m)
+	search.ParallelSafe = true
 	call := &Tool{
 		Def: llm.ToolDef{
 			Name:        "mcp_call",
@@ -209,7 +210,40 @@ func MCPTools(m *mcp.Manager) []*Tool {
 			return Result{Text: env.capOutput(text), IsError: res.IsError, Images: images, Summary: fmt.Sprintf("%d lines", strings.Count(text, "\n")+1)}
 		},
 	}
+	call.Unwrap, call.Rewrap = unwrapMCPCall, rewrapMCPCall
 	return []*Tool{search, call}
+}
+
+func unwrapMCPCall(input json.RawMessage) (string, json.RawMessage) {
+	var a struct {
+		Server    string          `json:"server"`
+		Tool      string          `json:"tool"`
+		Arguments json.RawMessage `json:"arguments"`
+	}
+	if json.Unmarshal(input, &a) != nil {
+		return "", nil
+	}
+	name := ""
+	if a.Server != "" {
+		name = "mcp__" + a.Server + "__" + a.Tool
+	}
+	if string(a.Arguments) == "null" {
+		a.Arguments = nil
+	}
+	return name, a.Arguments
+}
+
+func rewrapMCPCall(input, args json.RawMessage) json.RawMessage {
+	var orig map[string]json.RawMessage
+	if json.Unmarshal(input, &orig) != nil {
+		return args
+	}
+	orig["arguments"] = args
+	out, err := json.Marshal(orig)
+	if err != nil {
+		return args
+	}
+	return out
 }
 
 func mcpImage(env *Env, mimeType, data string) (preparedImage, error) {

@@ -40,7 +40,9 @@ func Subagent(mainModel string, menu []config.SubagentModel, efforts []string) *
 	}
 	raw, _ := json.Marshal(schema)
 	return &Tool{
-		Def: llm.ToolDef{Name: "subagent", Description: desc.String(), Schema: raw},
+		Def:          llm.ToolDef{Name: "subagent", Description: desc.String(), Schema: raw},
+		ParallelSafe: true,
+		HookNames:    []string{"Agent", "Task"},
 		Label: func(env *Env, in json.RawMessage) string {
 			a, _ := decode[subagentArgs](in)
 			return fmt.Sprintf("subagent %s/%s %s", a.Model, a.Effort, OneLine(a.Prompt, 50))

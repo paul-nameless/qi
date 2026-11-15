@@ -24,6 +24,7 @@ type bashArgs struct {
 
 func Bash() *Tool {
 	return &Tool{
+		HookNames: []string{"Bash"},
 		Def: llm.ToolDef{
 			Name:        "bash",
 			Description: "Run a shell command with bash in the working directory. stdin is empty, output is stdout+stderr combined, long output is truncated to head and tail with the full text saved to a file. Use rg/fd/ls/cat/sed for search and inspection.",

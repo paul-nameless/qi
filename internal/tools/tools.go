@@ -30,8 +30,15 @@ func errResult(format string, a ...any) Result {
 	return Result{Text: msg, IsError: true, Summary: msg}
 }
 
-type Hook func(ctx context.Context, call llm.Block) (block bool, reason string, input json.RawMessage)
-type PostHook func(ctx context.Context, call llm.Block, res Result) string
+type HookCall struct {
+	ID    string
+	Tool  string
+	Names []string
+	Input json.RawMessage
+}
+
+type Hook func(ctx context.Context, call HookCall) (block bool, reason string, input json.RawMessage)
+type PostHook func(ctx context.Context, call HookCall, res Result) string
 
 type SubagentFunc func(ctx context.Context, prompt, model, provider, effort string, progress func(string)) (string, error)
 
@@ -66,27 +73,42 @@ func (e *Env) rel(p string) string {
 	return p
 }
 
-func rewrapInput(call llm.Block, input json.RawMessage) json.RawMessage {
-	if call.Name != "mcp_call" {
-		return input
-	}
-	var orig map[string]json.RawMessage
-	if json.Unmarshal(call.Input, &orig) != nil {
-		return input
-	}
-	orig["arguments"] = input
-	out, err := json.Marshal(orig)
-	if err != nil {
-		return input
-	}
-	return out
+type Tool struct {
+	Def          llm.ToolDef
+	Run          func(ctx context.Context, env *Env, input json.RawMessage, progress func(string)) Result
+	Label        func(env *Env, input json.RawMessage) string
+	Path         func(env *Env, input json.RawMessage) string
+	Mutates      bool
+	ParallelSafe bool
+	HookNames    []string
+	Unwrap       func(input json.RawMessage) (name string, args json.RawMessage)
+	Rewrap       func(input, args json.RawMessage) json.RawMessage
 }
 
-type Tool struct {
-	Def   llm.ToolDef
-	Run   func(ctx context.Context, env *Env, input json.RawMessage, progress func(string)) Result
-	Label func(env *Env, input json.RawMessage) string
-	Path  func(env *Env, input json.RawMessage) string
+func (t *Tool) HookCall(call llm.Block) HookCall {
+	hc := HookCall{ID: call.ID, Tool: call.Name, Names: []string{call.Name}, Input: call.Input}
+	if len(t.HookNames) > 0 {
+		hc.Tool = t.HookNames[0]
+		hc.Names = append(hc.Names, t.HookNames...)
+	}
+	if t.Unwrap == nil {
+		return hc
+	}
+	name, args := t.Unwrap(call.Input)
+	if name != "" {
+		hc.Tool, hc.Names = name, []string{name}
+	}
+	if args != nil {
+		hc.Input = args
+	}
+	return hc
+}
+
+func (t *Tool) rewrap(input, args json.RawMessage) json.RawMessage {
+	if t.Rewrap == nil {
+		return args
+	}
+	return t.Rewrap(input, args)
 }
 
 type Registry struct {
@@ -136,18 +158,19 @@ func (r *Registry) Execute(ctx context.Context, env *Env, calls []llm.Block, ui 
 	var order []string
 	writes := false
 	for _, c := range calls {
-		if c.Name == "write" || c.Name == "edit" {
+		if t := r.byKey[c.Name]; t != nil && t.Mutates {
 			writes = true
 		}
 	}
 	for i, c := range calls {
+		t := r.byKey[c.Name]
 		key := fmt.Sprintf("#%d", i)
-		if t, ok := r.byKey[c.Name]; ok && t.Path != nil {
+		if t != nil && t.Path != nil {
 			if p := t.Path(env, c.Input); p != "" {
 				key = "path:" + p
 			}
 		}
-		if writes && c.Name != "read" && c.Name != "tool_search" && c.Name != "subagent" {
+		if writes && (t == nil || !t.ParallelSafe) {
 			key = "serial"
 		}
 		if _, seen := groups[key]; !seen {
@@ -211,12 +234,12 @@ func (r *Registry) invoke(ctx context.Context, env *Env, t *Tool, call llm.Block
 		return errResult("invalid JSON arguments: %s", string(call.Input))
 	}
 	if env.PreHook != nil {
-		block, reason, input := env.PreHook(ctx, call)
+		block, reason, input := env.PreHook(ctx, t.HookCall(call))
 		if block {
 			return errResult("blocked by hook: %s", reason)
 		}
 		if input != nil {
-			call.Input = rewrapInput(call, input)
+			call.Input = t.rewrap(call.Input, input)
 		}
 	}
 	res = t.Run(ctx, env, call.Input, func(s string) { ui.ToolProgress(call.ID, s) })
@@ -224,7 +247,7 @@ func (r *Registry) invoke(ctx context.Context, env *Env, t *Tool, call llm.Block
 		res.Text += "\n[interrupted by user]"
 	}
 	if env.PostHook != nil {
-		if extra := env.PostHook(ctx, call, res); extra != "" {
+		if extra := env.PostHook(ctx, t.HookCall(call), res); extra != "" {
 			res.Text += "\n" + extra
 		}
 	}
