@@ -272,11 +272,9 @@ func (r *repl) toolKeys() [][2]string {
 		{"notify_cmd", cfg.NotifyCmd},
 		{"file_picker", cfg.FilePicker},
 		{"history_picker", cfg.HistoryPicker},
-		{"paste_image_cmd", cfg.PasteImageCmd},
 		{"session_picker", cfg.SessionPicker},
 		{"pager", cfg.Pager},
 		{"viewer", cfg.Viewer},
-		{"diff_cmd", cfg.DiffCmd},
 		{"copy_cmd", cfg.CopyCmd},
 	}
 }

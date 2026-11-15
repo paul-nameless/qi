@@ -36,7 +36,6 @@ const (
 	KeyPaste
 	KeyClear
 	KeyHistory
-	KeyPasteImage
 	keyFocusIn
 	keyFocusOut
 	keyFocusSupported
@@ -293,8 +292,6 @@ func decodeKey(b []byte) (Key, int) {
 		return Key{Kind: KeyClear}, 1
 	case 0x12:
 		return Key{Kind: KeyHistory}, 1
-	case 0x16:
-		return Key{Kind: KeyPasteImage}, 1
 	case 0x10:
 		return Key{Kind: KeyUp}, 1
 	case 0x0e:

@@ -90,12 +90,6 @@ func (r *repl) run() error {
 	if r.toolOn(r.agent.Cfg.HistoryPicker) {
 		r.editor.OnHistory = r.historyPicker
 	}
-	if r.toolOn(r.agent.Cfg.DiffCmd) {
-		r.agent.Env.OnDiff = r.showDiff
-	}
-	if r.toolOn(r.agent.Cfg.PasteImageCmd) {
-		r.editor.OnImage = r.pasteImage
-	}
 	if r.toolOn(r.agent.Cfg.FilePicker) {
 		r.editor.OnAt = r.filePicker
 	}

@@ -77,7 +77,7 @@ aicode -read-only               # start in read-only mode
 
 Compaction summarizes the conversation into a structured handoff (updated on later compactions); between turns it also keeps the newest ~20k tokens verbatim. The summary request resends the history unchanged, so it reads the prompt cache. A "context too long" error triggers one compaction and a retry.
 
-Keys: shift+tab toggles read-only, ctrl+g edits the prompt in `$EDITOR`, ctrl+r searches prompt history, ctrl+v attaches the clipboard image, `@` picks files, alt+enter or ctrl+j inserts a newline, ctrl+c or esc cancels a turn. Text typed while the agent works is queued and delivered after the next tool results.
+Keys: shift+tab toggles read-only, ctrl+g edits the prompt in `$EDITOR`, ctrl+r searches prompt history, `@` picks files, alt+enter or ctrl+j inserts a newline, ctrl+c or esc cancels a turn. Text typed while the agent works is queued and delivered after the next tool results.
 
 Commands: `/help`, `/clear`, `/context`, `/reload`, `/compact [focus]`, `/resume`, `/history`, `/out`, `/view`, `/copy`, `/model`, `/profile`, `/effort`, `/skills`, `/exit`, and `/<skill-or-command> [args]`. Typing `/` on an empty line opens a picker (fzf by default; set `picker:` in the config to use another command that reads `name<TAB>description` lines and prints the chosen one).
 
@@ -88,9 +88,7 @@ UI features reuse CLI tools you already have. Each is a shell string in the conf
 - `notify_cmd` (default `terminal-notifier -title {title} -message {msg}` on macOS, `notify-send {title} {msg}` on Linux): runs when a turn took longer than `notify_after` (default `20s`) and the terminal is not focused (always, if the terminal does not support focus reporting), and when aicode asks whether to trust project hooks.
 - `file_picker` (default `(git ls-files -co --exclude-standard 2>/dev/null || fd -t f || find . -type f -not -path '*/.git/*') | {picker}`): typing `@` at the start of a word opens it and inserts the chosen paths (images become `[image N]`). Works with file managers too: `ranger --choosefile={file}`, `yazi --chooser-file={file}`, `nnn -p {file}`.
 - `history_picker` (default `{picker}`): ctrl+r picks a prompt from history (newest first) and puts it in the input line without sending it.
-- `paste_image_cmd` (default `pngpaste {file}` on macOS, `wl-paste -t image/png > {file}` or `xclip -selection clipboard -t image/png -o > {file}` on Linux): ctrl+v saves the clipboard image under the user cache dir (`aicode/paste/<n>.png`) and attaches it as `[image N]`.
 - `session_picker` (default `{picker} --with-nth=2.. --nth=.. --preview '"$AICODE_BIN" -show {1}' --preview-window=right,60%`): `/resume` and `aicode -r` pick a session of this directory (newest first, with age, message count and first prompt) and switch to it. `$AICODE_BIN` is set to the running aicode binary for every tool; `aicode -show <id>` prints a session as plain text. The default uses fzf flags, so set it to `{picker}` with another picker.
 - `pager` (default `$PAGER`, else `less -R`): `/history` opens the whole conversation with tool calls, `/out` opens the full output of the last cut-off tool result.
 - `viewer` (default `glow -p {file}`): `/view` opens the last answer as a `.md` file, handy for long answers with tables and code.
-- `diff_cmd` (default `delta --paging=never`): after a successful edit or write, the unified diff goes to its stdin and the colored output is shown below the tool line (up to 40 lines). Display only; the model gets the usual short result.
 - `copy_cmd` (default `pbcopy` on macOS, `wl-copy` or `xclip -selection clipboard` on Linux): `/copy` copies the last answer, `/copy code` its last code block.

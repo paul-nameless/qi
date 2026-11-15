@@ -22,7 +22,6 @@ type Result struct {
 	IsError bool
 	Images  []llm.Block
 	Summary string
-	Diff    string
 }
 
 func errResult(format string, a ...any) Result {
@@ -42,7 +41,6 @@ type Env struct {
 	Subagent    func(ctx context.Context, prompt, model, provider, effort string, progress func(string)) (string, error)
 	PreHook     Hook
 	PostHook    PostHook
-	OnDiff      func(diff string)
 	files       fileTimes
 }
 
@@ -210,9 +208,6 @@ func (r *Registry) runOne(ctx context.Context, env *Env, call llm.Block, ui UI) 
 		line += " · " + OneLine(res.Summary, 80)
 	}
 	ui.ToolDone(call.ID, !res.IsError, line)
-	if res.Diff != "" && env.OnDiff != nil {
-		env.OnDiff(res.Diff)
-	}
 	return llm.Block{Type: llm.BlockToolResult, ToolUseID: call.ID, Text: res.Text, IsError: res.IsError, Images: res.Images}
 }
 

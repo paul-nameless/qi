@@ -18,7 +18,6 @@ func testEditor(t *testing.T) *Editor {
 		h[0] = "mutated"
 		return h[len(h)-1], true
 	}
-	e.OnImage = func() (string, bool) { return "/tmp/p.png", true }
 	return e
 }
 
@@ -38,7 +37,6 @@ func TestEditorHooks(t *testing.T) {
 		{"/ on empty line", "", 0, Key{Kind: KeyRune, Rune: '/'}, "/help", true, true},
 		{"/ after text", "a", 1, Key{Kind: KeyRune, Rune: '/'}, "a", false, false},
 		{"ctrl+r", "draft", 5, Key{Kind: KeyHistory}, "b", true, false},
-		{"ctrl+v", "see ", 4, Key{Kind: KeyPasteImage}, "see [image 1] ", true, false},
 	}
 	for _, c := range cases {
 		e := testEditor(t)
