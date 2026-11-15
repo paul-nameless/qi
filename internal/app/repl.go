@@ -62,11 +62,17 @@ func (r *repl) toggleMode() {
 	}
 }
 
-const noSandboxNote = "no usable OS sandbox (bubblewrap missing, or user namespaces blocked): read-only relies on the command allowlist only"
+const (
+	noSandboxNote = "no usable OS sandbox (bubblewrap missing, or user namespaces blocked): read-only relies on the command allowlist only"
+	noNetworkNote = "the OS sandbox can't isolate the network here (bwrap --unshare-net failed): read-only commands can still reach it"
+)
 
 func warnNoSandbox(display notifier) {
-	if !tools.HasSandbox() {
+	switch {
+	case !tools.HasSandbox():
 		display.Info(noSandboxNote)
+	case !tools.SandboxIsolatesNetwork():
+		display.Info(noNetworkNote)
 	}
 }
 

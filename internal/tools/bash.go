@@ -105,33 +105,40 @@ func readOnlySandbox(ctx context.Context, command string) *exec.Cmd {
 	return sandboxCmd(ctx, command, tmp)
 }
 
+type sandboxSpec struct {
+	path       string
+	isolateNet bool
+}
+
 var sandbox = sync.OnceValue(findSandbox)
 
-func findSandbox() string {
+func findSandbox() sandboxSpec {
 	if runtime.GOOS == "darwin" {
 		path, _ := exec.LookPath("sandbox-exec")
-		return path
+		return sandboxSpec{path, path != ""}
 	}
 	path, err := exec.LookPath("bwrap")
 	if err != nil {
-		return ""
+		return sandboxSpec{}
 	}
 	tmp, _ := filepath.EvalSymlinks(os.TempDir())
-	if exec.Command(path, bwrapArgs("true", tmp, execDenied())...).Run() != nil {
-		return ""
+	for _, isolate := range []bool{true, false} {
+		if exec.Command(path, bwrapArgs("true", tmp, execDenied(), isolate)...).Run() == nil {
+			return sandboxSpec{path, isolate}
+		}
 	}
-	return path
+	return sandboxSpec{}
 }
 
 func sandboxCmd(ctx context.Context, command, tmp string) *exec.Cmd {
-	path := sandbox()
+	sb := sandbox()
 	switch {
-	case path == "":
+	case sb.path == "":
 		return exec.CommandContext(ctx, "bash", "-c", command)
 	case runtime.GOOS == "darwin":
-		return exec.CommandContext(ctx, path, "-D", "TMP="+tmp, "-p", sandboxProfile, "bash", "-c", command)
+		return exec.CommandContext(ctx, sb.path, "-D", "TMP="+tmp, "-p", sandboxProfile, "bash", "-c", command)
 	}
-	return exec.CommandContext(ctx, path, bwrapArgs(command, tmp, execDenied())...)
+	return exec.CommandContext(ctx, sb.path, bwrapArgs(command, tmp, execDenied(), sb.isolateNet)...)
 }
 
 var deniedExecs = []string{
@@ -165,8 +172,11 @@ func deniedPaths(dirs, names []string) []string {
 	return out
 }
 
-func bwrapArgs(command, tmp string, denied []string) []string {
-	args := []string{"--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--bind", tmp, tmp, "--unshare-net"}
+func bwrapArgs(command, tmp string, denied []string, isolateNet bool) []string {
+	args := []string{"--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--bind", tmp, tmp}
+	if isolateNet {
+		args = append(args, "--unshare-net")
+	}
 	for _, p := range denied {
 		args = append(args, "--ro-bind", "/dev/null", p)
 	}
@@ -174,7 +184,11 @@ func bwrapArgs(command, tmp string, denied []string) []string {
 }
 
 func HasSandbox() bool {
-	return sandbox() != ""
+	return sandbox().path != ""
+}
+
+func SandboxIsolatesNetwork() bool {
+	return sandbox().isolateNet
 }
 
 func readOnlyEnv() []string {
