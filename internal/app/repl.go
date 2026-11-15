@@ -179,7 +179,7 @@ func (r *repl) resumeHint() {
 	if s == nil || len(r.agent.Messages()) == 0 {
 		return
 	}
-	fmt.Println(r.display.Color(ui.Dim, "resume: qi -r "+s.ID))
+	fmt.Println(r.display.Color(ui.Dim, "qi -r "+s.ID))
 }
 
 func (r *repl) status() string {
