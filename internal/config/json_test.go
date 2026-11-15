@@ -339,11 +339,17 @@ func TestSchemaMatchesConfig(t *testing.T) {
 		checkObject(t, name, node, typ)
 		nodes[name] = node
 	}
-	refs := map[string]string{"providers": "#/$defs/provider", "mcp": "#/$defs/mcp_server", "profiles": "#/$defs/profile"}
+	refs := map[string]string{"providers": "#/$defs/provider", "profiles": "#/$defs/profile"}
 	for key, want := range refs {
 		if got := additionalRef(t, root.Properties[key]); got != want {
 			t.Errorf("%s values: $ref %q, want %q", key, got, want)
 		}
+	}
+	var mcpValue struct {
+		AnyOf []map[string]string `json:"anyOf"`
+	}
+	if err := json.Unmarshal(root.Properties["mcp"].AdditionalProperties, &mcpValue); err != nil || !reflect.DeepEqual(mcpValue.AnyOf, []map[string]string{{"$ref": "#/$defs/mcp_server"}, {"type": "null"}}) {
+		t.Errorf("mcp values must be an mcp_server or null (to remove a global server in a profile): %+v %v", mcpValue, err)
 	}
 	if items := root.Properties["subagent_models"].Items; items == nil || items.Ref != "#/$defs/subagent_model" {
 		t.Errorf("subagent_models items: %+v", items)

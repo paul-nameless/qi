@@ -77,6 +77,7 @@ type Config struct {
 	DefaultProfile  string                    `json:"default_profile"`
 	Profile         string                    `json:"-"`
 	profileRaw      []byte
+	globalMCP       map[string]MCPServer
 	source          string
 }
 
@@ -130,6 +131,7 @@ func Resolve(path, profile, provider, model, effort string) (Config, error) {
 	if err := mergeFile(&c, path, path != DefaultPath()); err != nil {
 		return c, err
 	}
+	c.globalMCP = c.MCP
 	if profile == "" {
 		profile = c.DefaultProfile
 	}
@@ -255,7 +257,10 @@ func (c *Config) overlay(raw []byte) error {
 	if err := clearKeys(c, raw); err != nil {
 		return err
 	}
-	return decodeStrict(raw, c)
+	if err := decodeStrict(raw, c); err != nil {
+		return err
+	}
+	return c.mergeMCP(raw)
 }
 
 var builtinProviders = map[string]Provider{
@@ -326,6 +331,9 @@ func mergeFile(c *Config, path string, required bool) error {
 		return fmt.Errorf("read config %s: %w", path, err)
 	}
 	if err := decodeStrict(data, c); err != nil {
+		return fmt.Errorf("%s: %w", c.source, err)
+	}
+	if err := rejectMCPNulls(data); err != nil {
 		return fmt.Errorf("%s: %w", c.source, err)
 	}
 	for _, name := range c.ProfileNames() {

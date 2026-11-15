@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "aicode config",
-  "description": "aicode settings: ~/.config/aicode/config.json (or -config path.json), and profile files ~/.config/aicode/<name>.json. A profile has the same keys as the top level; every key it sets replaces the top-level value as a whole (objects and arrays included).",
+  "description": "aicode settings: ~/.config/aicode/config.json (or -config path.json), and profile files ~/.config/aicode/<name>.json. A profile has the same keys as the top level; every key it sets replaces the top-level value as a whole (objects and arrays included), except mcp, which is merged by server name.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
@@ -117,9 +117,9 @@
       "items": { "type": "string" }
     },
     "mcp": {
-      "description": "MCP servers over stdio, by name. They start on first use; the agent finds their tools with tool_search and calls them with mcp_call.",
+      "description": "MCP servers over stdio, by name. They start on first use; the agent finds their tools with tool_search and calls them with mcp_call. Top-level servers are global: every profile gets them. Unlike other keys, a profile's mcp is merged by server name: a new name adds a server for that profile, an existing name replaces that server's whole entry, and null (only in a profile) removes a global server. \"mcp\": null in a profile removes all servers. Changes need a restart; /mcp shows what the current profile ended up with.",
       "type": "object",
-      "additionalProperties": { "$ref": "#/$defs/mcp_server" }
+      "additionalProperties": { "anyOf": [{ "$ref": "#/$defs/mcp_server" }, { "type": "null" }] }
     },
     "picker": {
       "description": "Shell command for the / picker: reads tab-separated items on stdin and prints the chosen line. {prompt} is replaced with the quoted prompt. Default: fzf with a 40% height.",
@@ -159,7 +159,7 @@
       "additionalProperties": { "$ref": "#/$defs/provider" }
     },
     "profiles": {
-      "description": "Named profiles, selected with default_profile, -p name or /profile name. Each takes the same keys as the top level and replaces the top-level value of every key it sets. -p name also accepts a file ~/.config/aicode/<name>.json or a path.",
+      "description": "Named profiles, selected with default_profile, -p name or /profile name. Each takes the same keys as the top level and replaces the top-level value of every key it sets, except mcp, which is merged by server name. -p name also accepts a file ~/.config/aicode/<name>.json or a path.",
       "type": "object",
       "additionalProperties": { "$ref": "#/$defs/profile" }
     },

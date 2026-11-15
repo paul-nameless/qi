@@ -51,7 +51,7 @@ go install github.com/paul-nameless/aicode@latest
 }
 ```
 
-Top-level keys are shared settings; a profile can set any of them except `profiles` and `default_profile`, and replaces that key's whole value (`null` resets it to the default). `api: anthropic` uses the native Messages API. The model picks one of `subagent_models` per subagent, and `/model <name>` switches to it. Other keys:
+Top-level keys are shared settings; a profile can set any of them except `profiles` and `default_profile`, and replaces that key's whole value (`null` resets it to the default), except `mcp`, which is merged by server name. `api: anthropic` uses the native Messages API. The model picks one of `subagent_models` per subagent, and `/model <name>` switches to it. Other keys:
 
 - `cache_ttl`: Anthropic prompt cache TTL (default `1h` interactive, `5m` with `-q`); idle compaction runs 5 minutes before it expires.
 - `compact_at`: compact when context passes this, in tokens (`150000`, `"150k"`) or a share of the window (`"80%"`). `compact_idle_at` is the idle threshold, same syntax.
@@ -68,19 +68,30 @@ Older versions read YAML (`config.yml`). Convert it once with the same keys, e.g
 
 ### MCP
 
-MCP servers start on first use. Their tools never enter the tool list directly: the agent finds them with `tool_search` (by keywords, or `server` to list one server's tools) and calls them with `mcp_call`. `tools` and `exclude_tools` limit what the agent can see and call, with glob patterns on the tool name (`*`, `?`, `[a-z]`):
+MCP servers start on first use. Their tools never enter the tool list directly: the agent finds them with `tool_search` (by keywords, or `server` to list one server's tools) and calls them with `mcp_call`. `tools` and `exclude_tools` limit what the agent can see and call, with glob patterns on the tool name.
+
+Top-level servers are global: every profile gets them. A profile's `mcp` is merged by server name: a new name adds a server for that profile, an existing name replaces that server's whole entry, `"name": null` removes a global server, and `"mcp": null` removes them all. Profile files follow the same rules.
 
 ```json
-"mcp": {
-  "github": {
-    "command": "github-mcp-server",
-    "args": ["stdio"],
-    "description": "GitHub issues and pull requests",
-    "tools": ["get_*", "list_*", "search_*", "create_issue"],
-    "exclude_tools": ["*_secret*"]
+{
+  "mcp": {
+    "github": {
+      "command": "github-mcp-server",
+      "args": ["stdio"],
+      "description": "GitHub issues and pull requests",
+      "tools": ["get_*", "list_*", "search_*", "create_issue"],
+      "exclude_tools": ["*_secret*"]
+    }
+  },
+  "profiles": {
+    "work": {"mcp": {"jira": {"command": "jira-mcp", "description": "Jira tickets"}}},
+    "review": {"mcp": {"github": {"command": "github-mcp-server", "args": ["stdio"], "tools": ["get_*", "list_*"]}}},
+    "offline": {"mcp": {"github": null}}
   }
 }
 ```
+
+Here `work` has GitHub and Jira, `review` has a read-only GitHub, and `offline` has no servers. `/mcp` shows what the current profile ended up with; MCP changes need a restart.
 
 A tool is enabled when `tools` is unset or one of its patterns matches, and no `exclude_tools` pattern matches. Patterns match the whole name and are case-sensitive: `*` is any run of characters (including `/`), `?` one character, `[a-z]` a class and `[^a-z]` a negated one. An empty `tools` list is an error; omit the key to allow every tool.
 

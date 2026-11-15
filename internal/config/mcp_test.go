@@ -64,3 +64,75 @@ func TestMCPFromEnv(t *testing.T) {
 		t.Error("invalid pattern accepted")
 	}
 }
+
+const mcpProfiles = `{
+  "mcp": {"github": {"command": "gh", "tools": ["get_*"]}, "notes": {"command": "notes"}},
+  "profiles": {
+    "plain": {"model": "m"},
+    "adds": {"mcp": {"db": {"command": "db"}}},
+    "narrows": {"mcp": {"github": {"command": "gh2", "tools": ["get_issue"]}}},
+    "drops": {"mcp": {"notes": null}},
+    "none": {"mcp": null},
+    "empty": {"mcp": {}},
+    "bad": {"mcp": {"slack": null}},
+    "badentry": {"mcp": {"db": {"command": "db", "tools": []}}}
+  }
+}`
+
+func mcpNames(c Config) []string {
+	return sortedKeys(c.MCP)
+}
+
+func TestProfileMCPMerge(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("AICODE_CONFIG_DIR", dir)
+	path := writeConfig(t, dir, "config.json", mcpProfiles)
+	writeConfig(t, dir, "fileadds.json", `{"mcp": {"db": {"command": "db"}, "notes": null}}`)
+	cases := map[string][]string{
+		"":         {"github", "notes"},
+		"plain":    {"github", "notes"},
+		"adds":     {"db", "github", "notes"},
+		"narrows":  {"github", "notes"},
+		"drops":    {"github"},
+		"none":     nil,
+		"empty":    {"github", "notes"},
+		"fileadds": {"db", "github"},
+	}
+	for profile, want := range cases {
+		c, err := Load(path, profile)
+		if err != nil {
+			t.Errorf("profile %q: %v", profile, err)
+			continue
+		}
+		if got := mcpNames(c); !reflect.DeepEqual(got, want) && (len(got) > 0 || len(want) > 0) {
+			t.Errorf("profile %q: servers %v, want %v", profile, got, want)
+		}
+	}
+	narrows, _ := Load(path, "narrows")
+	if g := narrows.MCP["github"]; g.Command != "gh2" || !reflect.DeepEqual(g.Tools, []string{"get_issue"}) || narrows.MCP["notes"].Command != "notes" {
+		t.Errorf("narrows: %+v", narrows.MCP)
+	}
+	if none, _ := Load(path, "none"); none.MCP != nil {
+		t.Errorf(`"mcp": null must remove every server: %+v`, none.MCP)
+	}
+	global, _ := Load(path, "")
+	if g := global.MCP["github"]; g.Command != "gh" || !reflect.DeepEqual(g.Tools, []string{"get_*"}) {
+		t.Errorf("global github changed: %+v", g)
+	}
+}
+
+func TestProfileMCPErrors(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("AICODE_CONFIG_DIR", dir)
+	path := writeConfig(t, dir, "config.json", mcpProfiles)
+	_, err := Load(path, "bad")
+	wantErr(t, err, path, `profile "bad": key "mcp.slack": no global MCP server "slack" to remove`)
+	_, err = Load(path, "badentry")
+	wantErr(t, err, `profile "badentry"`, `key "mcp.db.tools": empty list`)
+	file := writeConfig(t, dir, "filebad.json", `{"mcp": {"slack": null}}`)
+	_, err = Load(path, "filebad")
+	wantErr(t, err, "profile file "+file, `key "mcp.slack": no global MCP server "slack" to remove`)
+	top := writeConfig(t, dir, "top.json", `{"mcp": {"notes": null}}`)
+	_, err = Load(top, "")
+	wantErr(t, err, top, `key "mcp.notes": null removes a global server and is only allowed in a profile`)
+}

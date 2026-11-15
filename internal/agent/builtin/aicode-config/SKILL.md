@@ -24,7 +24,7 @@ aicode is the agent you are running in. Its settings are JSON files.
 ## How settings combine
 
 1. The top-level keys are the shared settings.
-2. The profile is `-p name`, else `default_profile`. Every key a profile sets replaces the top-level value as a whole, including objects (`providers`, `mcp`) and arrays (`subagent_models`). `null` resets a key to its default. A profile cannot contain `profiles` or `default_profile`.
+2. The profile is `-p name`, else `default_profile`. Every key a profile sets replaces the top-level value as a whole, including objects (`providers`) and arrays (`subagent_models`); `mcp` is the exception (see MCP servers). `null` resets a key to its default. A profile cannot contain `profiles` or `default_profile`.
 3. `provider` names an entry in `providers` (or the built-ins `claude`, `anthropic`, `openai`) and sets `api`, `base_url`, `api_key`, `api_key_shell` and `cache_control` from it. Connection keys set in the profile itself win over the provider's.
 4. The flags `-provider`, `-model` and `-effort` override everything for one run. `/profile`, `/model` and `/effort` switch at runtime without saving anything.
 
@@ -37,7 +37,14 @@ When a change takes effect in a running session:
 - `skill_dirs`, `instruction_files`, `builtin_skills`: `/profile <name>`, then `/reload` to rebuild the system prompt.
 - `mcp`, `hook_files`, `read_only`: only after restarting aicode.
 
-`mcp.<name>.tools` and `mcp.<name>.exclude_tools` limit which MCP tools the agent can see and call. They are the user's decision: change them only when the user asks. Subagents keep the MCP setup their parent started with, so a change never applies to a running session or its subagents. It is a guard rail, not a sandbox, since `bash` can still run anything.
+## MCP servers
+
+- Top-level `mcp` servers are global: every profile gets them. A profile's `mcp` is merged by server name: a new name adds a server for that profile, an existing name replaces that server's whole entry (repeat `command` and everything else), `"name": null` removes a global server, `"mcp": null` removes all. Profile files work the same way.
+- Put a server at the top level when every profile should have it, in a profile when only that profile should.
+- `tools` (allow list) and `exclude_tools` (deny list) are glob patterns on the tool name: `*`, `?`, `[a-z]`, `[^a-z]`; case-sensitive; `*` crosses `/`. A tool is enabled when `tools` is unset or matches, and `exclude_tools` doesn't. Omit `tools` instead of writing `[]`. Change them only when the user asks: they are the user's decision.
+- Changes need a restart of aicode; then `/mcp` shows each server's status, enabled tools and hidden count. Subagents keep the setup their parent started with.
+- Filters are a guard rail, not a sandbox: `bash` can still run anything.
+- Values under `mcp.<name>.env` are secrets: never print them (see below).
 
 ## Secrets
 

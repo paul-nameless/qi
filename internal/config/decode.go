@@ -138,6 +138,7 @@ func clearKeys(c *Config, raw []byte) error {
 }
 
 func objectKeys(raw []byte) (map[string]jsontext.Value, error) {
+	raw = bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))
 	var keys map[string]jsontext.Value
 	if err := json.Unmarshal(raw, &keys); err != nil {
 		return nil, explain(raw, err)

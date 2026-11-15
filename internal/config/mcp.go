@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json/v2"
 	"fmt"
+	"maps"
 	"os"
 	"path"
 	"strings"
@@ -82,4 +83,60 @@ func MCPFromEnv() (map[string]MCPServer, bool, error) {
 		}
 	}
 	return servers, true, nil
+}
+
+func profileMCP(raw []byte) (map[string]*MCPServer, bool, error) {
+	keys, err := objectKeys(raw)
+	if err != nil {
+		return nil, false, err
+	}
+	value, ok := keys["mcp"]
+	if !ok {
+		return nil, false, nil
+	}
+	var servers map[string]*MCPServer
+	if err := decodeStrict(value, &servers); err != nil {
+		return nil, true, fmt.Errorf("key %q: %w", "mcp", err)
+	}
+	return servers, true, nil
+}
+
+func (c *Config) mergeMCP(raw []byte) error {
+	servers, set, err := profileMCP(raw)
+	if err != nil || !set {
+		return err
+	}
+	if servers == nil {
+		c.MCP = nil
+		return nil
+	}
+	merged := maps.Clone(c.globalMCP)
+	if merged == nil {
+		merged = map[string]MCPServer{}
+	}
+	for _, name := range sortedKeys(servers) {
+		if servers[name] != nil {
+			merged[name] = *servers[name]
+			continue
+		}
+		if _, ok := c.globalMCP[name]; !ok {
+			return fmt.Errorf("key %q: no global MCP server %q to remove", "mcp."+name, name)
+		}
+		delete(merged, name)
+	}
+	c.MCP = merged
+	return nil
+}
+
+func rejectMCPNulls(raw []byte) error {
+	servers, _, err := profileMCP(raw)
+	if err != nil {
+		return err
+	}
+	for _, name := range sortedKeys(servers) {
+		if servers[name] == nil {
+			return fmt.Errorf("key %q: null removes a global server and is only allowed in a profile", "mcp."+name)
+		}
+	}
+	return nil
 }

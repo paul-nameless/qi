@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -169,12 +170,24 @@ func TestPastedTempImagesAreKeptWithTheSession(t *testing.T) {
 func TestSubagentKeepsParentMCPFilters(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("AICODE_CONFIG_DIR", dir)
-	parent := map[string]config.MCPServer{"notes": {Command: "notes", Tools: []string{"*_note"}, ExcludeTools: []string{"delete_*"}}}
 	path := filepath.Join(dir, "config.json")
-	if err := os.WriteFile(path, []byte(`{"mcp": {"notes": {"command": "notes"}, "extra": {"command": "extra"}}}`), 0o600); err != nil {
+	writeFile := func(data string) {
+		if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeFile(`{"mcp": {"notes": {"command": "notes", "tools": ["*_note"], "exclude_tools": ["delete_*"]}, "gh": {"command": "gh"}},
+  "profiles": {"p": {"mcp": {"gh": null, "db": {"command": "db"}}}}}`)
+	parentCfg, err := resolveConfig(options{configPath: path, profile: "p"})
+	if err != nil {
 		t.Fatal(err)
 	}
-	_, runner, _ := buildAgent(config.Config{Model: "m", MCP: parent}, options{}, dir, nopProvider{}, devNullPrinter(t), true, false)
+	parent := parentCfg.MCP
+	if !reflect.DeepEqual(sortedNames(parent), []string{"db", "notes"}) {
+		t.Fatalf("parent profile servers: %+v", parent)
+	}
+	writeFile(`{"mcp": {"notes": {"command": "notes"}, "extra": {"command": "extra"}}, "profiles": {"p": {"mcp": {"gh2": {"command": "gh"}}}}}`)
+	_, runner, _ := buildAgent(parentCfg, options{configPath: path, profile: "p"}, dir, nopProvider{}, devNullPrinter(t), true, false)
 	env, err := runner.Env()
 	if err != nil {
 		t.Fatal(err)
@@ -187,7 +200,7 @@ func TestSubagentKeepsParentMCPFilters(t *testing.T) {
 	}
 	t.Setenv(config.MCPEnv, fromParent)
 	t.Setenv("AICODE_SUBAGENT", "1")
-	cfg, err := resolveConfig(options{configPath: path})
+	cfg, err := resolveConfig(options{configPath: path, profile: "p"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +212,16 @@ func TestSubagentKeepsParentMCPFilters(t *testing.T) {
 	}
 	t.Setenv(config.MCPEnv, fromParent)
 	t.Setenv("AICODE_SUBAGENT", "")
-	if cfg, _ := resolveConfig(options{configPath: path}); len(cfg.MCP) != 2 {
+	if cfg, _ := resolveConfig(options{configPath: path, profile: "p"}); !reflect.DeepEqual(sortedNames(cfg.MCP), []string{"extra", "gh2", "notes"}) {
 		t.Errorf("top-level agent took %s: %+v", config.MCPEnv, cfg.MCP)
 	}
+}
+
+func sortedNames(m map[string]config.MCPServer) []string {
+	names := make([]string, 0, len(m))
+	for n := range m {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
 }
