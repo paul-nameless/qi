@@ -292,6 +292,7 @@ func (a *Agent) request(l live, msgs []llm.Message) llm.Request {
 		Model:           l.cfg.Model,
 		System:          l.system.Text,
 		StaticSystem:    l.system.Static,
+		SessionSystem:   l.system.Session,
 		Messages:        msgs,
 		Tools:           a.conv.registry.Defs(),
 		MaxTokens:       l.cfg.MaxTokens,

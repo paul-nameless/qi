@@ -30,5 +30,9 @@ func Run(m *testing.M) int {
 	defer os.RemoveAll(dir)
 	os.Setenv("QI_CONFIG_DIR", filepath.Join(dir, "config"))
 	os.Setenv("QI_SESSION_DIR", filepath.Join(dir, "sessions"))
+	os.Setenv("TMPDIR", filepath.Join(dir, "tmp"))
+	if err := os.Mkdir(filepath.Join(dir, "tmp"), 0o700); err != nil {
+		panic(err)
+	}
 	return m.Run()
 }

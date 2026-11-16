@@ -76,8 +76,6 @@ func run(o options) error {
 	}
 	a, runner := buildAgent(cfg, o, cwd, newProvider(cfg, key), display, headless, isSub, extra...)
 	roots := agent.ProjectRoots(cwd)
-	skills, sys := agent.LoadPrompt(cwd, cfg)
-	a.SetSystem(sys)
 
 	resume, cancelled, err := resumePath(o, cfg, cwd, headless)
 	if err != nil || cancelled {
@@ -91,6 +89,9 @@ func run(o options) error {
 		return err
 	}
 	defer a.Session().Close()
+	defer func() { agent.RemoveScratchIfEmpty(a.Session().ID) }()
+	skills, sys := agent.LoadPrompt(cwd, cfg, agent.ScratchDir(a.Session().ID))
+	a.SetSystem(sys)
 	hooks.Session, hooks.SessionID, hooks.ReadOnly = a.Session().Path, a.Session().ID, a.ReadOnly
 	if !hooks.Empty() {
 		var stop agent.StopHook

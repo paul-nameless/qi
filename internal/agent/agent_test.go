@@ -286,7 +286,7 @@ func TestSystemPromptStaticPartIsDirectoryFree(t *testing.T) {
 	os.WriteFile(filepath.Join(home, "CLAUDE.md"), []byte("global rules"), 0o600)
 	os.WriteFile(filepath.Join(proj, "CLAUDE.md"), []byte("project rules"), 0o600)
 	skills := []Skill{{Name: "g", Description: "global", Path: filepath.Join(home, "skills/g/SKILL.md")}, {Name: "p", Description: "proj", Path: filepath.Join(proj, ".claude/skills/p/SKILL.md")}}
-	built := BuildSystemPrompt(proj, []string{filepath.Join(home, "CLAUDE.md"), filepath.Join(proj, "CLAUDE.md")}, skills)
+	built := BuildSystemPrompt(proj, "", []string{filepath.Join(home, "CLAUDE.md"), filepath.Join(proj, "CLAUDE.md")}, skills)
 	static, rest := built.Text[:built.Static], built.Text[built.Static:]
 	total := 0
 	var names []string
@@ -294,7 +294,7 @@ func TestSystemPromptStaticPartIsDirectoryFree(t *testing.T) {
 		total += sec.Chars
 		names = append(names, sec.Name)
 	}
-	if total != len(built.Text) || len(names) != 6 || names[0] != "base prompt" || names[2] != "skills (1 global)" || names[3] != "environment" || names[5] != "skills (1 in project)" {
+	if total != len(built.Text) || len(names) != 6 || names[0] != "base prompt" || names[2] != "skills (1 global)" || names[4] != "skills (1 in project)" || names[5] != "environment" {
 		t.Errorf("sections %v cover %d of %d chars", names, total, len(built.Text))
 	}
 	if strings.Contains(static, proj) || !strings.Contains(static, "global rules") || !strings.Contains(static, "- g: global") {
@@ -302,6 +302,9 @@ func TestSystemPromptStaticPartIsDirectoryFree(t *testing.T) {
 	}
 	if !strings.Contains(rest, proj) || !strings.Contains(rest, "project rules") || !strings.Contains(rest, "- p: proj") {
 		t.Errorf("directory part: %q", rest)
+	}
+	if env := built.Text[built.Session:]; !strings.HasPrefix(env, "\n\n<env>") || strings.Contains(env, "project rules") {
+		t.Errorf("session tail: %q", env)
 	}
 }
 

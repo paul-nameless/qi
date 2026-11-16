@@ -40,9 +40,9 @@ func (o *OpenAI) buildMessages(req Request) []map[string]any {
 	var out []map[string]any
 	if req.System != "" {
 		var parts []any
-		for _, text := range req.SystemParts() {
-			part := map[string]any{"type": "text", "text": text}
-			if o.CacheControl {
+		for _, sp := range req.SystemParts() {
+			part := map[string]any{"type": "text", "text": sp.Text}
+			if o.CacheControl && sp.Cache {
 				part["cache_control"] = cacheMark(req.CacheTTL)
 			}
 			parts = append(parts, part)

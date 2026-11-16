@@ -687,7 +687,11 @@ func (r *repl) newSession() error {
 	if err != nil {
 		return err
 	}
+	if cur := r.agent.Session(); cur != nil {
+		agent.RemoveScratchIfEmpty(cur.ID)
+	}
 	r.agent.Reset(s)
 	r.hooks.Session, r.hooks.SessionID = s.Path, s.ID
+	r.loadPrompt()
 	return nil
 }

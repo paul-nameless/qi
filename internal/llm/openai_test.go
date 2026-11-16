@@ -220,8 +220,8 @@ func TestReadSSE(t *testing.T) {
 func TestSystemSplitIntoCachedParts(t *testing.T) {
 	req := Request{Model: "m", System: "static part\n\n<env>dir</env>", StaticSystem: len("static part"), Messages: []Message{UserText("hi")}, MaxTokens: 10}
 	parts := req.SystemParts()
-	if len(parts) != 2 || parts[0] != "static part" || parts[0]+parts[1] != req.System {
-		t.Fatalf("parts %q", parts)
+	if len(parts) != 2 || parts[0].Text != "static part" || parts[0].Text+parts[1].Text != req.System || !parts[1].Cache {
+		t.Fatalf("parts %+v", parts)
 	}
 	m := bodyJSON(t, NewOpenAI("https://openrouter.ai/api/v1", "k", nil), req)
 	sys := m["messages"].([]any)[0].(map[string]any)["content"].([]any)
@@ -234,7 +234,29 @@ func TestSystemSplitIntoCachedParts(t *testing.T) {
 	}
 	for _, n := range []int{0, -1, len(req.System)} {
 		if p := (Request{System: "abc", StaticSystem: n}).SystemParts(); len(p) != 1 {
-			t.Errorf("StaticSystem %d split into %q", n, p)
+			t.Errorf("StaticSystem %d split into %+v", n, p)
 		}
+	}
+}
+
+func TestSystemSessionTailIsNotCacheMarked(t *testing.T) {
+	sys := "static|project|<env>scratch</env>"
+	req := Request{Model: "m", System: sys, StaticSystem: len("static"), SessionSystem: len("static|project"), Messages: []Message{UserText("hi")}, MaxTokens: 10}
+	parts := req.SystemParts()
+	if len(parts) != 3 || parts[2].Text != "|<env>scratch</env>" || parts[2].Cache || !parts[0].Cache || !parts[1].Cache {
+		t.Fatalf("parts %+v", parts)
+	}
+	body := NewAnthropic("", "k").buildBody(req)
+	s := body["system"].([]any)
+	if len(s) != 3 || s[2].(map[string]any)["cache_control"] != nil || s[1].(map[string]any)["cache_control"] == nil {
+		t.Errorf("anthropic system %v", s)
+	}
+	m := bodyJSON(t, NewOpenAI("https://openrouter.ai/api/v1", "k", nil), req)
+	o := m["messages"].([]any)[0].(map[string]any)["content"].([]any)
+	if len(o) != 3 || o[2].(map[string]any)["cache_control"] != nil {
+		t.Errorf("openai system %v", o)
+	}
+	if p := (Request{System: "static<env>", StaticSystem: 6, SessionSystem: 6}).SystemParts(); len(p) != 2 || p[0].Text != "static" || p[1].Cache {
+		t.Errorf("no project part: %+v", p)
 	}
 }

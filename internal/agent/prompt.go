@@ -24,7 +24,8 @@ How to work:
 - Use edit for changes to existing files and write for new files. Copy old_string exactly from the file, without line-number prefixes.
 - Use bash for builds, tests, git and search. Commands get no stdin, so avoid interactive programs.
 - Fix the root cause with the smallest change that does it, in the style of the surrounding code. Don't fix unrelated things; mention them instead. Don't revert changes you did not make.
-- Check your work with the project's build or tests when it makes sense.
+- Check claims against the real thing before you report them: run what you built, look at its output or the built file, and confirm facts with git, docs or source instead of assuming them. Before you finish a change, re-read your diff and try its edge cases.
+- Put temporary files (notes, scripts, copies, build output) in the scratch directory named in <env>, not in the project or elsewhere in the temp dir.
 - If a tool result says the mode is read-only, don't try to work around it: explain what you would change instead.
 
 Care:
@@ -213,16 +214,18 @@ type Section struct {
 type SystemPrompt struct {
 	Text     string
 	Static   int
+	Session  int
 	Sections []Section
 }
 
-func LoadPrompt(cwd string, cfg config.Config) ([]Skill, SystemPrompt) {
+func LoadPrompt(cwd string, cfg config.Config, scratch string) ([]Skill, SystemPrompt) {
+	scratch = ensureScratch(scratch)
 	roots := ProjectRoots(cwd)
 	skills := LoadSkills(ExpandPaths(roots, cfg.SkillDirs))
 	if cfg.BuiltinSkillsOn() {
 		skills = addSkills(skills, BuiltinSkills())
 	}
-	return skills, BuildSystemPrompt(cwd, ExpandPaths(roots, cfg.InstructionFile), skills)
+	return skills, BuildSystemPrompt(cwd, scratch, ExpandPaths(roots, cfg.InstructionFile), skills)
 }
 
 type promptBuilder struct {
@@ -236,7 +239,7 @@ func (p *promptBuilder) section(name string, write func(b *strings.Builder)) {
 	p.sections = append(p.sections, Section{name, p.b.Len() - start})
 }
 
-func BuildSystemPrompt(cwd string, instructionFiles []string, skills []Skill) SystemPrompt {
+func BuildSystemPrompt(cwd, scratch string, instructionFiles []string, skills []Skill) SystemPrompt {
 	roots := ProjectRoots(cwd)
 	var p promptBuilder
 	p.section("base prompt", func(b *strings.Builder) { b.WriteString(basePrompt) })
@@ -265,31 +268,36 @@ func BuildSystemPrompt(cwd string, instructionFiles []string, skills []Skill) Sy
 		})
 	}
 	static := p.b.Len()
-	git := "no"
-	if isGitRepo(cwd) {
-		git = "yes"
-	}
-	p.section("environment", func(b *strings.Builder) {
-		fmt.Fprintf(b, "\n\n<env>\nWorking directory: %s\nPlatform: %s\nDate: %s\nGit repository: %s\n</env>\n", cwd, runtime.GOOS, time.Now().Format("2006-01-02"), git)
-	})
 	for _, inst := range projectInst {
 		name := inst.path
 		if rel, err := filepath.Rel(cwd, inst.path); err == nil && !strings.HasPrefix(rel, "..") {
 			name = rel
 		}
-		p.section(name, func(b *strings.Builder) { b.WriteString("\n" + inst.text + "\n") })
+		p.section(name, func(b *strings.Builder) { b.WriteString("\n\n" + inst.text + "\n") })
 	}
 	if len(project) > 0 {
 		p.section(fmt.Sprintf("skills (%d in project)", len(project)), func(b *strings.Builder) {
 			if len(global) > 0 {
 				b.WriteString("\n# More skills in this project\n\n")
 			} else {
-				b.WriteString(skillsIntro)
+				b.WriteString("\n" + skillsIntro)
 			}
 			writeSkills(b, project)
 		})
 	}
-	return SystemPrompt{Text: p.b.String(), Static: static, Sections: p.sections}
+	git := "no"
+	if isGitRepo(cwd) {
+		git = "yes"
+	}
+	session := p.b.Len()
+	p.section("environment", func(b *strings.Builder) {
+		fmt.Fprintf(b, "\n\n<env>\nWorking directory: %s\n", cwd)
+		if scratch != "" {
+			fmt.Fprintf(b, "Scratch directory: %s\n", scratch)
+		}
+		fmt.Fprintf(b, "Platform: %s\nDate: %s\nGit repository: %s\n</env>\n", runtime.GOOS, time.Now().Format("2006-01-02"), git)
+	})
+	return SystemPrompt{Text: p.b.String(), Static: static, Session: session, Sections: p.sections}
 }
 
 func writeSkills(b *strings.Builder, skills []Skill) {

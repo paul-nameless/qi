@@ -91,6 +91,7 @@ type Request struct {
 	Model           string
 	System          string
 	StaticSystem    int
+	SessionSystem   int
 	Messages        []Message
 	Tools           []ToolDef
 	MaxTokens       int
@@ -145,9 +146,24 @@ func MergeConsecutive(msgs []Message) []Message {
 	return out
 }
 
-func (r Request) SystemParts() []string {
-	if r.StaticSystem <= 0 || r.StaticSystem >= len(r.System) {
-		return []string{r.System}
+type SystemPart struct {
+	Text  string
+	Cache bool
+}
+
+func (r Request) SystemParts() []SystemPart {
+	cached, tail := r.System, ""
+	if r.SessionSystem > 0 && r.SessionSystem < len(r.System) {
+		cached, tail = r.System[:r.SessionSystem], r.System[r.SessionSystem:]
 	}
-	return []string{r.System[:r.StaticSystem], r.System[r.StaticSystem:]}
+	var out []SystemPart
+	if r.StaticSystem > 0 && r.StaticSystem < len(cached) {
+		out = []SystemPart{{cached[:r.StaticSystem], true}, {cached[r.StaticSystem:], true}}
+	} else if cached != "" {
+		out = []SystemPart{{cached, true}}
+	}
+	if tail != "" {
+		out = append(out, SystemPart{tail, false})
+	}
+	return out
 }

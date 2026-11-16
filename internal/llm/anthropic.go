@@ -146,8 +146,12 @@ func (a *Anthropic) buildBody(req Request) map[string]any {
 	}
 	if req.System != "" {
 		var system []any
-		for _, text := range req.SystemParts() {
-			system = append(system, map[string]any{"type": "text", "text": text, "cache_control": cacheMark(req.CacheTTL)})
+		for _, part := range req.SystemParts() {
+			block := map[string]any{"type": "text", "text": part.Text}
+			if part.Cache {
+				block["cache_control"] = cacheMark(req.CacheTTL)
+			}
+			system = append(system, block)
 		}
 		body["system"] = system
 	}
