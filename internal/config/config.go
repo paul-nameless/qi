@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json/jsontext"
 	"errors"
 	"fmt"
@@ -457,13 +458,20 @@ func (c Config) ResolveAPIKey() (string, error) {
 		return c.APIKey, nil
 	}
 	if c.APIKeyShell != "" {
-		out, err := exec.Command("sh", "-c", c.APIKeyShell).Output()
+		cmd := exec.Command("sh", "-c", c.APIKeyShell)
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+		out, err := cmd.Output()
+		msg := strings.TrimSpace(stderr.String())
+		if msg != "" {
+			msg = ": " + msg
+		}
 		if err != nil {
-			return "", fmt.Errorf("api_key_shell failed: %w", err)
+			return "", fmt.Errorf("api_key_shell failed: %w%s", err, msg)
 		}
 		key := strings.TrimSpace(strings.SplitN(string(out), "\n", 2)[0])
 		if key == "" {
-			return "", errors.New("api_key_shell returned an empty key")
+			return "", errors.New("api_key_shell returned an empty key" + msg)
 		}
 		return key, nil
 	}

@@ -183,3 +183,19 @@ func TestEnvKeyFollowsHost(t *testing.T) {
 		t.Errorf("OpenRouter key sent to another host: %v", err)
 	}
 }
+
+func TestAPIKeyShellErrorsShowStderr(t *testing.T) {
+	cases := map[string]string{
+		"echo nope >&2 | head -n 1": "empty key: nope",
+		"echo boom >&2; exit 3":     "exit status 3: boom",
+	}
+	for shell, want := range cases {
+		_, err := Config{APIKeyShell: shell}.ResolveAPIKey()
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%q: got %v, want %q", shell, err, want)
+		}
+	}
+	if key, err := (Config{APIKeyShell: "echo warn >&2; echo k1"}).ResolveAPIKey(); err != nil || key != "k1" {
+		t.Errorf("stderr with a key: %q %v", key, err)
+	}
+}
