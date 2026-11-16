@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/paul-nameless/qi/internal/agent"
@@ -18,19 +19,20 @@ import (
 )
 
 type options struct {
-	query       string
-	cont        bool
-	profile     string
-	configPath  string
-	model       string
-	provider    string
-	effort      string
-	readOnly    bool
-	sessionID   string
-	pickSession bool
-	resumeID    string
-	json        bool
-	version     string
+	query            string
+	cont             bool
+	profile          string
+	configPath       string
+	model            string
+	provider         string
+	effort           string
+	systemPromptFile string
+	readOnly         bool
+	sessionID        string
+	pickSession      bool
+	resumeID         string
+	json             bool
+	version          string
 }
 
 const escalationWait = 6 * time.Second
@@ -189,7 +191,11 @@ func resolveConfig(o options) (config.Config, error) {
 	if err != nil {
 		return config.Config{}, err
 	}
-	cfg, err := config.Resolve(config.Options{Path: o.configPath, Profile: o.profile, Provider: o.provider, Model: o.model, Effort: o.effort})
+	promptFile, err := absPath(o.systemPromptFile)
+	if err != nil {
+		return config.Config{}, err
+	}
+	cfg, err := config.Resolve(config.Options{Path: o.configPath, Profile: o.profile, Provider: o.provider, Model: o.model, Effort: o.effort, SystemPromptFile: promptFile})
 	if err != nil {
 		return cfg, err
 	}
@@ -264,4 +270,15 @@ func newProvider(cfg config.Config, key string) llm.Provider {
 		return llm.NewAnthropic(cfg.BaseURL, key)
 	}
 	return llm.NewOpenAI(cfg.BaseURL, key, cfg.CacheControl)
+}
+
+func absPath(p string) (string, error) {
+	if p == "" {
+		return "", nil
+	}
+	abs, err := filepath.Abs(config.ExpandHome(p))
+	if err != nil {
+		return "", fmt.Errorf("-system-prompt-file: %w", err)
+	}
+	return abs, nil
 }

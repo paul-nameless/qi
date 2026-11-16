@@ -225,7 +225,7 @@ func LoadPrompt(cwd string, cfg config.Config, scratch string) ([]Skill, SystemP
 	if cfg.BuiltinSkillsOn() {
 		skills = addSkills(skills, BuiltinSkills())
 	}
-	return skills, BuildSystemPrompt(cwd, scratch, ExpandPaths(roots, cfg.InstructionFile), skills)
+	return skills, BuildSystemPrompt(cwd, scratch, cfg.SystemPrompt, ExpandPaths(roots, cfg.InstructionFile), skills)
 }
 
 type promptBuilder struct {
@@ -239,10 +239,14 @@ func (p *promptBuilder) section(name string, write func(b *strings.Builder)) {
 	p.sections = append(p.sections, Section{name, p.b.Len() - start})
 }
 
-func BuildSystemPrompt(cwd, scratch string, instructionFiles []string, skills []Skill) SystemPrompt {
+func BuildSystemPrompt(cwd, scratch, base string, instructionFiles []string, skills []Skill) SystemPrompt {
 	roots := ProjectRoots(cwd)
 	var p promptBuilder
-	p.section("base prompt", func(b *strings.Builder) { b.WriteString(basePrompt) })
+	name := "base prompt (system_prompt_file)"
+	if base == "" {
+		base, name = basePrompt, "base prompt"
+	}
+	p.section(name, func(b *strings.Builder) { b.WriteString(base) })
 	var projectInst []instruction
 	for _, inst := range loadInstructions(instructionFiles) {
 		if inProject(inst.path, roots) {

@@ -37,6 +37,11 @@ func Main(args []string, version string) int {
 		if err := config.Check(c.opts.configPath, c.opts.profile); err != nil {
 			return exitCode(err)
 		}
+		if c.opts.systemPromptFile != "" {
+			if _, err := resolveConfig(c.opts); err != nil {
+				return exitCode(err)
+			}
+		}
 		fmt.Println("config ok")
 		return 0
 	}
@@ -91,6 +96,7 @@ func newFlagSet(c *cliArgs, out io.Writer) *flag.FlagSet {
 	fs.StringVar(&o.configPath, "config", "", "JSON config `file` (default "+config.ShortHome(config.DefaultPath())+")")
 	fs.StringVar(&o.model, "model", "", "`model` override")
 	fs.StringVar(&o.effort, "effort", "", "reasoning `effort` override")
+	fs.StringVar(&o.systemPromptFile, "system-prompt-file", "", "replace the built-in base prompt with this `file` for this run")
 	fs.BoolVar(&o.readOnly, "read-only", false, "start in read-only mode")
 	fs.StringVar(&o.sessionID, "session-id", "", "use this session `id`: continues it if it exists, creates it otherwise")
 	fs.Var(resumeFlag{o}, "r", "pick a session of this directory to resume, or resume <id>")

@@ -199,3 +199,25 @@ func TestAPIKeyShellErrorsShowStderr(t *testing.T) {
 		t.Errorf("stderr with a key: %q %v", key, err)
 	}
 }
+
+func TestSystemPromptFile(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("QI_CONFIG_DIR", dir)
+	writeConfig(t, dir, "global.md", "global prompt\n")
+	writeConfig(t, dir, "fast.md", "fast prompt")
+	cli := writeConfig(t, t.TempDir(), "cli.md", "cli prompt")
+	path := writeConfig(t, dir, "c.json", `{"api": "anthropic", "api_key": "k", "system_prompt_file": "global.md", "profiles": {"fast": {"system_prompt_file": "fast.md"}, "plain": {}}}`)
+	for _, c := range []struct{ profile, file, want string }{
+		{"plain", "", "global prompt"},
+		{"fast", "", "fast prompt"},
+		{"fast", cli, "cli prompt"},
+	} {
+		got, err := Resolve(Options{Path: path, Profile: c.profile, SystemPromptFile: c.file})
+		if err != nil || got.SystemPrompt != c.want {
+			t.Errorf("%s %q: got %q, %v", c.profile, c.file, got.SystemPrompt, err)
+		}
+	}
+	missing := writeConfig(t, dir, "m.json", `{"api": "anthropic", "api_key": "k", "system_prompt_file": "nope.md"}`)
+	_, err := Resolve(Options{Path: missing})
+	wantErr(t, err, "system_prompt_file", "nope.md")
+}

@@ -88,6 +88,10 @@
       "type": "integer",
       "minimum": 1
     },
+    "system_prompt_file": {
+      "description": "File whose text replaces qi's built-in base prompt; instruction files, skills and the environment block are still added. A relative path is relative to the config file's directory. -system-prompt-file overrides it for one run.",
+      "type": "string"
+    },
     "subagent_models": {
       "description": "Models the agent can pick for a subagent; /model <name> also switches to one.",
       "type": "array",

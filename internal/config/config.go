@@ -41,46 +41,48 @@ type MCPServer struct {
 const DefaultPicker = `fzf --height=40% --reverse --no-multi --bind=ctrl-z:ignore --delimiter='\t' --nth=1 --tabstop=24 --prompt={prompt}`
 
 type Config struct {
-	Schema          string                    `json:"$schema"`
-	Model           string                    `json:"model"`
-	API             string                    `json:"api"`
-	Provider        string                    `json:"provider"`
-	BaseURL         string                    `json:"base_url"`
-	APIKey          string                    `json:"api_key"`
-	APIKeyShell     string                    `json:"api_key_shell"`
-	ReasoningEffort string                    `json:"reasoning_effort"`
-	MaxTokens       int                       `json:"max_tokens"`
-	CacheControl    *bool                     `json:"cache_control"`
-	CacheTTL        string                    `json:"cache_ttl"`
-	CompactAt       Threshold                 `json:"compact_at"`
-	CompactIdleAt   Threshold                 `json:"compact_idle_at"`
-	ContextWindow   Tokens                    `json:"context_window"`
-	MaxRounds       int                       `json:"max_rounds"`
-	ShowReasoning   *bool                     `json:"show_reasoning"`
-	ReadOnly        bool                      `json:"read_only"`
-	ReadOnlyAllow   []string                  `json:"read_only_allow"`
-	BashTimeout     int                       `json:"bash_timeout"`
-	SubagentModels  []SubagentModel           `json:"subagent_models"`
-	SubagentEfforts []string                  `json:"subagent_efforts"`
-	InstructionFile []string                  `json:"instruction_files"`
-	SkillDirs       []string                  `json:"skill_dirs"`
-	HookFiles       []string                  `json:"hook_files"`
-	MCP             map[string]MCPServer      `json:"mcp"`
-	Picker          string                    `json:"picker"`
-	NotifyCmd       string                    `json:"notify_cmd"`
-	FilePicker      string                    `json:"file_picker"`
-	HistoryPicker   string                    `json:"history_picker"`
-	SessionPicker   string                    `json:"session_picker"`
-	Pager           string                    `json:"pager"`
-	CopyCmd         string                    `json:"copy_cmd"`
-	BuiltinSkills   *bool                     `json:"builtin_skills"`
-	Providers       map[string]Provider       `json:"providers"`
-	Profiles        map[string]jsontext.Value `json:"profiles"`
-	DefaultProfile  string                    `json:"default_profile"`
-	Profile         string                    `json:"-"`
-	profileRaw      []byte
-	globalMCP       map[string]MCPServer
-	source          string
+	Schema           string                    `json:"$schema"`
+	Model            string                    `json:"model"`
+	API              string                    `json:"api"`
+	Provider         string                    `json:"provider"`
+	BaseURL          string                    `json:"base_url"`
+	APIKey           string                    `json:"api_key"`
+	APIKeyShell      string                    `json:"api_key_shell"`
+	ReasoningEffort  string                    `json:"reasoning_effort"`
+	MaxTokens        int                       `json:"max_tokens"`
+	CacheControl     *bool                     `json:"cache_control"`
+	CacheTTL         string                    `json:"cache_ttl"`
+	CompactAt        Threshold                 `json:"compact_at"`
+	CompactIdleAt    Threshold                 `json:"compact_idle_at"`
+	ContextWindow    Tokens                    `json:"context_window"`
+	MaxRounds        int                       `json:"max_rounds"`
+	ShowReasoning    *bool                     `json:"show_reasoning"`
+	ReadOnly         bool                      `json:"read_only"`
+	ReadOnlyAllow    []string                  `json:"read_only_allow"`
+	BashTimeout      int                       `json:"bash_timeout"`
+	SystemPromptFile string                    `json:"system_prompt_file"`
+	SystemPrompt     string                    `json:"-"`
+	SubagentModels   []SubagentModel           `json:"subagent_models"`
+	SubagentEfforts  []string                  `json:"subagent_efforts"`
+	InstructionFile  []string                  `json:"instruction_files"`
+	SkillDirs        []string                  `json:"skill_dirs"`
+	HookFiles        []string                  `json:"hook_files"`
+	MCP              map[string]MCPServer      `json:"mcp"`
+	Picker           string                    `json:"picker"`
+	NotifyCmd        string                    `json:"notify_cmd"`
+	FilePicker       string                    `json:"file_picker"`
+	HistoryPicker    string                    `json:"history_picker"`
+	SessionPicker    string                    `json:"session_picker"`
+	Pager            string                    `json:"pager"`
+	CopyCmd          string                    `json:"copy_cmd"`
+	BuiltinSkills    *bool                     `json:"builtin_skills"`
+	Providers        map[string]Provider       `json:"providers"`
+	Profiles         map[string]jsontext.Value `json:"profiles"`
+	DefaultProfile   string                    `json:"default_profile"`
+	Profile          string                    `json:"-"`
+	profileRaw       []byte
+	globalMCP        map[string]MCPServer
+	source           string
 }
 
 func Dir() string {
@@ -127,11 +129,12 @@ func ShortHome(p string) string {
 }
 
 type Options struct {
-	Path     string
-	Profile  string
-	Provider string
-	Model    string
-	Effort   string
+	Path             string
+	Profile          string
+	Provider         string
+	Model            string
+	Effort           string
+	SystemPromptFile string
 }
 
 func Load(path, profile string) (Config, error) {
@@ -183,6 +186,13 @@ func Resolve(o Options) (Config, error) {
 	}
 	if o.Effort != "" {
 		c.ReasoningEffort = o.Effort
+	}
+	where := c.source + `: key "system_prompt_file"`
+	if o.SystemPromptFile != "" {
+		c.SystemPromptFile, where = o.SystemPromptFile, "-system-prompt-file"
+	}
+	if err := c.loadSystemPrompt(filepath.Dir(path)); err != nil {
+		return c, fmt.Errorf("%s: %w", where, err)
 	}
 	c.applyDefaults()
 	if err := c.validate(); err != nil {
@@ -509,4 +519,24 @@ func (c *Config) DefaultCacheTTL(headless bool) {
 	default:
 		c.CacheTTL = "1h"
 	}
+}
+
+func (c *Config) loadSystemPrompt(dir string) error {
+	if c.SystemPromptFile == "" {
+		return nil
+	}
+	path := ExpandHome(c.SystemPromptFile)
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(dir, path)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	text := strings.TrimSpace(string(data))
+	if text == "" {
+		return fmt.Errorf("%s is empty", path)
+	}
+	c.SystemPrompt = text
+	return nil
 }

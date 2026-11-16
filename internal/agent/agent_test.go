@@ -286,7 +286,7 @@ func TestSystemPromptStaticPartIsDirectoryFree(t *testing.T) {
 	os.WriteFile(filepath.Join(home, "CLAUDE.md"), []byte("global rules"), 0o600)
 	os.WriteFile(filepath.Join(proj, "CLAUDE.md"), []byte("project rules"), 0o600)
 	skills := []Skill{{Name: "g", Description: "global", Path: filepath.Join(home, "skills/g/SKILL.md")}, {Name: "p", Description: "proj", Path: filepath.Join(proj, ".claude/skills/p/SKILL.md")}}
-	built := BuildSystemPrompt(proj, "", []string{filepath.Join(home, "CLAUDE.md"), filepath.Join(proj, "CLAUDE.md")}, skills)
+	built := BuildSystemPrompt(proj, "", "", []string{filepath.Join(home, "CLAUDE.md"), filepath.Join(proj, "CLAUDE.md")}, skills)
 	static, rest := built.Text[:built.Static], built.Text[built.Static:]
 	total := 0
 	var names []string
@@ -447,5 +447,12 @@ func TestTurnStatsLine(t *testing.T) {
 		if got := fmtElapsed(d); got != want {
 			t.Errorf("fmtElapsed(%v) = %q, want %q", d, got, want)
 		}
+	}
+}
+
+func TestSystemPromptReplacesBase(t *testing.T) {
+	sys := BuildSystemPrompt(t.TempDir(), "", "custom base", nil, nil)
+	if !strings.HasPrefix(sys.Text, "custom base\n\n<env>") || strings.Contains(sys.Text, "You are qi") || sys.Sections[0].Name != "base prompt (system_prompt_file)" {
+		t.Fatalf("got %q %+v", sys.Text, sys.Sections)
 	}
 }
