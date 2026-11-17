@@ -504,7 +504,7 @@ func (r *repl) stopIdle() {
 }
 
 func (r *repl) resolve(profile string) (config.Config, error) {
-	return config.Resolve(config.Options{Path: r.opts.configPath, Profile: profile, Provider: r.opts.provider, Effort: r.opts.effort})
+	return config.Resolve(config.Options{Path: r.opts.configPath, Profile: profile, Provider: r.opts.provider, Effort: r.opts.effort, SystemPromptFile: r.opts.systemPromptFile})
 }
 
 func (r *repl) switchProfile(name string) error {
@@ -516,6 +516,7 @@ func (r *repl) switchProfile(name string) error {
 	if err := r.apply(cfg, cfg.Provider); err != nil {
 		return err
 	}
+	r.report(r.loadPrompt())
 	if r.runner != nil && !sameMCP(cfg.MCP, r.runner.MCP) {
 		r.display.Info("MCP servers unchanged; restart qi to apply the new profile's MCP setup")
 	}
@@ -692,6 +693,6 @@ func (r *repl) newSession() error {
 	}
 	r.agent.Reset(s)
 	r.hooks.Session, r.hooks.SessionID = s.Path, s.ID
-	r.loadPrompt()
+	r.report(r.loadPrompt())
 	return nil
 }

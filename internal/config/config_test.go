@@ -60,23 +60,14 @@ func TestProfiles(t *testing.T) {
 	if err := c.UseProvider("anthropic"); err != nil || c.API != "anthropic" || c.APIKey != "ant-key" || c.BaseURL != "" {
 		t.Errorf("switch provider: %+v %v", c, err)
 	}
-	c, err = Load(path, "legacy")
-	if err != nil || c.Model != "legacy-model" || c.API != "anthropic" {
-		t.Errorf("file profile: %+v %v", c, err)
+	_, err = Load(path, "legacy")
+	wantErr(t, err, `unknown profile "legacy"`, "profiles: glm, local, smart")
+	local, err := Load(path, "local")
+	if err != nil || local.BaseURL != "http://localhost:8080/v1" || local.APIKey != "or-key" {
+		t.Errorf("profile base_url should win over its provider: %+v %v", local, err)
 	}
-	if _, err := Load(path, "nope"); err == nil {
-		t.Error("unknown profile accepted")
-	}
-	if c, _ := Load(path, "local"); c.BaseURL != "http://localhost:8080/v1" || c.APIKey != "or-key" {
-		t.Errorf("profile base_url should win over its provider: %+v", c)
-	}
-	os.WriteFile(filepath.Join(dir, "filelocal.json"), []byte(`{"provider": "openrouter", "base_url": "http://localhost:9/v1", "model": "q"}`), 0o600)
-	fl, err := Load(path, "filelocal")
-	if err != nil || fl.BaseURL != "http://localhost:9/v1" || fl.APIKey != "or-key" {
-		t.Errorf("file profile base_url should win: %+v %v", fl, err)
-	}
-	if err := fl.UseProvider("openrouter"); err != nil || fl.BaseURL != "http://localhost:9/v1" {
-		t.Errorf("re-selecting the current provider must keep the profile url: %+v", fl)
+	if err := local.UseProvider("openrouter"); err != nil || local.BaseURL != "http://localhost:8080/v1" {
+		t.Errorf("re-selecting the current provider must keep the profile url: %+v", local)
 	}
 	if names := c.ProfileNames(); len(names) != 3 || names[0] != "glm" {
 		t.Errorf("names %v", names)

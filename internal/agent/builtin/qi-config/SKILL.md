@@ -10,7 +10,8 @@ qi is the agent you are running in. Its settings are JSON files.
 ## Files
 
 - `~/.config/qi/config.json`: the main config. The directory is `$QI_CONFIG_DIR` when set, else `$XDG_CONFIG_HOME/qi` when `XDG_CONFIG_HOME` is set; `~/.config/qi` below means that directory. `qi -config path.json` uses another file. Sessions live in `$QI_SESSION_DIR`, else `$XDG_DATA_HOME/qi/sessions`, else `~/.local/share/qi/sessions`.
-- Profiles live under `profiles` in the config, or in their own file `~/.config/qi/<name>.json` (selected with `-p name`; `-p` also takes a path).
+- Profiles live under `profiles` in the config (selected with `-p name`, `default_profile` or `/profile name`).
+- `system_prompt_file` (top level or in a profile; relative to the config directory) replaces the built-in base prompt; instruction files, skills and the environment block are still added.
 - Related files that are not JSON config: hooks in `~/.config/qi/settings.json` (Claude Code settings format), skills in `~/.config/qi/skills/<name>/SKILL.md`, commands in `~/.config/qi/commands/*.md`.
 - `schema.json` next to this file is the JSON Schema (draft 2020-12) for every key: types, allowed values, defaults and what each key does. Read it before adding a key you are not sure about.
 
@@ -26,20 +27,20 @@ qi is the agent you are running in. Its settings are JSON files.
 1. The top-level keys are the shared settings.
 2. The profile is `-p name`, else `default_profile`. Every key a profile sets replaces the top-level value as a whole, including objects (`providers`) and arrays (`subagent_models`); `mcp` is the exception (see MCP servers). `null` resets a key to its default. A profile cannot contain `profiles` or `default_profile`.
 3. `provider` names an entry in `providers` (or the built-ins `claude`, `anthropic`, `openai`) and sets `api`, `base_url`, `api_key`, `api_key_shell` and `cache_control` from it. Connection keys set in the profile itself win over the provider's.
-4. The flags `-provider`, `-model` and `-effort` override everything for one run. `/model` and `/effort` switch at runtime without saving anything. `/profile <name>` switches and also saves it as `default_profile` in the config file (only that value changes; formatting is kept); `-p` never saves.
+4. The flags `-provider`, `-model`, `-effort` and `-system-prompt-file` override everything for one run; `-system-prompt-file` also holds across `/profile` and reaches subagents. `/model` and `/effort` switch at runtime without saving anything. `/profile <name>` switches and also saves it as `default_profile` in the config file (only that value changes; formatting is kept); `-p` never saves.
 
 ## Check your change
 
-Run `qi -check-config` (add `-config path.json` when relevant). It loads the config, every inline profile and every profile file without calling any API, checks allowed values, and prints the file and key of the first problem.
+Run `qi -check-config` (add `-config path.json` when relevant). It loads the config and every profile without calling any API, checks allowed values, and prints the file and key of the first problem.
 
 When a change takes effect in a running session:
-- Most keys: after `/profile <name>`, which re-reads the file.
-- `skill_dirs`, `instruction_files`, `builtin_skills`: `/profile <name>`, then `/reload` to rebuild the system prompt.
+- Most keys, including `system_prompt_file`, `skill_dirs`, `instruction_files` and `builtin_skills`: after `/profile <name>`, which re-reads the file and rebuilds the system prompt.
+- Edits inside the system prompt file, skills, commands or CLAUDE.md files: `/reload`.
 - `mcp`, `hook_files`, `read_only`: only after restarting qi.
 
 ## MCP servers
 
-- Top-level `mcp` servers are global: every profile gets them. A profile's `mcp` is merged by server name: a new name adds a server for that profile, an existing name replaces that server's whole entry (repeat `command` and everything else), `"name": null` removes a global server, `"mcp": null` removes all. Profile files work the same way.
+- Top-level `mcp` servers are global: every profile gets them. A profile's `mcp` is merged by server name: a new name adds a server for that profile, an existing name replaces that server's whole entry (repeat `command` and everything else), `"name": null` removes a global server, `"mcp": null` removes all.
 - `tools` (allow list) and `exclude_tools` (deny list) are glob patterns on the tool name: `*`, `?`, `[a-z]`, `[^a-z]`; case-sensitive; `*` crosses `/`. A tool is enabled when `tools` is unset or matches, and `exclude_tools` doesn't. Omit `tools` instead of writing `[]`. Change them only when the user asks: they are the user's decision.
 - After a restart, `/mcp` shows each server's status, enabled tools and hidden count. `/profile` doesn't change MCP servers, and subagents keep their parent's setup.
 - Filters are a guard rail, not a sandbox: `bash` can still run anything.

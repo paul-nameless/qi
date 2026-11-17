@@ -121,9 +121,9 @@ func TestTrustFingerprint(t *testing.T) {
 
 func TestSubagentArgs(t *testing.T) {
 	ro := true
-	r := &SubagentRunner{Profile: "p", Provider: "openrouter", ReadOnly: func() bool { return ro }}
+	r := &SubagentRunner{Profile: "p", Provider: "openrouter", SystemPromptFile: "/x/prompt.md", ReadOnly: func() bool { return ro }}
 	args := strings.Join(r.args(tools.SubagentTask{Prompt: "do it", Model: "m", Effort: "low"}), " ")
-	if !strings.Contains(args, "-read-only") || !strings.Contains(args, "-provider openrouter") || !strings.Contains(args, "-p p") {
+	if !strings.Contains(args, "-read-only") || !strings.Contains(args, "-provider openrouter") || !strings.Contains(args, "-p p") || !strings.Contains(args, "-system-prompt-file /x/prompt.md") {
 		t.Errorf("args %q", args)
 	}
 	ro = false

@@ -88,16 +88,14 @@ func TestProfileMCPMerge(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("QI_CONFIG_DIR", dir)
 	path := writeConfig(t, dir, "config.json", mcpProfiles)
-	writeConfig(t, dir, "fileadds.json", `{"mcp": {"db": {"command": "db"}, "notes": null}}`)
 	cases := map[string][]string{
-		"":         {"github", "notes"},
-		"plain":    {"github", "notes"},
-		"adds":     {"db", "github", "notes"},
-		"narrows":  {"github", "notes"},
-		"drops":    {"github"},
-		"none":     nil,
-		"empty":    {"github", "notes"},
-		"fileadds": {"db", "github"},
+		"":        {"github", "notes"},
+		"plain":   {"github", "notes"},
+		"adds":    {"db", "github", "notes"},
+		"narrows": {"github", "notes"},
+		"drops":   {"github"},
+		"none":    nil,
+		"empty":   {"github", "notes"},
 	}
 	for profile, want := range cases {
 		c, err := Load(path, profile)
@@ -130,9 +128,6 @@ func TestProfileMCPErrors(t *testing.T) {
 	wantErr(t, err, path, `profile "bad": key "mcp.slack": no global MCP server "slack" to remove`)
 	_, err = Load(path, "badentry")
 	wantErr(t, err, `profile "badentry"`, `key "mcp.db.tools": empty list`)
-	file := writeConfig(t, dir, "filebad.json", `{"mcp": {"slack": null}}`)
-	_, err = Load(path, "filebad")
-	wantErr(t, err, "profile file "+file, `key "mcp.slack": no global MCP server "slack" to remove`)
 	top := writeConfig(t, dir, "top.json", `{"mcp": {"notes": null}}`)
 	_, err = Load(top, "")
 	wantErr(t, err, top, `key "mcp.notes": null removes a global server and is only allowed in a profile`)

@@ -41,27 +41,28 @@ type MCPServer struct {
 const DefaultPicker = `fzf --height=40% --reverse --no-multi --bind=ctrl-z:ignore --delimiter='\t' --nth=1 --tabstop=24 --prompt={prompt}`
 
 type Config struct {
-	Schema           string                    `json:"$schema"`
-	Model            string                    `json:"model"`
-	API              string                    `json:"api"`
-	Provider         string                    `json:"provider"`
-	BaseURL          string                    `json:"base_url"`
-	APIKey           string                    `json:"api_key"`
-	APIKeyShell      string                    `json:"api_key_shell"`
-	ReasoningEffort  string                    `json:"reasoning_effort"`
-	MaxTokens        int                       `json:"max_tokens"`
-	CacheControl     *bool                     `json:"cache_control"`
-	CacheTTL         string                    `json:"cache_ttl"`
-	CompactAt        Threshold                 `json:"compact_at"`
-	CompactIdleAt    Threshold                 `json:"compact_idle_at"`
-	ContextWindow    Tokens                    `json:"context_window"`
-	MaxRounds        int                       `json:"max_rounds"`
-	ShowReasoning    *bool                     `json:"show_reasoning"`
-	ReadOnly         bool                      `json:"read_only"`
-	ReadOnlyAllow    []string                  `json:"read_only_allow"`
-	BashTimeout      int                       `json:"bash_timeout"`
-	SystemPromptFile string                    `json:"system_prompt_file"`
-	SystemPrompt     string                    `json:"-"`
+	Schema           string    `json:"$schema"`
+	Model            string    `json:"model"`
+	API              string    `json:"api"`
+	Provider         string    `json:"provider"`
+	BaseURL          string    `json:"base_url"`
+	APIKey           string    `json:"api_key"`
+	APIKeyShell      string    `json:"api_key_shell"`
+	ReasoningEffort  string    `json:"reasoning_effort"`
+	MaxTokens        int       `json:"max_tokens"`
+	CacheControl     *bool     `json:"cache_control"`
+	CacheTTL         string    `json:"cache_ttl"`
+	CompactAt        Threshold `json:"compact_at"`
+	CompactIdleAt    Threshold `json:"compact_idle_at"`
+	ContextWindow    Tokens    `json:"context_window"`
+	MaxRounds        int       `json:"max_rounds"`
+	ShowReasoning    *bool     `json:"show_reasoning"`
+	ReadOnly         bool      `json:"read_only"`
+	ReadOnlyAllow    []string  `json:"read_only_allow"`
+	BashTimeout      int       `json:"bash_timeout"`
+	SystemPromptFile string    `json:"system_prompt_file"`
+	SystemPrompt     string    `json:"-"`
+	systemPromptPath string
 	SubagentModels   []SubagentModel           `json:"subagent_models"`
 	SubagentEfforts  []string                  `json:"subagent_efforts"`
 	InstructionFile  []string                  `json:"instruction_files"`
@@ -206,38 +207,12 @@ func Check(path, profile string) error {
 	if err != nil {
 		return err
 	}
-	names := c.ProfileNames()
-	files, err := profileFiles(ExpandHome(path))
-	if err != nil {
-		return err
-	}
-	for _, name := range files {
-		if _, inline := c.Profiles[name]; !inline {
-			names = append(names, name)
-		}
-	}
-	for _, name := range names {
+	for _, name := range c.ProfileNames() {
 		if _, err := Load(path, name); err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-func profileFiles(configPath string) ([]string, error) {
-	paths, err := filepath.Glob(filepath.Join(Dir(), "*.json"))
-	if err != nil {
-		return nil, err
-	}
-	var names []string
-	for _, p := range paths {
-		base := filepath.Base(p)
-		if p == DefaultPath() || p == configPath || base == "settings.json" {
-			continue
-		}
-		names = append(names, strings.TrimSuffix(base, ".json"))
-	}
-	return names, nil
 }
 
 func (c *Config) applyProfile(name string) error {
@@ -253,33 +228,15 @@ func (c *Config) applyProfile(name string) error {
 }
 
 func (c *Config) profileData(name string) ([]byte, string, error) {
-	if raw, ok := c.Profiles[name]; ok {
-		return raw, fmt.Sprintf("%s: profile %q", c.source, name), nil
+	raw, ok := c.Profiles[name]
+	if !ok {
+		known := "none defined"
+		if names := c.ProfileNames(); len(names) > 0 {
+			known = strings.Join(names, ", ")
+		}
+		return nil, "", fmt.Errorf("%s: unknown profile %q (profiles: %s)", c.source, name, known)
 	}
-	path := profilePath(name)
-	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, "", fmt.Errorf("unknown profile %q (not in profiles and no %s)", name, ShortHome(path))
-	}
-	if err != nil {
-		return nil, "", fmt.Errorf("read profile %s: %w", path, err)
-	}
-	source := "profile file " + path
-	if err := checkProfile(data); err != nil {
-		return nil, "", fmt.Errorf("%s: %w", source, err)
-	}
-	return data, source, nil
-}
-
-func profilePath(name string) string {
-	if strings.Contains(name, "/") {
-		return ExpandHome(name)
-	}
-	switch strings.ToLower(filepath.Ext(name)) {
-	case ".json":
-		return filepath.Join(Dir(), name)
-	}
-	return filepath.Join(Dir(), name+".json")
+	return raw, fmt.Sprintf("%s: profile %q", c.source, name), nil
 }
 
 func (c *Config) overlay(raw []byte) error {
@@ -522,20 +479,28 @@ func (c *Config) DefaultCacheTTL(headless bool) {
 }
 
 func (c *Config) loadSystemPrompt(dir string) error {
+	c.systemPromptPath = ""
 	if c.SystemPromptFile == "" {
 		return nil
 	}
-	path := ExpandHome(c.SystemPromptFile)
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(dir, path)
+	c.systemPromptPath = ExpandHome(c.SystemPromptFile)
+	if !filepath.IsAbs(c.systemPromptPath) {
+		c.systemPromptPath = filepath.Join(dir, c.systemPromptPath)
 	}
-	data, err := os.ReadFile(path)
+	return c.ReadSystemPrompt()
+}
+
+func (c *Config) ReadSystemPrompt() error {
+	if c.systemPromptPath == "" {
+		return nil
+	}
+	data, err := os.ReadFile(c.systemPromptPath)
 	if err != nil {
 		return err
 	}
 	text := strings.TrimSpace(string(data))
 	if text == "" {
-		return fmt.Errorf("%s is empty", path)
+		return fmt.Errorf("%s is empty", c.systemPromptPath)
 	}
 	c.SystemPrompt = text
 	return nil

@@ -136,6 +136,59 @@ func TestReloadRereadsInstructionsAndSkills(t *testing.T) {
 	}
 }
 
+func TestSystemPromptFileFollowsProfileReloadAndFlag(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("QI_CONFIG_DIR", dir)
+	write := func(name, text string) { os.WriteFile(filepath.Join(dir, name), []byte(text), 0o600) }
+	write("a.md", "prompt a")
+	write("b.md", "prompt b")
+	path := filepath.Join(dir, "config.json")
+	write("config.json", `{"api": "anthropic", "api_key": "k", "model": "m", "builtin_skills": false, "instruction_files": ["none.md"], "skill_dirs": ["none"], "system_prompt_file": "a.md", "profiles": {"b": {"system_prompt_file": "b.md"}, "plain": {"system_prompt_file": null}}}`)
+	o := options{configPath: path}
+	cfg, err := config.Resolve(config.Options{Path: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, runner := buildAgent(cfg, o, dir, nopProvider{}, devNullPrinter(t), true, false)
+	r := &repl{agent: a, display: devNullPrinter(t), runner: runner, opts: o}
+	expect := func(step, want string) {
+		t.Helper()
+		sys := a.System()
+		for _, p := range []string{"prompt a", "prompt b", "prompt b2", "prompt cli"} {
+			if strings.Contains(sys, p+"\n") != (p == want) {
+				t.Fatalf("%s: want %q, prompt starts %q", step, want, sys[:min(len(sys), 40)])
+			}
+		}
+	}
+	if err := r.loadPrompt(); err != nil {
+		t.Fatal(err)
+	}
+	expect("start", "prompt a")
+	if err := r.switchProfile("b"); err != nil {
+		t.Fatal(err)
+	}
+	expect("/profile b", "prompt b")
+	write("b.md", "prompt b2")
+	r.reload()
+	expect("/reload after editing the file", "prompt b2")
+	os.Remove(filepath.Join(dir, "b.md"))
+	if err := r.loadPrompt(); err == nil {
+		t.Error("a missing prompt file must be reported")
+	}
+	expect("/reload with the file gone", "prompt b2")
+	if err := r.switchProfile("plain"); err != nil {
+		t.Fatal(err)
+	}
+	expect("/profile plain", "")
+	cli := filepath.Join(t.TempDir(), "cli.md")
+	os.WriteFile(cli, []byte("prompt cli"), 0o600)
+	r.opts.systemPromptFile = cli
+	if err := r.switchProfile("plain"); err != nil {
+		t.Fatal(err)
+	}
+	expect("-system-prompt-file after /profile", "prompt cli")
+}
+
 func TestPastedTempImagesAreKeptWithTheSession(t *testing.T) {
 	t.Setenv("QI_SESSION_DIR", t.TempDir())
 	a, _ := buildAgent(config.Config{Model: "m"}, options{}, t.TempDir(), nopProvider{}, devNullPrinter(t), true, false)

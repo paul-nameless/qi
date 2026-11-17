@@ -237,23 +237,30 @@ func mcpLine(s mcp.Status, startErr error) string {
 	return line
 }
 
-func (r *repl) loadPrompt() agent.SystemPrompt {
+func (r *repl) loadPrompt() error {
+	cfg := r.agent.Config()
+	if err := cfg.ReadSystemPrompt(); err != nil {
+		return fmt.Errorf("system_prompt_file: %w; the system prompt is unchanged", err)
+	}
 	scratch := ""
 	if s := r.agent.Session(); s != nil {
 		scratch = agent.ScratchDir(s.ID)
 	}
-	skills, sys := agent.LoadPrompt(r.agent.Cwd(), r.agent.Config(), scratch)
+	skills, sys := agent.LoadPrompt(r.agent.Cwd(), cfg, scratch)
 	r.agent.SetSystem(sys)
 	r.skills = skills
-	return sys
+	return nil
 }
 
 func (r *repl) reload() {
 	before := r.agent.System()
-	sys := r.loadPrompt()
+	if err := r.loadPrompt(); err != nil {
+		r.display.Error(err.Error())
+		return
+	}
 	r.commands = agent.LoadCommands(agent.ProjectRoots(r.agent.Cwd()))
 	note := "unchanged"
-	if sys.Text != before {
+	if r.agent.System() != before {
 		note = "changed; the next request rewrites the prompt cache"
 	}
 	r.display.Info(fmt.Sprintf("reloaded %d skills, %d commands; system prompt %s · %s", len(r.skills), len(r.commands), note, "context "+r.agent.ContextUsage()))

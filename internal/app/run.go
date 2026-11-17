@@ -191,11 +191,7 @@ func resolveConfig(o options) (config.Config, error) {
 	if err != nil {
 		return config.Config{}, err
 	}
-	promptFile, err := absPath(o.systemPromptFile)
-	if err != nil {
-		return config.Config{}, err
-	}
-	cfg, err := config.Resolve(config.Options{Path: o.configPath, Profile: o.profile, Provider: o.provider, Model: o.model, Effort: o.effort, SystemPromptFile: promptFile})
+	cfg, err := config.Resolve(config.Options{Path: o.configPath, Profile: o.profile, Provider: o.provider, Model: o.model, Effort: o.effort, SystemPromptFile: o.systemPromptFile})
 	if err != nil {
 		return cfg, err
 	}
@@ -243,7 +239,7 @@ func buildAgent(cfg config.Config, o options, cwd string, p llm.Provider, displa
 	opts.Tools = []*tools.Tool{tools.Read(), tools.Write(), tools.Edit(), tools.Bash()}
 	var runner *agent.SubagentRunner
 	if !isSub {
-		runner = &agent.SubagentRunner{ConfigPath: o.configPath, Profile: cfg.Profile, Provider: cfg.Provider, Cwd: cwd, MCP: cfg.MCP}
+		runner = &agent.SubagentRunner{ConfigPath: o.configPath, Profile: cfg.Profile, Provider: cfg.Provider, SystemPromptFile: o.systemPromptFile, Cwd: cwd, MCP: cfg.MCP}
 		opts.Subagent = runner.Run
 		opts.Tools = append(opts.Tools, tools.Subagent(cfg.Model, cfg.SubagentModels, cfg.SubagentEfforts))
 	}

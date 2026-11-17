@@ -47,11 +47,6 @@ func TestUnknownKeysAreErrors(t *testing.T) {
 	path = writeConfig(t, dir, "config.json", `{"providers": {"or": {"base_url": "u", "key": "k"}}}`)
 	_, err = Load(path, "")
 	wantErr(t, err, path, `unknown key "providers.or.key"`)
-
-	path = writeConfig(t, dir, "config.json", `{"model": "m"}`)
-	file := writeConfig(t, dir, "extra.json", `{"model": "m", "debug": true}`)
-	_, err = Load(path, "extra")
-	wantErr(t, err, file, `unknown key "debug"`)
 }
 
 func TestJSONSyntaxAndTypeErrors(t *testing.T) {
@@ -101,10 +96,9 @@ func TestProfilesCannotNestProfiles(t *testing.T) {
 	path := writeConfig(t, dir, "config.json", `{"profiles": {"p": {"profiles": {"q": {"modle": 1}}}}}`)
 	_, err := Load(path, "")
 	wantErr(t, err, `profile "p"`, `key "profiles" is not allowed in a profile`)
-	path = writeConfig(t, dir, "config.json", `{"model": "m"}`)
-	file := writeConfig(t, dir, "f.json", `{"default_profile": "x"}`)
-	_, err = Load(path, "f")
-	wantErr(t, err, file, `key "default_profile" is not allowed in a profile`)
+	path = writeConfig(t, dir, "config.json", `{"model": "m", "profiles": {"f": {"default_profile": "x"}}}`)
+	_, err = Load(path, "")
+	wantErr(t, err, `profile "f"`, `key "default_profile" is not allowed in a profile`)
 }
 
 func TestNullInProfileResetsToDefault(t *testing.T) {
@@ -154,8 +148,7 @@ func TestSchemaKeyIsAccepted(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("QI_CONFIG_DIR", dir)
 	path := writeConfig(t, dir, "config.json", `{"$schema": "./schema.json", "model": "m", "profiles": {"p": {"$schema": "x", "model": "n"}}}`)
-	writeConfig(t, dir, "f.json", `{"$schema": "x", "model": "f"}`)
-	for profile, want := range map[string]string{"": "m", "p": "n", "f": "f"} {
+	for profile, want := range map[string]string{"": "m", "p": "n"} {
 		if c, err := Load(path, profile); err != nil || c.Model != want {
 			t.Errorf("profile %q: model %q %v", profile, c.Model, err)
 		}
@@ -242,12 +235,9 @@ func TestCheckLoadsEveryProfile(t *testing.T) {
 	if err := Check(path, ""); err != nil {
 		t.Error(err)
 	}
-	file := writeConfig(t, dir, "side.json", `{"max_tokens": 0.5}`)
-	wantErr(t, Check(path, ""), file, `key "max_tokens"`)
-	writeConfig(t, dir, "ok.json", `{"modle": 1}`)
-	writeConfig(t, dir, "side.json", `{"model": "s"}`)
+	writeConfig(t, dir, "side.json", `{"max_tokens": 0.5}`)
 	if err := Check(path, ""); err != nil {
-		t.Errorf("an inline profile shadows the file with the same name: %v", err)
+		t.Errorf("other json files in the config dir are not profiles: %v", err)
 	}
 }
 

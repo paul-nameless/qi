@@ -91,7 +91,7 @@ func (r *repl) resume(ref string) error {
 	}
 	r.agent.Load(s, ld)
 	r.hooks.Session, r.hooks.SessionID = s.Path, s.ID
-	r.loadPrompt()
+	r.report(r.loadPrompt())
 	r.display.Info("session " + s.ID)
 	r.printHistory()
 	return nil

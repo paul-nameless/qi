@@ -24,14 +24,15 @@ import (
 const subagentGrace = 5 * time.Second
 
 type SubagentRunner struct {
-	ConfigPath string
-	Profile    string
-	Provider   string
-	ReadOnly   func() bool
-	Cwd        string
-	MCP        map[string]config.MCPServer
-	Label      func(llm.Block) string
-	Exe        string
+	ConfigPath       string
+	Profile          string
+	Provider         string
+	SystemPromptFile string
+	ReadOnly         func() bool
+	Cwd              string
+	MCP              map[string]config.MCPServer
+	Label            func(llm.Block) string
+	Exe              string
 }
 
 func (r *SubagentRunner) Env() ([]string, error) {
@@ -59,6 +60,9 @@ func (r *SubagentRunner) args(task tools.SubagentTask) []string {
 	}
 	if r.Profile != "" {
 		args = append(args, "-p", r.Profile)
+	}
+	if r.SystemPromptFile != "" {
+		args = append(args, "-system-prompt-file", r.SystemPromptFile)
 	}
 	if r.ReadOnly() {
 		args = append(args, "-read-only")
