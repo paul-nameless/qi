@@ -262,8 +262,11 @@ func toolLabels(cwd string, toolset []*tools.Tool) func(llm.Block) string {
 }
 
 func newProvider(cfg config.Config, key string) llm.Provider {
-	if cfg.API == "anthropic" {
+	switch cfg.API {
+	case "anthropic":
 		return llm.NewAnthropic(cfg.BaseURL, key)
+	case "responses":
+		return llm.NewResponses(cfg.BaseURL, key)
 	}
 	return llm.NewOpenAI(cfg.BaseURL, key, cfg.CacheControl)
 }

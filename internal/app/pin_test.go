@@ -31,7 +31,9 @@ const (
 		"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"ok\"}}\n\n" +
 		"event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":1}}\n\n" +
 		"event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
-	openAIReply = "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+	openAIReply    = "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+	responsesReply = "data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\",\"content\":[{\"type\":\"output_text\",\"text\":\"ok\"}]}}\n\n" +
+		"data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}\n\n"
 )
 
 func pinServer(t *testing.T, reply string, bodies *[][]byte) *httptest.Server {
@@ -45,8 +47,12 @@ func pinServer(t *testing.T, reply string, bodies *[][]byte) *httptest.Server {
 	return srv
 }
 
-func pinHistory(model string) []llm.Message {
+func pinHistory(cfg config.Config) []llm.Message {
+	model := cfg.Model
 	think, _ := json.Marshal(map[string]any{"type": "thinking", "thinking": "plan", "signature": "SIG"})
+	if cfg.API == "responses" {
+		think, _ = json.Marshal(map[string]any{"type": "reasoning", "id": "rs_1", "encrypted_content": "ENC", "summary": []any{map[string]any{"type": "summary_text", "text": "plan"}}})
+	}
 	return []llm.Message{
 		llm.UserText("list the files"),
 		{Role: llm.RoleAssistant, Blocks: []llm.Block{
@@ -67,7 +73,8 @@ func pinConfig(t *testing.T, dir, provider string) config.Config {
   "providers": {
     "anth": {"api": "anthropic", "base_url": %[1]q, "api_key": "k"},
     "or": {"base_url": %[1]q, "api_key": "k"},
-    "oa": {"base_url": %[2]q, "api_key": "k"}
+    "oa": {"base_url": %[2]q, "api_key": "k"},
+    "rs": {"api": "responses", "base_url": %[2]q, "api_key": "k"}
   },
   "provider": %[3]q,
   "model": "claude-opus-5-5",
@@ -147,6 +154,7 @@ func TestRequestBodiesPinned(t *testing.T) {
 		{"anth", anthropicReply, "request-anthropic.json"},
 		{"or", openAIReply, "request-openrouter.json"},
 		{"oa", openAIReply, "request-openai.json"},
+		{"rs", responsesReply, "request-responses.json"},
 	}
 	for _, c := range cases {
 		t.Run(c.provider, func(t *testing.T) {
@@ -178,6 +186,6 @@ func pinAgent(t *testing.T, cfg config.Config, cwd string) *agent.Agent {
 	a, _ := buildAgent(cfg, options{}, cwd, newProvider(cfg, key), devNullPrinter(t), true, false, tools.MCPTools(mcp.NewManager(cfg.MCP))...)
 	_, sys := agent.LoadPrompt(cwd, cfg, "")
 	a.SetSystem(sys)
-	setMessages(a, pinHistory(cfg.Model))
+	setMessages(a, pinHistory(cfg))
 	return a
 }

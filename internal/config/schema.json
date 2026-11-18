@@ -14,9 +14,9 @@
       "type": "string"
     },
     "api": {
-      "description": "Wire protocol: openai (chat completions; OpenAI, OpenRouter and compatible servers) or anthropic (native Messages API). Usually set by the provider. Default: openai.",
+      "description": "Wire protocol: openai (chat completions; OpenAI, OpenRouter and compatible servers), responses (OpenAI Responses API; OpenAI and Bedrock, needed for tools with reasoning on some models) or anthropic (native Messages API). Usually set by the provider. Default: openai.",
       "type": "string",
-      "enum": ["openai", "anthropic"]
+      "enum": ["openai", "responses", "anthropic"]
     },
     "provider": {
       "description": "Name of an entry in providers, or a built-in provider: claude, anthropic (api anthropic) or openai. Selecting a provider sets api, base_url, api_key, api_key_shell and cache_control from it; base_url and the other connection keys set in the same profile win over the provider's.",
@@ -200,9 +200,9 @@
       "additionalProperties": false,
       "properties": {
         "api": {
-          "description": "openai or anthropic. Default: openai.",
+          "description": "openai (chat completions), responses (OpenAI Responses API) or anthropic. Default: openai.",
           "type": "string",
-          "enum": ["openai", "anthropic"]
+          "enum": ["openai", "responses", "anthropic"]
         },
         "base_url": {
           "description": "API base URL; optional for the official OpenAI and Anthropic APIs.",

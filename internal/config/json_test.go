@@ -115,7 +115,7 @@ func TestValidateMirrorsSchema(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("QI_CONFIG_DIR", dir)
 	cases := map[string][]string{
-		`{"api": "antropic"}`:                   {`key "api"`, `"antropic" is not one of openai, anthropic`},
+		`{"api": "antropic"}`:                   {`key "api"`, `"antropic" is not one of openai, responses, anthropic`},
 		`{"cache_ttl": "2h"}`:                   {`key "cache_ttl"`},
 		`{"max_tokens": -5}`:                    {`key "max_tokens"`, "at least 1, got -5"},
 		`{"bash_timeout": -1}`:                  {`key "bash_timeout"`},

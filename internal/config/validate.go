@@ -7,7 +7,7 @@ import (
 )
 
 var (
-	apis      = []string{"openai", "anthropic"}
+	apis      = []string{"openai", "responses", "anthropic"}
 	efforts   = []string{"none", "minimal", "low", "medium", "high", "xhigh", "max"}
 	cacheTTLs = []string{"5m", "1h"}
 )
