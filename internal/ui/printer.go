@@ -19,6 +19,7 @@ const (
 	Green  = "\x1b[32m"
 	Yellow = "\x1b[33m"
 	Cyan   = "\x1b[36m"
+	Link   = "\x1b[4;94m"
 	Reset  = "\x1b[0m"
 )
 

@@ -21,6 +21,7 @@ type markdown struct {
 	fence   int
 	bold    bool
 	code    bool
+	link    bool
 	prev    byte
 	cur     string
 	width   int
@@ -185,9 +186,16 @@ func (m *markdown) inline(final bool) int {
 		return m.toggleBold(final)
 	case s == "*" && !final && !m.code:
 		return 0
+	case s[0] == '[' && !m.code && !m.link:
+		return m.openLink(final)
+	case s[0] == ']' && m.link && !m.code:
+		m.link = false
+		m.style()
+		m.text("]")
+		return 1
 	}
 	n := len(s)
-	if i := strings.IndexAny(s[1:], "`*\n"); i >= 0 {
+	if i := strings.IndexAny(s[1:], "`*\n[]"); i >= 0 {
 		n = i + 1
 	}
 	m.text(s[:n])
@@ -249,6 +257,56 @@ func (m *markdown) toggleBold(final bool) int {
 	return 2
 }
 
+const (
+	maxLinkText = 500
+	maxLinkURL  = 2000
+)
+
+func (m *markdown) openLink(final bool) int {
+	switch linkAhead(m.pending, final) {
+	case 0:
+		return 0
+	case 1:
+		m.text("[")
+		m.link = true
+		m.style()
+		return 1
+	}
+	m.text("[")
+	return 1
+}
+
+func linkAhead(s string, final bool) int {
+	line, _, hasNL := strings.Cut(s, "\n")
+	done := hasNL || final
+	end := strings.IndexByte(line, ']')
+	switch {
+	case end < 0 || end > maxLinkText:
+		if done || len(line) > maxLinkText {
+			return -1
+		}
+		return 0
+	case end == 1:
+		return -1
+	case end+1 == len(line):
+		if done {
+			return -1
+		}
+		return 0
+	case line[end+1] != '(':
+		return -1
+	}
+	url := line[end+2:]
+	close := strings.IndexByte(url, ')')
+	switch {
+	case close > 0 && close <= maxLinkURL:
+		return 1
+	case close == 0 || close > maxLinkURL || done || len(url) > maxLinkURL:
+		return -1
+	}
+	return 0
+}
+
 func closed(s, marker string, final bool) int {
 	line, _, hasNL := strings.Cut(s, "\n")
 	for i := 1; i < len(line); i++ {
@@ -292,6 +350,9 @@ func (m *markdown) style() {
 	if m.bold || m.line == lineHeading {
 		codes += Bold
 	}
+	if m.link {
+		codes += Link
+	}
 	if codes == m.cur {
 		return
 	}
@@ -303,7 +364,7 @@ func (m *markdown) endLine() {
 	if m.cur != "" {
 		m.out.WriteString(Reset)
 	}
-	m.line, m.bold, m.code, m.cur, m.prev = linePending, false, false, "", 0
+	m.line, m.bold, m.code, m.link, m.cur, m.prev = linePending, false, false, false, "", 0
 }
 
 func (m *markdown) tableRow() int {

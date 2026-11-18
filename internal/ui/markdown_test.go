@@ -33,6 +33,11 @@ func TestMarkdown(t *testing.T) {
 		{"2 * 3\n", "2 * 3\n"},
 		{"tail *", "tail *"},
 		{"-", "-"},
+		{"see [Sol results](https://x.ai/a_(b)) now\n", "see [" + Reset + Link + "Sol results" + Reset + "](https://x.ai/a_(b)) now\n"},
+		{"[**a** `b`](u)\n", "[" + Reset + Link + Reset + Bold + Link + "a" + Reset + Link + " " + Reset + Cyan + Link + "b" + Reset + Link + Reset + "](u)\n"},
+		{"[exit code 1] and [] and [x] (y) and [a](\n", "[exit code 1] and [] and [x] (y) and [a](\n"},
+		{"`[a](b)` [c](d", Reset + Cyan + "[a](b)" + Reset + " [c](d"},
+		{"[a [b](c)\n", "[" + Reset + Link + "a [b" + Reset + "](c)\n"},
 	}
 	for _, c := range cases {
 		if got := render(c.in, 0); got != c.want {
@@ -209,6 +214,8 @@ func TestMarkdownChunkIndependent(t *testing.T) {
 		"1. ```bash\nls\n```\n2024 was **good**\n",
 		"\t```go\n# c\n\t```\ndone\n",
 		"see `foo` and ``` run\n",
+		"links [Sol](https://a.b/c) and [x] [y](z) [open\n",
+		"[**b** `c`](u) end [d](e",
 	}
 	for _, in := range inputs {
 		whole := render(in, 0)
