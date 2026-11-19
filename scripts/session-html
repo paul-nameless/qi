@@ -199,7 +199,7 @@ class Session:
                     tot[k] += s["usage"].get(k, 0)
                 if not any(s["usage"].values()):
                     tot["no_usage"] += 1
-                row = by["LLM " + (s["model"] or "?")]
+                row = by["model " + (s["model"] or "?")]
                 row["n"] += 1
                 row["time"] += s["dur"]
                 row["max"] = max(row["max"], s["dur"])
@@ -251,6 +251,15 @@ def clip(s):
     return s[:MAX_RESULT] + f"\n… ({len(s) - MAX_RESULT} more chars)"
 
 
+def fmt_size(text):
+    lines = text.count("\n") + 1 if text else 0
+    return f"{lines} lines" if lines > 1 else f"{len(text)} chars"
+
+
+def local_time(s):
+    return datetime.fromtimestamp(ts(s)).strftime("%d %b %Y, %H:%M") if s else ""
+
+
 class Renderer:
     def __init__(self):
         self.colors = {"llm": "var(--llm)", "compaction": "var(--compact)"}
@@ -268,52 +277,64 @@ class Renderer:
     def summary(self, sess):
         tot, by = sess.totals()
         active = tot["llm"] + tot["tools"]
-        cards = [
-            ("wall", fmt_dur(tot["wall"])), ("waiting on you", fmt_dur(tot["idle"])),
-            ("LLM", f"{fmt_dur(tot['llm'])} · {int(tot['calls'])} calls"), ("tools", f"{fmt_dur(tot['tools'])} · {int(tot['tool_calls'])} calls"),
-            ("errors", str(int(tot["errors"]))),
-            ("tokens in / out", f"{fmt_n(tot['input'])} / {fmt_n(tot['output'])}"),
-            ("cache read / write", f"{fmt_n(tot['cache_read'])} / {fmt_n(tot['cache_write'])}"),
-        ]
+        tokens = f"{fmt_n(tot['input'])} in · {fmt_n(tot['output'])} out" if tot["input"] or tot["output"] else "not reported"
+        cache = f"{fmt_n(tot['cache_read'])} read · {fmt_n(tot['cache_write'])} written" if tot["cache_read"] or tot["cache_write"] else ""
         if tot["no_usage"]:
-            cards.append(("calls without usage", str(int(tot["no_usage"]))))
-        out = ['<div class="cards">'] + [f'<div class="card"><div class="k">{k}</div><div class="v">{v}</div></div>' for k, v in cards] + ["</div>"]
+            cache = (cache + " · " if cache else "") + f"{int(tot['no_usage'])} calls without usage"
+        cards = [
+            ("Total", fmt_dur(tot["wall"]), f"{fmt_dur(active)} working" + (f" · {fmt_dur(tot['idle'])} waiting on you" if tot["idle"] >= 1 else "")),
+            ("Model", fmt_dur(tot["llm"]), f"{int(tot['calls'])} calls"),
+            ("Tools", fmt_dur(tot["tools"]), f"{int(tot['tool_calls'])} calls" + (f' · <b class="errc">{int(tot["errors"])} failed</b>' if tot["errors"] else "")),
+            ("Tokens", tokens, cache),
+        ]
+        out = ['<div class="cards">']
+        for k, v, sub in cards:
+            out.append(f'<div class="card"><div class="k">{k}</div><div class="v">{esc(v)}</div><div class="s">{sub}</div></div>')
+        out.append("</div>")
         rows = sorted(by.items(), key=lambda kv: -kv[1]["time"])
-        out.append('<table class="by"><tr><th></th><th>calls</th><th>time</th><th>share</th><th>avg</th><th>max</th><th>errors</th></tr>')
+        out.append('<div class="stack">')
         for name, r in rows:
-            key = "llm" if name.startswith("LLM ") else name
+            key = "llm" if name.startswith("model ") else name
+            if active and r["time"]:
+                out.append(f'<div style="flex:{r["time"]};background:{self.color(key)}" title="{esc(name)} {fmt_dur(r["time"])}"></div>')
+        out.append("</div>")
+        out.append('<table class="by"><tr><th>where the time went</th><th>calls</th><th>total</th><th>share</th><th>avg</th><th>max</th><th>failed</th></tr>')
+        for name, r in rows:
+            key = "llm" if name.startswith("model ") else name
             pct = 100 * r["time"] / active if active else 0
             out.append(
                 f'<tr><td><span class="dot" style="background:{self.color(key)}"></span>{esc(name)}</td><td>{r["n"]}</td>'
-                f'<td>{fmt_dur(r["time"])}</td><td><div class="bar"><div style="width:{pct:.1f}%;background:{self.color(key)}"></div></div>{pct:.0f}%</td>'
-                f'<td>{fmt_dur(r["time"] / r["n"]) if r["n"] else ""}</td><td>{fmt_dur(r["max"])}</td><td class="{"err" if r["err"] else ""}">{r["err"] or ""}</td></tr>'
+                f'<td>{fmt_dur(r["time"])}</td><td class="pct">{pct:.0f}%</td>'
+                f'<td>{fmt_dur(r["time"] / r["n"]) if r["n"] else ""}</td><td>{fmt_dur(r["max"])}</td><td class="{"errc" if r["err"] else "dim"}">{r["err"] or "–"}</td></tr>'
             )
         out.append("</table>")
         return "\n".join(out)
 
     def waterfall(self, sess, anchors):
+        if not sess.turns:
+            return ""
         longest = max((sum(s["dur"] for s in t["steps"]) for t in sess.turns), default=0) or 1
-        out = ['<div class="wf">']
+        out = ['<h2>Timeline</h2><div class="wf">']
         for i, turn in enumerate(sess.turns):
             total = sum(s["dur"] for s in turn["steps"])
             segs = []
             for s in turn["steps"]:
                 if s["kind"] == "llm":
-                    key, tip = "llm", f"LLM {fmt_dur(s['dur'])} · {s['model']}"
+                    key, tip = "llm", f"model {fmt_dur(s['dur'])}"
                 elif s["kind"] == "tools":
                     names = sorted({c["name"] for c in s["calls"]})
                     key = names[0] if len(names) == 1 else "mixed"
-                    tip = f"{', '.join(names)} ×{len(s['calls'])} {fmt_dur(s['dur'])}: " + "; ".join(tool_label(c["name"], c["input"])[:80] for c in s["calls"])
+                    tip = f"{', '.join(names)} {fmt_dur(s['dur'])}\n" + "\n".join(tool_label(c["name"], c["input"])[:100] for c in s["calls"])
                 elif s["kind"] == "compaction":
                     key, tip = "compaction", f"compaction {fmt_dur(s['dur'])}"
                 else:
                     continue
-                color = "repeating-linear-gradient(45deg,#999 0 4px,#bbb 4px 8px)" if key == "mixed" else self.color(key)
+                color = "repeating-linear-gradient(45deg,#8a8a8e 0 3px,#b8b8bc 3px 6px)" if key == "mixed" else self.color(key)
                 err = " segerr" if s["kind"] == "tools" and any(c.get("error") for c in s["calls"]) else ""
                 segs.append(f'<a href="#{anchors[id(s)]}" class="seg{err}" style="flex:{max(s["dur"], 0.3)};background:{color}" title="{esc(tip)}"></a>')
-            label = esc((turn["prompt"] or "(continued)").strip().split("\n")[0][:70])
+            label = esc((turn["prompt"] or "(continued)").strip().split("\n")[0][:80])
             out.append(
-                f'<div class="wrow"><a class="wl" href="#t{id(turn)}">{i + 1}. {label}</a>'
+                f'<div class="wrow"><a class="wl" href="#t{id(turn)}"><span class="n">{i + 1}</span>{label}</a>'
                 f'<div class="wtrack"><div class="wsegs" style="width:{100 * total / longest:.2f}%">{"".join(segs)}</div></div>'
                 f'<span class="wd">{fmt_dur(total)}</span></div>'
             )
@@ -327,77 +348,140 @@ class Renderer:
         meta = sess.meta
         out = []
         if top:
-            out.append(f'<h1>qi session <code>{esc(os.path.basename(sess.path)[:-6])}</code></h1>')
-            out.append(f'<div class="meta">{esc(meta.get("cwd"))} · {esc(meta.get("kind"))} · {esc(meta.get("model"))} · started {esc(meta.get("time"))}</div>')
+            out.append('<header><h1>qi session</h1><div class="actions"><button onclick="toggleAll(true)">expand all</button><button onclick="toggleAll(false)">collapse all</button></div></header>')
+            chips = [os.path.basename(sess.path)[:-6], meta.get("cwd"), meta.get("model"), meta.get("kind"), local_time(meta.get("time"))]
+            out.append('<div class="chips">' + "".join(f"<span>{esc(c)}</span>" for c in chips if c) + "</div>")
         out.append(self.summary(sess))
         out.append(self.waterfall(sess, anchors))
+        out.append("<h2>Conversation</h2>" if top else "")
+        models = [s["model"] for s in sess.walk() if s["kind"] == "llm"]
+        main_model = max(set(models), key=models.count) if models else meta.get("model")
         for i, turn in enumerate(sess.turns):
             out.append(f'<section class="turn" id="t{id(turn)}">')
             if turn["idle"] > 0:
-                out.append(f'<div class="idle">{fmt_dur(turn["idle"])} waiting on user</div>')
+                out.append(f'<div class="idle"><span>{fmt_dur(turn["idle"])} waiting on you</span></div>')
             if turn["prompt"] is not None:
-                out.append(f'<div class="prompt"><span class="tag">user</span><pre>{esc(turn["prompt"])}</pre></div>')
+                who = "You" if top else "Task"
+                out.append(f'<div class="prompt"><div class="who">{who} <span class="dim">· turn {i + 1} · {fmt_dur(sum(s["dur"] for s in turn["steps"]))}</span></div><div class="ptext">{esc(turn["prompt"].strip())}</div></div>')
+            out.append('<div class="steps">')
             for s in turn["steps"]:
-                out.append(self.step(s, anchors[id(s)]))
-            out.append("</section>")
+                out.append(self.step(s, anchors[id(s)], main_model))
+            out.append("</div></section>")
         return "\n".join(out)
 
-    def step(self, s, aid):
+    def row(self, aid, dur, body, cls=""):
+        d = fmt_dur(dur) if dur is not None else ""
+        zero = " zero" if dur is not None and dur < 0.5 else ""
+        return f'<div class="row {cls}"{f" id={aid}" if aid else ""}><div class="dur{zero}">{d}</div><div class="body">{body}</div></div>'
+
+    def step(self, s, aid, session_model):
         if s["kind"] == "llm":
             u = s["usage"]
-            usage = f'{fmt_n(u.get("input", 0))} in · {fmt_n(u.get("output", 0))} out · {fmt_n(u.get("cache_read", 0))} cached' if any(u.values()) else "no usage reported"
-            body = ""
+            bits = []
+            if s["model"] and s["model"] != session_model:
+                bits.append(esc(s["model"]))
+            if any(u.values()):
+                bits.append(f'{fmt_n(u.get("input", 0))} in · {fmt_n(u.get("output", 0))} out' + (f' · {fmt_n(u["cache_read"])} cached' if u.get("cache_read") else ""))
+            body = f'<div class="lhead"><span class="pill" style="background:var(--llm)">model</span><span class="dim small">{" · ".join(bits)}</span></div>'
             if s["reasoning"]:
-                body += f'<details><summary>reasoning ({len(s["reasoning"])} chars)</summary><pre class="dim">{esc(s["reasoning"])}</pre></details>'
+                body += f'<details class="reason"><summary>reasoning · {fmt_size(s["reasoning"])}</summary><div class="rtext">{esc(s["reasoning"])}</div></details>'
             if s["text"].strip():
-                body += f'<pre class="say">{esc(s["text"].strip())}</pre>'
-            return (f'<div class="step llm" id="{aid}"><div class="head"><span class="dur">{fmt_dur(s["dur"])}</span>'
-                    f'<span class="tag" style="background:var(--llm)">LLM</span><span class="dim">{esc(s["model"])} · {usage}</span></div>{body}</div>')
+                body += f'<div class="say">{esc(s["text"].strip())}</div>'
+            return self.row(aid, s["dur"], body, "llm")
         if s["kind"] == "compaction":
-            return (f'<div class="step" id="{aid}"><div class="head"><span class="dur">{fmt_dur(s["dur"])}</span><span class="tag" style="background:var(--compact)">compaction</span>'
-                    f'<span class="dim">kept {s["kept"]} messages</span></div><details><summary>summary</summary><pre>{esc(s["summary"])}</pre></details></div>')
+            body = (f'<details><summary><span class="pill" style="background:var(--compact)">compaction</span> <span class="dim small">kept {s["kept"]} messages</span></summary>'
+                    f'<pre>{esc(s["summary"])}</pre></details>')
+            return self.row(aid, s["dur"], body)
         if s["kind"] == "drop":
-            return '<div class="step dim">— last message dropped —</div>'
-        par = f' <span class="dim">· {len(s["calls"])} in parallel</span>' if len(s["calls"]) > 1 else ""
-        out = [f'<div class="step tools" id="{aid}"><div class="head"><span class="dur">{fmt_dur(s["dur"])}</span><span class="dim">tools</span>{par}</div>']
+            return self.row(None, None, '<span class="dim small">last message dropped</span>')
+        n = len(s["calls"])
+        out = [f'<div class="row tools" id="{aid}"><div class="dur{" zero" if s["dur"] < 0.5 else ""}">{fmt_dur(s["dur"])}</div><div class="body{" par" if n > 1 else ""}">']
+        if n > 1:
+            out.append(f'<div class="partag">{n} in parallel</div>')
         for c in s["calls"]:
             err = " err" if c.get("error") else ""
             res = c.get("result") or ""
-            extra = f' · {c["images"]} image(s)' if c.get("images") else ""
-            out.append(f'<details class="call{err}"><summary><span class="tag" style="background:{self.color(c["name"])}">{esc(c["name"])}</span>'
-                       f'<code>{esc(tool_label(c["name"], c["input"])[:300])}</code> <span class="dim">{len(res)} chars{extra}</span></summary>')
-            out.append(f'<pre class="dim">{esc(json.dumps(c["input"], indent=2, ensure_ascii=False))}</pre><pre class="res">{esc(clip(res))}</pre>')
-            if c.get("sub"):
-                out.append(f'<div class="sub"><div class="dim">subagent session {esc(c["sub"].path)}</div>{self.session(c["sub"])}</div>')
+            label = tool_label(c["name"], c["input"])
+            meta = fmt_size(res) + (f' · {c["images"]} image(s)' if c.get("images") else "")
+            badge = '<span class="errb">failed</span>' if c.get("error") else ""
+            out.append(f'<details class="call{err}"><summary><span class="pill" style="background:{self.color(c["name"])}">{esc(c["name"])}</span>'
+                       f'<code class="lbl">{esc(label[:400])}</code>{badge}<span class="dim small sz">{meta}</span></summary><div class="callbody">')
+            rest = {k: v for k, v in c["input"].items() if not (isinstance(v, str) and v == label)} if isinstance(c["input"], dict) else c["input"]
+            if len(label) > 400 or "\n" in label:
+                out.append(f'<div class="k">input</div><pre>{esc(label)}</pre>')
+            if rest and c["name"] != "subagent":
+                out.append(f'<div class="k">arguments</div><pre>{esc(json.dumps(rest, indent=2, ensure_ascii=False))}</pre>')
             elif c["name"] == "subagent":
-                out.append('<div class="dim">subagent session not found</div>')
-            out.append("</details>")
-        out.append("</div>")
+                out.append(f'<div class="k">prompt</div><div class="ptext small">{esc(c["input"].get("prompt", ""))}</div>')
+            out.append(f'<div class="k">{"answer" if c["name"] == "subagent" else "output"}</div><pre class="res">{esc(clip(res)) or "<span class=dim>(empty)</span>"}</pre>')
+            if c.get("sub"):
+                out.append(f'<div class="sub"><div class="subhead">Subagent session <code>{esc(os.path.basename(c["sub"].path)[:-6])}</code></div>{self.session(c["sub"])}</div>')
+            elif c["name"] == "subagent":
+                out.append('<div class="dim small">subagent session not found</div>')
+            out.append("</div></details>")
+        out.append("</div></div>")
         return "\n".join(out)
 
 
+JS = """
+function toggleAll(open){document.querySelectorAll('details').forEach(d=>d.open=open)}
+document.addEventListener('click',e=>{const a=e.target.closest('a[href^="#"]');if(!a)return;const t=document.getElementById(a.getAttribute('href').slice(1));if(!t)return;
+for(let p=t.parentElement;p;p=p.parentElement){if(p.tagName==='DETAILS')p.open=true}const d=t.querySelector('details');if(d)d.open=true;t.classList.add('flash');setTimeout(()=>t.classList.remove('flash'),1200)})
+"""
+
 CSS = """
-:root{--bg:#fff;--fg:#1d1d1f;--dim:#6e6e73;--line:#e5e5ea;--card:#f5f5f7;--llm:#4e79a7;--compact:#9467bd;--err:#d62728}
-@media (prefers-color-scheme:dark){:root{--bg:#161618;--fg:#e8e8ea;--dim:#9a9aa0;--line:#2c2c30;--card:#1f1f23}}
-body{background:var(--bg);color:var(--fg);font:14px/1.45 -apple-system,system-ui,sans-serif;margin:0 auto;max-width:1200px;padding:16px}
-h1{font-size:20px;margin:8px 0}.meta,.dim{color:var(--dim)}code,pre{font:12px/1.4 ui-monospace,Menlo,monospace}
-pre{white-space:pre-wrap;word-break:break-word;margin:6px 0;padding:8px;background:var(--card);border-radius:6px;max-height:500px;overflow:auto}
-.cards{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.card{background:var(--card);border-radius:8px;padding:8px 12px}.card .k{color:var(--dim);font-size:12px}.card .v{font-size:16px;font-weight:600}
-table.by{border-collapse:collapse;margin:8px 0 16px}table.by td,table.by th{padding:3px 10px;text-align:left;border-bottom:1px solid var(--line)}table.by th{color:var(--dim);font-weight:500}
-.bar{display:inline-block;width:120px;height:8px;background:var(--line);border-radius:4px;margin-right:6px;vertical-align:middle}.bar div{height:8px;border-radius:4px}
-.dot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px}
-.wf{margin:12px 0 20px}.wrow{display:grid;grid-template-columns:280px 1fr 60px;gap:8px;align-items:center;margin:2px 0}
-.wl{color:var(--fg);text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px}.wtrack{background:var(--card);border-radius:3px}
-.wsegs{display:flex;height:14px;gap:1px;min-width:2px}.seg{display:block;min-width:2px;border-radius:2px}.segerr{outline:2px solid var(--err)}.wd{font-size:12px;color:var(--dim);text-align:right}
-.turn{border-top:1px solid var(--line);padding:8px 0}.idle{color:var(--dim);font-size:12px;text-align:center}
-.prompt pre{background:transparent;border-left:3px solid var(--fg);border-radius:0}
-.step{margin:6px 0 6px 12px}.head{display:flex;gap:8px;align-items:center}.dur{min-width:52px;text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
-.tag{color:#fff;border-radius:4px;padding:0 6px;font-size:12px;background:#888}
-.say{background:transparent;padding:2px 8px 2px 60px;max-height:none}
-.call{margin:3px 0 3px 60px}.call summary{cursor:pointer;display:flex;gap:8px;align-items:baseline}.call summary code{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:700px}
-.call.err summary code{color:var(--err)}.call.err .res{border-left:3px solid var(--err)}
-.sub{border-left:3px solid var(--compact);padding-left:12px;margin:8px 0}
-@media (max-width:700px){.wrow{grid-template-columns:110px 1fr 44px}.call,.say{margin-left:8px;padding-left:8px}}
+:root{--bg:#fbfbfd;--fg:#1d1d1f;--dim:#6e6e73;--line:#e3e3e8;--card:#fff;--soft:#f2f2f5;--llm:#4e79a7;--compact:#9467bd;--err:#d62728;--accent:#0a66d6;--shadow:0 1px 2px rgba(0,0,0,.06),0 1px 8px rgba(0,0,0,.04)}
+@media (prefers-color-scheme:dark){:root{--bg:#121214;--fg:#e9e9ec;--dim:#9a9aa2;--line:#2a2a30;--card:#1b1b1f;--soft:#232328;--accent:#5aa2ff;--shadow:none}}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Inter",system-ui,sans-serif;margin:0 auto;max-width:1100px;padding:24px 20px 80px}
+h1{font-size:22px;margin:0;letter-spacing:-.01em}h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);font-weight:600;margin:28px 0 10px}
+header{display:flex;justify-content:space-between;align-items:center}
+button{font:inherit;font-size:12px;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:6px;padding:4px 10px;margin-left:6px;cursor:pointer}
+button:hover{border-color:var(--dim)}
+.dim{color:var(--dim)}.small{font-size:12.5px}
+code,pre{font:12.5px/1.5 ui-monospace,"SF Mono",Menlo,monospace}
+pre{white-space:pre-wrap;word-break:break-word;margin:4px 0 10px;padding:10px 12px;background:var(--soft);border-radius:8px;max-height:420px;overflow:auto}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 18px}.chips span{font-size:12.5px;color:var(--dim);background:var(--soft);border-radius:999px;padding:2px 10px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.card{background:var(--card);border:1px solid var(--line);box-shadow:var(--shadow);border-radius:12px;padding:12px 16px}
+.card .k{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.05em}.card .v{font-size:24px;font-weight:650;letter-spacing:-.02em;margin:2px 0}.card .s{font-size:12.5px;color:var(--dim)}
+.errc{color:var(--err)}
+.stack{display:flex;height:10px;border-radius:5px;overflow:hidden;gap:2px;margin:18px 0 6px;background:var(--soft)}
+table.by{border-collapse:collapse;width:100%;font-size:13.5px;font-variant-numeric:tabular-nums}
+table.by th{color:var(--dim);font-weight:500;font-size:12px;text-align:right;padding:8px 10px;border-bottom:1px solid var(--line)}table.by th:first-child{text-align:left}
+table.by td{padding:6px 10px;text-align:right;border-bottom:1px solid var(--line)}table.by td:first-child{text-align:left}
+table.by tr:last-child td{border-bottom:0}.pct{font-weight:600}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:8px}
+.wf{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 14px;box-shadow:var(--shadow)}
+.wrow{display:grid;grid-template-columns:minmax(120px,300px) 1fr 64px;gap:12px;align-items:center;padding:3px 0}
+.wl{color:var(--fg);text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px}.wl:hover{color:var(--accent)}
+.wl .n{display:inline-block;min-width:22px;color:var(--dim);font-variant-numeric:tabular-nums}
+.wtrack{background:var(--soft);border-radius:4px}.wsegs{display:flex;height:16px;gap:1px;min-width:3px}
+.seg{display:block;min-width:3px;border-radius:2px}.seg:hover{filter:brightness(1.15)}.segerr{box-shadow:inset 0 -3px 0 var(--err)}
+.wd{font-size:12.5px;color:var(--dim);text-align:right;font-variant-numeric:tabular-nums}
+.turn{margin:6px 0 22px}
+.idle{display:flex;align-items:center;gap:10px;color:var(--dim);font-size:12px;margin:18px 0}.idle::before,.idle::after{content:"";flex:1;border-top:1px dashed var(--line)}
+.prompt{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:10px;padding:10px 14px;box-shadow:var(--shadow);margin-bottom:8px}
+.who{font-size:12px;font-weight:600;margin-bottom:2px}.ptext{white-space:pre-wrap;word-break:break-word}
+.steps{position:relative;margin-left:8px}
+.row{display:grid;grid-template-columns:64px 1fr;gap:14px;padding:5px 0;border-radius:8px;transition:background .3s}
+.row.flash{background:color-mix(in srgb,var(--accent) 14%,transparent)}
+.dur{text-align:right;font:600 12.5px/24px ui-monospace,"SF Mono",Menlo,monospace;color:var(--fg);font-variant-numeric:tabular-nums}.dur.zero{color:var(--dim);font-weight:400}
+.body{min-width:0;border-left:2px solid var(--line);padding-left:14px}.body.par{border-left-color:var(--dim)}
+.pill{display:inline-block;color:#fff;border-radius:5px;padding:0 7px;font-size:12px;font-weight:600;line-height:20px;flex:none}
+.lhead{display:flex;gap:8px;align-items:center;min-height:24px}
+.say{white-space:pre-wrap;word-break:break-word;margin:4px 0 2px;max-width:80ch}
+.reason summary{font-size:12.5px;color:var(--dim);cursor:pointer;margin:2px 0}.rtext{white-space:pre-wrap;font-size:13.5px;color:var(--dim);font-style:italic;border-left:2px solid var(--line);padding:4px 12px;margin:4px 0 8px;max-height:420px;overflow:auto}
+.partag{font-size:11.5px;color:var(--dim);text-transform:uppercase;letter-spacing:.05em;line-height:20px}
+.call>summary{list-style:none;display:flex;gap:10px;align-items:center;cursor:pointer;min-height:26px;border-radius:6px;padding:1px 6px;margin-left:-6px}
+.call>summary::-webkit-details-marker{display:none}.call>summary:hover{background:var(--soft)}
+.lbl{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sz{flex:none}
+.errb{flex:none;font-size:11px;font-weight:700;color:#fff;background:var(--err);border-radius:4px;padding:0 6px}
+.call.err .lbl{color:var(--err)}.call.err .res{box-shadow:inset 3px 0 0 var(--err)}
+.callbody{padding:4px 0 6px}.callbody .k{font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--dim);margin-top:6px}
+.sub{border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin:10px 0;background:var(--bg)}
+.subhead{font-weight:600;margin-bottom:8px}.sub h2{margin-top:16px}
+@media (max-width:700px){body{padding:16px}.wrow{grid-template-columns:100px 1fr 48px}.row{grid-template-columns:44px 1fr;gap:8px}.body{padding-left:8px}}
 """
 
 
@@ -411,7 +495,7 @@ def main():
     sess = Session(path, load(path))
     sid = os.path.basename(path)[:-6]
     body = Renderer().session(sess, top=True)
-    page = f'<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>qi {sid[:8]}</title><style>{CSS}</style></head><body>{body}</body></html>'
+    page = f'<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>qi {sid[:8]}</title><style>{CSS}</style></head><body>{body}<script>{JS}</script></body></html>'
     out = a.out or os.path.expanduser(f"~/Downloads/qi-session-{sid[:8]}.html")
     with open(out, "w") as f:
         f.write(page)
