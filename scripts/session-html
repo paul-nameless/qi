@@ -1,0 +1,421 @@
+#!/usr/bin/env python3
+"""Render a qi session as an HTML timeline and open it in the browser.
+
+usage: session-html [ID-prefix | path.jsonl] [-o out.html] [--no-open]
+Without an argument it takes the newest session of the current directory.
+"""
+import argparse
+import glob
+import html
+import json
+import os
+import subprocess
+import sys
+from collections import defaultdict
+from datetime import datetime
+
+MAX_RESULT = 200_000
+PALETTE = ["#f28e2b", "#59a14f", "#b07aa1", "#edc948", "#76b7b2", "#ff9da7", "#9c755f", "#bab0ac", "#e15759"]
+
+
+def sessions_root():
+    if os.environ.get("QI_SESSION_DIR"):
+        return os.environ["QI_SESSION_DIR"]
+    data = os.environ.get("XDG_DATA_HOME")
+    if not data or not os.path.isabs(data):
+        data = os.path.expanduser("~/.local/share")
+    return os.path.join(data, "qi", "sessions")
+
+
+def cwd_dir(cwd):
+    name = cwd.replace("/", "-").replace("\\", "-").replace(":", "").replace(".", "-")
+    return os.path.join(sessions_root(), name)
+
+
+def resolve(arg):
+    if arg and os.path.isfile(arg):
+        return arg
+    if not arg:
+        files = glob.glob(os.path.join(glob.escape(cwd_dir(os.getcwd())), "*.jsonl"))
+        if not files:
+            sys.exit("no sessions for " + os.getcwd())
+        return max(files, key=os.path.getmtime)
+    root = glob.escape(sessions_root())
+    hits = glob.glob(os.path.join(root, "*", arg + "*.jsonl")) + glob.glob(os.path.join(root, "*", "subagents", arg + "*.jsonl"))
+    hits = sorted(set(hits))
+    if not hits:
+        sys.exit("no session matches " + arg)
+    if len(hits) > 1:
+        sys.exit("ambiguous id:\n  " + "\n  ".join(hits))
+    return hits[0]
+
+
+def ts(s):
+    return datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ").timestamp() if s else 0
+
+
+def load(path):
+    with open(path) as f:
+        return [json.loads(l) for l in f if l.strip()]
+
+
+def first_user_text(entries):
+    for e in entries:
+        m = e.get("message")
+        if m and m["role"] == "user":
+            return "".join(b.get("text", "") for b in m["blocks"] if b["type"] == "text")
+    return None
+
+
+def find_subagent(sub_dir, prompt, start, end, used):
+    for p in sorted(glob.glob(os.path.join(glob.escape(sub_dir), "*.jsonl"))):
+        if p in used:
+            continue
+        try:
+            entries = load(p)
+        except (OSError, ValueError):
+            continue
+        if not entries or not start - 5 <= ts(entries[0].get("time")) <= end + 5:
+            continue
+        if first_user_text(entries) == prompt:
+            used.add(p)
+            return p, entries
+    return None, None
+
+
+def reasoning_text(raw):
+    if not isinstance(raw, dict):
+        return ""
+    for k in ("thinking", "text", "content"):
+        if isinstance(raw.get(k), str):
+            return raw[k]
+    parts = raw.get("summary") or raw.get("content") or []
+    if isinstance(parts, list):
+        return "\n\n".join(p.get("text", "") for p in parts if isinstance(p, dict))
+    return ""
+
+
+def tool_label(name, inp):
+    if not isinstance(inp, dict):
+        return ""
+    for k in ("command", "file_path", "path", "pattern", "query", "url"):
+        if isinstance(inp.get(k), str):
+            return inp[k]
+    if name == "subagent":
+        return (inp.get("model", "") + " " + inp.get("effort", "")).strip()
+    if name == "mcp_call":
+        return f"{inp.get('server', '')}.{inp.get('tool', '')}"
+    return json.dumps(inp, ensure_ascii=False)[:200]
+
+
+class Session:
+    """Steps: ('llm', ...), ('tools', ...), ('user', ...), ('compaction', ...), ('drop', ...)."""
+
+    def __init__(self, path, entries, depth=0):
+        self.path, self.depth = path, depth
+        self.meta = entries[0] if entries and entries[0]["type"] == "meta" else {}
+        self.sub_dir = os.path.join(os.path.dirname(path), "subagents") if depth == 0 else os.path.dirname(path)
+        self.used = set()
+        self.turns = []
+        self.build(entries)
+
+    def build(self, entries):
+        prev_t = ts(self.meta.get("time"))
+        turn = None
+        pending = {}
+        for e in entries[1:] if self.meta else entries:
+            t = ts(e.get("time"))
+            m = e.get("message")
+            if e["type"] == "compaction":
+                step = {"kind": "compaction", "dur": t - prev_t, "summary": e.get("summary", ""), "kept": len(e.get("kept") or []), "model": e.get("model")}
+                (turn or self.new_turn(None, t))["steps"].append(step)
+            elif e["type"] == "drop":
+                (turn or self.new_turn(None, t))["steps"].append({"kind": "drop", "dur": 0})
+            elif m and m["role"] == "user" and any(b["type"] == "tool_result" for b in m["blocks"]):
+                results = {b.get("tool_use_id"): b for b in m["blocks"] if b["type"] == "tool_result"}
+                step = pending.pop("step", None)
+                if step:
+                    step["dur"] = t - step["start"]
+                    for c in step["calls"]:
+                        r = results.get(c["id"], {})
+                        c["result"] = r.get("text", "")
+                        c["error"] = r.get("is_error", False)
+                        c["images"] = len(r.get("images") or [])
+                        if c["name"] == "subagent":
+                            p, sub = find_subagent(self.sub_dir, c["input"].get("prompt"), step["start"], t, self.used)
+                            if sub:
+                                c["sub"] = Session(p, sub, self.depth + 1)
+                    turn["steps"].append(step)
+            elif m and m["role"] == "user":
+                text = "\n".join(b.get("text", "") for b in m["blocks"] if b["type"] == "text")
+                imgs = sum(1 for b in m["blocks"] if b["type"] == "image")
+                turn = self.new_turn(text + (f"\n[{imgs} image(s)]" if imgs else ""), t)
+                if self.turns[:-1]:
+                    turn["idle"] = t - prev_t
+            elif m and m["role"] == "assistant":
+                if turn is None:
+                    turn = self.new_turn(None, prev_t)
+                u = e.get("usage") or {}
+                blocks = m["blocks"]
+                calls = [{"id": b.get("id"), "name": b.get("name"), "input": b.get("input") or {}} for b in blocks if b["type"] == "tool_use"]
+                turn["steps"].append({
+                    "kind": "llm", "dur": t - prev_t, "model": e.get("model") or self.meta.get("model"), "usage": u,
+                    "text": "\n\n".join(b.get("text", "") for b in blocks if b["type"] == "text"),
+                    "reasoning": "\n\n".join(reasoning_text(b.get("raw")) for b in blocks if b["type"] == "reasoning_raw").strip(),
+                    "ncalls": len(calls),
+                })
+                if calls:
+                    pending["step"] = {"kind": "tools", "start": t, "dur": 0, "calls": calls}
+            prev_t = t
+            if turn:
+                turn["end"] = t
+        if pending.get("step") and turn:
+            s = pending["step"]
+            for c in s["calls"]:
+                c.update(result="(no result recorded: interrupted?)", error=True, images=0)
+            turn["steps"].append(s)
+
+    def new_turn(self, prompt, t):
+        turn = {"prompt": prompt, "start": t, "end": t, "steps": [], "idle": 0}
+        self.turns.append(turn)
+        return turn
+
+    def walk(self):
+        for turn in self.turns:
+            for s in turn["steps"]:
+                yield s
+
+    def totals(self):
+        tot = defaultdict(float)
+        by = defaultdict(lambda: {"n": 0, "time": 0.0, "max": 0.0, "err": 0})
+        for s in self.walk():
+            if s["kind"] == "llm":
+                tot["llm"] += s["dur"]
+                tot["calls"] += 1
+                for k in ("input", "output", "cache_read", "cache_write"):
+                    tot[k] += s["usage"].get(k, 0)
+                if not any(s["usage"].values()):
+                    tot["no_usage"] += 1
+                row = by["LLM " + (s["model"] or "?")]
+                row["n"] += 1
+                row["time"] += s["dur"]
+                row["max"] = max(row["max"], s["dur"])
+            elif s["kind"] == "compaction":
+                tot["llm"] += s["dur"]
+                row = by["compaction"]
+                row["n"] += 1
+                row["time"] += s["dur"]
+            elif s["kind"] == "tools":
+                tot["tools"] += s["dur"]
+                share = s["dur"] / len(s["calls"])
+                for c in s["calls"]:
+                    tot["tool_calls"] += 1
+                    row = by[c["name"]]
+                    row["n"] += 1
+                    row["time"] += share
+                    row["max"] = max(row["max"], s["dur"])
+                    row["err"] += bool(c.get("error"))
+                    tot["errors"] += bool(c.get("error"))
+        tot["idle"] = sum(t["idle"] for t in self.turns)
+        if self.turns:
+            tot["wall"] = self.turns[-1]["end"] - ts(self.meta.get("time") or "") if self.meta else self.turns[-1]["end"] - self.turns[0]["start"]
+        return tot, by
+
+
+def fmt_dur(s):
+    s = int(round(s))
+    if s < 1:
+        return "0s"
+    if s < 60:
+        return f"{s}s"
+    if s < 3600:
+        return f"{s // 60}m{s % 60:02d}s"
+    return f"{s // 3600}h{s % 3600 // 60:02d}m"
+
+
+def fmt_n(n):
+    n = int(n)
+    return f"{n / 1e6:.1f}M" if n >= 1e6 else f"{n / 1e3:.1f}k" if n >= 1e4 else str(n)
+
+
+def esc(s):
+    return html.escape(s or "")
+
+
+def clip(s):
+    if len(s) <= MAX_RESULT:
+        return s
+    return s[:MAX_RESULT] + f"\n… ({len(s) - MAX_RESULT} more chars)"
+
+
+class Renderer:
+    def __init__(self):
+        self.colors = {"llm": "var(--llm)", "compaction": "var(--compact)"}
+        self.seq = 0
+
+    def color(self, name):
+        if name not in self.colors:
+            self.colors[name] = PALETTE[(len(self.colors) - 2) % len(PALETTE)]
+        return self.colors[name]
+
+    def anchor(self):
+        self.seq += 1
+        return f"s{self.seq}"
+
+    def summary(self, sess):
+        tot, by = sess.totals()
+        active = tot["llm"] + tot["tools"]
+        cards = [
+            ("wall", fmt_dur(tot["wall"])), ("waiting on you", fmt_dur(tot["idle"])),
+            ("LLM", f"{fmt_dur(tot['llm'])} · {int(tot['calls'])} calls"), ("tools", f"{fmt_dur(tot['tools'])} · {int(tot['tool_calls'])} calls"),
+            ("errors", str(int(tot["errors"]))),
+            ("tokens in / out", f"{fmt_n(tot['input'])} / {fmt_n(tot['output'])}"),
+            ("cache read / write", f"{fmt_n(tot['cache_read'])} / {fmt_n(tot['cache_write'])}"),
+        ]
+        if tot["no_usage"]:
+            cards.append(("calls without usage", str(int(tot["no_usage"]))))
+        out = ['<div class="cards">'] + [f'<div class="card"><div class="k">{k}</div><div class="v">{v}</div></div>' for k, v in cards] + ["</div>"]
+        rows = sorted(by.items(), key=lambda kv: -kv[1]["time"])
+        out.append('<table class="by"><tr><th></th><th>calls</th><th>time</th><th>share</th><th>avg</th><th>max</th><th>errors</th></tr>')
+        for name, r in rows:
+            key = "llm" if name.startswith("LLM ") else name
+            pct = 100 * r["time"] / active if active else 0
+            out.append(
+                f'<tr><td><span class="dot" style="background:{self.color(key)}"></span>{esc(name)}</td><td>{r["n"]}</td>'
+                f'<td>{fmt_dur(r["time"])}</td><td><div class="bar"><div style="width:{pct:.1f}%;background:{self.color(key)}"></div></div>{pct:.0f}%</td>'
+                f'<td>{fmt_dur(r["time"] / r["n"]) if r["n"] else ""}</td><td>{fmt_dur(r["max"])}</td><td class="{"err" if r["err"] else ""}">{r["err"] or ""}</td></tr>'
+            )
+        out.append("</table>")
+        return "\n".join(out)
+
+    def waterfall(self, sess, anchors):
+        longest = max((sum(s["dur"] for s in t["steps"]) for t in sess.turns), default=0) or 1
+        out = ['<div class="wf">']
+        for i, turn in enumerate(sess.turns):
+            total = sum(s["dur"] for s in turn["steps"])
+            segs = []
+            for s in turn["steps"]:
+                if s["kind"] == "llm":
+                    key, tip = "llm", f"LLM {fmt_dur(s['dur'])} · {s['model']}"
+                elif s["kind"] == "tools":
+                    names = sorted({c["name"] for c in s["calls"]})
+                    key = names[0] if len(names) == 1 else "mixed"
+                    tip = f"{', '.join(names)} ×{len(s['calls'])} {fmt_dur(s['dur'])}: " + "; ".join(tool_label(c["name"], c["input"])[:80] for c in s["calls"])
+                elif s["kind"] == "compaction":
+                    key, tip = "compaction", f"compaction {fmt_dur(s['dur'])}"
+                else:
+                    continue
+                color = "repeating-linear-gradient(45deg,#999 0 4px,#bbb 4px 8px)" if key == "mixed" else self.color(key)
+                err = " segerr" if s["kind"] == "tools" and any(c.get("error") for c in s["calls"]) else ""
+                segs.append(f'<a href="#{anchors[id(s)]}" class="seg{err}" style="flex:{max(s["dur"], 0.3)};background:{color}" title="{esc(tip)}"></a>')
+            label = esc((turn["prompt"] or "(continued)").strip().split("\n")[0][:70])
+            out.append(
+                f'<div class="wrow"><a class="wl" href="#t{id(turn)}">{i + 1}. {label}</a>'
+                f'<div class="wtrack"><div class="wsegs" style="width:{100 * total / longest:.2f}%">{"".join(segs)}</div></div>'
+                f'<span class="wd">{fmt_dur(total)}</span></div>'
+            )
+        out.append("</div>")
+        return "\n".join(out)
+
+    def session(self, sess, top=False):
+        anchors = {}
+        for s in sess.walk():
+            anchors[id(s)] = self.anchor()
+        meta = sess.meta
+        out = []
+        if top:
+            out.append(f'<h1>qi session <code>{esc(os.path.basename(sess.path)[:-6])}</code></h1>')
+            out.append(f'<div class="meta">{esc(meta.get("cwd"))} · {esc(meta.get("kind"))} · {esc(meta.get("model"))} · started {esc(meta.get("time"))}</div>')
+        out.append(self.summary(sess))
+        out.append(self.waterfall(sess, anchors))
+        for i, turn in enumerate(sess.turns):
+            out.append(f'<section class="turn" id="t{id(turn)}">')
+            if turn["idle"] > 0:
+                out.append(f'<div class="idle">{fmt_dur(turn["idle"])} waiting on user</div>')
+            if turn["prompt"] is not None:
+                out.append(f'<div class="prompt"><span class="tag">user</span><pre>{esc(turn["prompt"])}</pre></div>')
+            for s in turn["steps"]:
+                out.append(self.step(s, anchors[id(s)]))
+            out.append("</section>")
+        return "\n".join(out)
+
+    def step(self, s, aid):
+        if s["kind"] == "llm":
+            u = s["usage"]
+            usage = f'{fmt_n(u.get("input", 0))} in · {fmt_n(u.get("output", 0))} out · {fmt_n(u.get("cache_read", 0))} cached' if any(u.values()) else "no usage reported"
+            body = ""
+            if s["reasoning"]:
+                body += f'<details><summary>reasoning ({len(s["reasoning"])} chars)</summary><pre class="dim">{esc(s["reasoning"])}</pre></details>'
+            if s["text"].strip():
+                body += f'<pre class="say">{esc(s["text"].strip())}</pre>'
+            return (f'<div class="step llm" id="{aid}"><div class="head"><span class="dur">{fmt_dur(s["dur"])}</span>'
+                    f'<span class="tag" style="background:var(--llm)">LLM</span><span class="dim">{esc(s["model"])} · {usage}</span></div>{body}</div>')
+        if s["kind"] == "compaction":
+            return (f'<div class="step" id="{aid}"><div class="head"><span class="dur">{fmt_dur(s["dur"])}</span><span class="tag" style="background:var(--compact)">compaction</span>'
+                    f'<span class="dim">kept {s["kept"]} messages</span></div><details><summary>summary</summary><pre>{esc(s["summary"])}</pre></details></div>')
+        if s["kind"] == "drop":
+            return '<div class="step dim">— last message dropped —</div>'
+        par = f' <span class="dim">· {len(s["calls"])} in parallel</span>' if len(s["calls"]) > 1 else ""
+        out = [f'<div class="step tools" id="{aid}"><div class="head"><span class="dur">{fmt_dur(s["dur"])}</span><span class="dim">tools</span>{par}</div>']
+        for c in s["calls"]:
+            err = " err" if c.get("error") else ""
+            res = c.get("result") or ""
+            extra = f' · {c["images"]} image(s)' if c.get("images") else ""
+            out.append(f'<details class="call{err}"><summary><span class="tag" style="background:{self.color(c["name"])}">{esc(c["name"])}</span>'
+                       f'<code>{esc(tool_label(c["name"], c["input"])[:300])}</code> <span class="dim">{len(res)} chars{extra}</span></summary>')
+            out.append(f'<pre class="dim">{esc(json.dumps(c["input"], indent=2, ensure_ascii=False))}</pre><pre class="res">{esc(clip(res))}</pre>')
+            if c.get("sub"):
+                out.append(f'<div class="sub"><div class="dim">subagent session {esc(c["sub"].path)}</div>{self.session(c["sub"])}</div>')
+            elif c["name"] == "subagent":
+                out.append('<div class="dim">subagent session not found</div>')
+            out.append("</details>")
+        out.append("</div>")
+        return "\n".join(out)
+
+
+CSS = """
+:root{--bg:#fff;--fg:#1d1d1f;--dim:#6e6e73;--line:#e5e5ea;--card:#f5f5f7;--llm:#4e79a7;--compact:#9467bd;--err:#d62728}
+@media (prefers-color-scheme:dark){:root{--bg:#161618;--fg:#e8e8ea;--dim:#9a9aa0;--line:#2c2c30;--card:#1f1f23}}
+body{background:var(--bg);color:var(--fg);font:14px/1.45 -apple-system,system-ui,sans-serif;margin:0 auto;max-width:1200px;padding:16px}
+h1{font-size:20px;margin:8px 0}.meta,.dim{color:var(--dim)}code,pre{font:12px/1.4 ui-monospace,Menlo,monospace}
+pre{white-space:pre-wrap;word-break:break-word;margin:6px 0;padding:8px;background:var(--card);border-radius:6px;max-height:500px;overflow:auto}
+.cards{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.card{background:var(--card);border-radius:8px;padding:8px 12px}.card .k{color:var(--dim);font-size:12px}.card .v{font-size:16px;font-weight:600}
+table.by{border-collapse:collapse;margin:8px 0 16px}table.by td,table.by th{padding:3px 10px;text-align:left;border-bottom:1px solid var(--line)}table.by th{color:var(--dim);font-weight:500}
+.bar{display:inline-block;width:120px;height:8px;background:var(--line);border-radius:4px;margin-right:6px;vertical-align:middle}.bar div{height:8px;border-radius:4px}
+.dot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px}
+.wf{margin:12px 0 20px}.wrow{display:grid;grid-template-columns:280px 1fr 60px;gap:8px;align-items:center;margin:2px 0}
+.wl{color:var(--fg);text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px}.wtrack{background:var(--card);border-radius:3px}
+.wsegs{display:flex;height:14px;gap:1px;min-width:2px}.seg{display:block;min-width:2px;border-radius:2px}.segerr{outline:2px solid var(--err)}.wd{font-size:12px;color:var(--dim);text-align:right}
+.turn{border-top:1px solid var(--line);padding:8px 0}.idle{color:var(--dim);font-size:12px;text-align:center}
+.prompt pre{background:transparent;border-left:3px solid var(--fg);border-radius:0}
+.step{margin:6px 0 6px 12px}.head{display:flex;gap:8px;align-items:center}.dur{min-width:52px;text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+.tag{color:#fff;border-radius:4px;padding:0 6px;font-size:12px;background:#888}
+.say{background:transparent;padding:2px 8px 2px 60px;max-height:none}
+.call{margin:3px 0 3px 60px}.call summary{cursor:pointer;display:flex;gap:8px;align-items:baseline}.call summary code{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:700px}
+.call.err summary code{color:var(--err)}.call.err .res{border-left:3px solid var(--err)}
+.sub{border-left:3px solid var(--compact);padding-left:12px;margin:8px 0}
+@media (max-width:700px){.wrow{grid-template-columns:110px 1fr 44px}.call,.say{margin-left:8px;padding-left:8px}}
+"""
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Render a qi session as HTML")
+    ap.add_argument("session", nargs="?", help="session id (prefix) or .jsonl path; default: newest in this directory")
+    ap.add_argument("-o", "--out")
+    ap.add_argument("--no-open", action="store_true")
+    a = ap.parse_args()
+    path = resolve(a.session)
+    sess = Session(path, load(path))
+    sid = os.path.basename(path)[:-6]
+    body = Renderer().session(sess, top=True)
+    page = f'<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>qi {sid[:8]}</title><style>{CSS}</style></head><body>{body}</body></html>'
+    out = a.out or os.path.expanduser(f"~/Downloads/qi-session-{sid[:8]}.html")
+    with open(out, "w") as f:
+        f.write(page)
+    print(out)
+    if not a.no_open:
+        subprocess.run(["open" if sys.platform == "darwin" else "xdg-open", out], check=False)
+
+
+if __name__ == "__main__":
+    main()
