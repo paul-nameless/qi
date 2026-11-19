@@ -175,6 +175,9 @@ func openSession(a *agent.Agent, o options, cfg config.Config, cwd, resume strin
 		kind = session.Headless
 	}
 	opts := session.CreateOptions{Cwd: cwd, ID: o.sessionID, Model: cfg.Model, Kind: kind, Subagent: isSub}
+	if parent := os.Getenv(agent.ParentSessionEnv); isSub && session.ValidID(parent) {
+		opts.ParentSession = parent
+	}
 	if o.json {
 		opts.Tee = os.Stdout
 	}
@@ -247,6 +250,12 @@ func buildAgent(cfg config.Config, o options, cwd string, p llm.Provider, displa
 	a := agent.New(opts)
 	if runner != nil {
 		runner.ReadOnly = a.ReadOnly
+		runner.SessionID = func() string {
+			if s := a.Session(); s != nil {
+				return s.ID
+			}
+			return ""
+		}
 		runner.Label = toolLabels(cwd, opts.Tools)
 	}
 	return a, runner

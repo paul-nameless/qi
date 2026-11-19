@@ -21,7 +21,10 @@ import (
 	"github.com/paul-nameless/qi/internal/tools"
 )
 
-const subagentGrace = 5 * time.Second
+const (
+	subagentGrace    = 5 * time.Second
+	ParentSessionEnv = "QI_PARENT_SESSION"
+)
 
 type SubagentRunner struct {
 	ConfigPath       string
@@ -29,6 +32,7 @@ type SubagentRunner struct {
 	Provider         string
 	SystemPromptFile string
 	ReadOnly         func() bool
+	SessionID        func() string
 	Cwd              string
 	MCP              map[string]config.MCPServer
 	Label            func(llm.Block) string
@@ -40,7 +44,11 @@ func (r *SubagentRunner) Env() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return append(os.Environ(), "QI_SUBAGENT=1", config.MCPEnv+"="+servers), nil
+	env := append(os.Environ(), "QI_SUBAGENT=1", config.MCPEnv+"="+servers)
+	if r.SessionID != nil {
+		env = append(env, ParentSessionEnv+"="+r.SessionID())
+	}
+	return env, nil
 }
 
 func (r *SubagentRunner) args(task tools.SubagentTask) []string {

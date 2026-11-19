@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -95,5 +96,16 @@ func TestSubagentCancelWithGrandchildHoldingStdout(t *testing.T) {
 	}
 	if d := time.Since(start); d > subagentGrace+3*time.Second {
 		t.Errorf("cancel took %v", d)
+	}
+}
+
+func TestSubagentEnvCarriesParentSession(t *testing.T) {
+	r := &SubagentRunner{SessionID: func() string { return "ABC-1" }}
+	env, err := r.Env()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(env, "QI_SUBAGENT=1") || !slices.Contains(env, ParentSessionEnv+"=ABC-1") {
+		t.Errorf("env lacks the subagent markers: %q", env[len(env)-3:])
 	}
 }

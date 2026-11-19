@@ -67,7 +67,7 @@ def first_user_text(entries):
     return None
 
 
-def find_subagent(sub_dir, prompt, start, end, used):
+def find_subagent(sub_dir, parent_id, prompt, start, end, used):
     for p in sorted(glob.glob(os.path.join(glob.escape(sub_dir), "*.jsonl"))):
         if p in used:
             continue
@@ -76,6 +76,9 @@ def find_subagent(sub_dir, prompt, start, end, used):
         except (OSError, ValueError):
             continue
         if not entries or not start - 5 <= ts(entries[0].get("time")) <= end + 5:
+            continue
+        parent = entries[0].get("parent_session")
+        if parent and parent != parent_id:
             continue
         if first_user_text(entries) == prompt:
             used.add(p)
@@ -142,7 +145,7 @@ class Session:
                         c["error"] = r.get("is_error", False)
                         c["images"] = len(r.get("images") or [])
                         if c["name"] == "subagent":
-                            p, sub = find_subagent(self.sub_dir, c["input"].get("prompt"), step["start"], t, self.used)
+                            p, sub = find_subagent(self.sub_dir, os.path.basename(self.path)[:-6], c["input"].get("prompt"), step["start"], t, self.used)
                             if sub:
                                 c["sub"] = Session(p, sub, self.depth + 1)
                     turn["steps"].append(step)

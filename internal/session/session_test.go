@@ -243,3 +243,19 @@ func TestSessionLock(t *testing.T) {
 		t.Error("pid file left after close")
 	}
 }
+
+func TestSubagentMetaRecordsParent(t *testing.T) {
+	t.Setenv("QI_SESSION_DIR", t.TempDir())
+	s, err := Create(CreateOptions{Cwd: "/p", Model: "m", Kind: Headless, Subagent: true, ParentSession: "ABC-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	if filepath.Base(filepath.Dir(s.Path)) != "subagents" {
+		t.Errorf("subagent session at %s", s.Path)
+	}
+	entries, err := Entries(s.Path)
+	if err != nil || len(entries) != 1 || entries[0].ParentSession != "ABC-1" {
+		t.Fatalf("entries %+v err %v", entries, err)
+	}
+}

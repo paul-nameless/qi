@@ -22,18 +22,19 @@ import (
 const Version = 1
 
 type Entry struct {
-	Type    string        `json:"type"`
-	ID      string        `json:"id"`
-	Parent  string        `json:"parent,omitempty"`
-	Time    string        `json:"time"`
-	Version int           `json:"version,omitempty"`
-	Cwd     string        `json:"cwd,omitempty"`
-	Kind    Kind          `json:"kind,omitempty"`
-	Model   string        `json:"model,omitempty"`
-	Message *llm.Message  `json:"message,omitempty"`
-	Usage   *llm.Usage    `json:"usage,omitempty"`
-	Summary string        `json:"summary,omitempty"`
-	Kept    []llm.Message `json:"kept,omitempty"`
+	Type          string        `json:"type"`
+	ID            string        `json:"id"`
+	Parent        string        `json:"parent,omitempty"`
+	Time          string        `json:"time"`
+	Version       int           `json:"version,omitempty"`
+	Cwd           string        `json:"cwd,omitempty"`
+	Kind          Kind          `json:"kind,omitempty"`
+	ParentSession string        `json:"parent_session,omitempty"`
+	Model         string        `json:"model,omitempty"`
+	Message       *llm.Message  `json:"message,omitempty"`
+	Usage         *llm.Usage    `json:"usage,omitempty"`
+	Summary       string        `json:"summary,omitempty"`
+	Kept          []llm.Message `json:"kept,omitempty"`
 }
 
 type Session struct {
@@ -108,12 +109,13 @@ const (
 )
 
 type CreateOptions struct {
-	Cwd      string
-	ID       string
-	Model    string
-	Kind     Kind
-	Subagent bool
-	Tee      io.Writer
+	Cwd           string
+	ID            string
+	Model         string
+	Kind          Kind
+	Subagent      bool
+	ParentSession string
+	Tee           io.Writer
 }
 
 func Create(o CreateOptions) (*Session, error) {
@@ -138,7 +140,7 @@ func Create(o CreateOptions) (*Session, error) {
 		return nil, err
 	}
 	s := &Session{Path: path, ID: id, f: f, tee: o.Tee}
-	if err := s.write(Entry{Type: "meta", Version: Version, Cwd: o.Cwd, Model: o.Model, Kind: o.Kind}); err != nil {
+	if err := s.write(Entry{Type: "meta", Version: Version, Cwd: o.Cwd, Model: o.Model, Kind: o.Kind, ParentSession: o.ParentSession}); err != nil {
 		f.Close()
 		return nil, err
 	}
