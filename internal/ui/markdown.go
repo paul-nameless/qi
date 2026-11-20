@@ -307,8 +307,13 @@ func linkAhead(s string, final bool) int {
 	return 0
 }
 
+const maxInlineSpan = 1000
+
 func closed(s, marker string, final bool) int {
 	line, _, hasNL := strings.Cut(s, "\n")
+	if len(line) > maxInlineSpan {
+		line, hasNL = line[:maxInlineSpan], true
+	}
 	for i := 1; i < len(line); i++ {
 		if !strings.HasPrefix(line[i:], marker) {
 			continue

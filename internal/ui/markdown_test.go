@@ -4,6 +4,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func render(in string, width int) string {
@@ -259,5 +260,28 @@ func TestPrinterBreakLineEndsMarkdownLine(t *testing.T) {
 	want := "Done.\nqueued\nPlan\nsee `foo\nqueued\nbar` ok\n"
 	if got != want {
 		t.Errorf("got %q want %q", got, want)
+	}
+}
+
+func TestMarkdownUnclosedMarkerOnLongLine(t *testing.T) {
+	long := strings.Repeat("word ", 40000)
+	for _, marker := range []string{"`", "**"} {
+		in := "a " + marker + "b " + long + "\n"
+		m := markdown{width: 80}
+		start := time.Now()
+		var out strings.Builder
+		for i := 0; i < len(in); i += 5 {
+			out.WriteString(m.feed(in[i:min(i+5, len(in))]))
+		}
+		out.WriteString(m.flush())
+		if d := time.Since(start); d > 2*time.Second {
+			t.Errorf("%s: rendering took %v", marker, d)
+		}
+		if out.String() != in {
+			t.Errorf("%s: an unclosed marker should stay literal text", marker)
+		}
+	}
+	if got := render("x `"+strings.Repeat("y", maxInlineSpan+10)+"` z\n", 0); strings.Contains(got, Cyan) {
+		t.Error("a code span longer than the look-ahead should stay literal")
 	}
 }
