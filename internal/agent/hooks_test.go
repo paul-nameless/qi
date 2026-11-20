@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/paul-nameless/qi/internal/llm"
 	"github.com/paul-nameless/qi/internal/mcp"
@@ -211,5 +212,21 @@ func TestHookTimeoutAndStartFailureAreReported(t *testing.T) {
 	slices.Sort(lines)
 	if len(lines) != 2 || !strings.HasPrefix(lines[0], `hook "echo slow >&2; sleep 5" timed out after 1s: slow`) || !strings.HasPrefix(lines[1], `hook "no-such-hook-binary" failed to start (exit 127): `) {
 		t.Errorf("lines %q", lines)
+	}
+}
+
+func TestAsyncHookRunsInBackground(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), "ran")
+	h := writeHooks(t, `{"PreToolUse":[{"hooks":[{"type":"command","async":true,"command":"sleep 0.5; echo no >&2; touch `+marker+`; exit 2"}]}]}`)
+	start := time.Now()
+	if block, _, _ := h.PreToolUse(context.Background(), hookCall("bash", `{"command":"ls"}`)); block {
+		t.Error("an async hook blocked the call")
+	}
+	if waited := time.Since(start); waited > 300*time.Millisecond {
+		t.Errorf("waited %v for an async hook", waited)
+	}
+	h.WaitBackground(5 * time.Second)
+	if _, err := os.Stat(marker); err != nil {
+		t.Error("async hook did not finish before WaitBackground returned")
 	}
 }

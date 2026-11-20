@@ -27,6 +27,7 @@ type hookCmd struct {
 	Type    string `json:"type"`
 	Command string `json:"command"`
 	Timeout int    `json:"timeout"`
+	Async   bool   `json:"async"`
 }
 
 type hookMatcher struct {
@@ -47,6 +48,7 @@ type Hooks struct {
 	ReadOnly   func() bool
 	SkipPrompt bool
 	Info       func(string)
+	background sync.WaitGroup
 }
 
 type HookFile struct {
@@ -207,9 +209,22 @@ func (h *Hooks) run(ctx context.Context, event string, names []string, payload m
 	payload["hook_event_name"] = event
 	payload["permission_mode"] = mode
 	input, _ := json.Marshal(payload)
-	out := make([]hookOutcome, len(cmds))
+	var waited []hookCmd
+	for _, c := range cmds {
+		if !c.Async {
+			waited = append(waited, c)
+			continue
+		}
+		h.background.Add(1)
+		go func() {
+			defer h.background.Done()
+			defer ui.CleanupOnPanic()
+			h.exec(context.WithoutCancel(ctx), c, input)
+		}()
+	}
+	out := make([]hookOutcome, len(waited))
 	var wg sync.WaitGroup
-	for i, c := range cmds {
+	for i, c := range waited {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -219,6 +234,21 @@ func (h *Hooks) run(ctx context.Context, event string, names []string, payload m
 	}
 	wg.Wait()
 	return out
+}
+
+func (h *Hooks) WaitBackground(limit time.Duration) {
+	if h == nil {
+		return
+	}
+	done := make(chan struct{})
+	go func() {
+		h.background.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(limit):
+	}
 }
 
 func (h *Hooks) exec(ctx context.Context, c hookCmd, input []byte) hookOutcome {

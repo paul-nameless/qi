@@ -87,6 +87,7 @@ func run(o options) error {
 	if err != nil {
 		return err
 	}
+	defer hooks.WaitBackground(time.Second)
 	if err := openSession(a, o, cfg, cwd, resume, headless, isSub); err != nil {
 		return err
 	}
