@@ -225,8 +225,20 @@ func TestAsyncHookRunsInBackground(t *testing.T) {
 	if waited := time.Since(start); waited > 300*time.Millisecond {
 		t.Errorf("waited %v for an async hook", waited)
 	}
-	h.WaitBackground(5 * time.Second)
-	if _, err := os.Stat(marker); err != nil {
-		t.Error("async hook did not finish before WaitBackground returned")
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+		if _, err := os.Stat(marker); err == nil {
+			return
+		}
+	}
+	t.Error("the async hook never ran to the end")
+}
+
+func TestBlockingDuplicateOfAsyncHookStillBlocks(t *testing.T) {
+	h := writeHooks(t, `{"PreToolUse":[
+		{"hooks":[{"type":"command","async":true,"command":"echo no >&2; exit 2"}]},
+		{"matcher":"Bash","hooks":[{"type":"command","command":"echo no >&2; exit 2"}]}
+	]}`)
+	if block, _, _ := h.PreToolUse(context.Background(), hookCall("bash", `{"command":"ls"}`)); !block {
+		t.Error("the same command marked blocking elsewhere did not block")
 	}
 }

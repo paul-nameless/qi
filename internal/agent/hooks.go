@@ -48,7 +48,6 @@ type Hooks struct {
 	ReadOnly   func() bool
 	SkipPrompt bool
 	Info       func(string)
-	background sync.WaitGroup
 }
 
 type HookFile struct {
@@ -185,14 +184,19 @@ func (h *Hooks) run(ctx context.Context, event string, names []string, payload m
 		return nil
 	}
 	var cmds []hookCmd
-	dup := map[string]bool{}
+	seen := map[string]int{}
 	for _, m := range h.events[event] {
 		if m.matches(names) {
 			for _, c := range m.Hooks {
-				if c.Type == "command" && c.Command != "" && !dup[c.Command] {
-					dup[c.Command] = true
-					cmds = append(cmds, c)
+				if c.Type != "command" || c.Command == "" {
+					continue
 				}
+				if i, ok := seen[c.Command]; ok {
+					cmds[i].Async = cmds[i].Async && c.Async
+					continue
+				}
+				seen[c.Command] = len(cmds)
+				cmds = append(cmds, c)
 			}
 		}
 	}
@@ -215,12 +219,7 @@ func (h *Hooks) run(ctx context.Context, event string, names []string, payload m
 			waited = append(waited, c)
 			continue
 		}
-		h.background.Add(1)
-		go func() {
-			defer h.background.Done()
-			defer ui.CleanupOnPanic()
-			h.exec(context.WithoutCancel(ctx), c, input)
-		}()
+		h.start(c, input)
 	}
 	out := make([]hookOutcome, len(waited))
 	var wg sync.WaitGroup
@@ -236,33 +235,40 @@ func (h *Hooks) run(ctx context.Context, event string, names []string, payload m
 	return out
 }
 
-func (h *Hooks) WaitBackground(limit time.Duration) {
-	if h == nil {
+func (h *Hooks) start(c hookCmd, input []byte) {
+	ctx, cancel := context.WithTimeout(context.Background(), hookTimeout(c))
+	cmd := h.command(ctx, c, input)
+	if cmd.Start() != nil {
+		cancel()
 		return
 	}
-	done := make(chan struct{})
 	go func() {
-		h.background.Wait()
-		close(done)
+		_ = cmd.Wait()
+		cancel()
 	}()
-	select {
-	case <-done:
-	case <-time.After(limit):
-	}
 }
 
-func (h *Hooks) exec(ctx context.Context, c hookCmd, input []byte) hookOutcome {
-	timeout := c.Timeout
-	if timeout <= 0 {
-		timeout = 60
+func hookTimeout(c hookCmd) time.Duration {
+	if c.Timeout <= 0 {
+		return 60 * time.Second
 	}
-	tctx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(tctx, "sh", "-c", c.Command)
+	return time.Duration(c.Timeout) * time.Second
+}
+
+func (h *Hooks) command(ctx context.Context, c hookCmd, input []byte) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, "sh", "-c", c.Command)
 	cmd.Dir = h.Cwd
 	cmd.Env = append(os.Environ(), "CLAUDE_PROJECT_DIR="+h.Cwd, "QI=1")
 	cmd.Stdin = bytes.NewReader(input)
 	proc.Setup(cmd, proc.Session, proc.Grace)
+	return cmd
+}
+
+func (h *Hooks) exec(ctx context.Context, c hookCmd, input []byte) hookOutcome {
+	timeout := int(hookTimeout(c) / time.Second)
+	tctx, cancel := context.WithTimeout(ctx, hookTimeout(c))
+	defer cancel()
+	cmd := h.command(tctx, c, input)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	err := cmd.Run()

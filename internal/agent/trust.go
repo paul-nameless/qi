@@ -51,7 +51,11 @@ func projectHookSet(files []HookFile) hookSet {
 					if c.Command == "" {
 						continue
 					}
-					full := strings.Join([]string{ev, m.Matcher, c.Type, c.Command, strconv.Itoa(c.Timeout)}, "\x00")
+					parts := []string{ev, m.Matcher, c.Type, c.Command, strconv.Itoa(c.Timeout)}
+					if c.Async {
+						parts = append(parts, "async")
+					}
+					full := strings.Join(parts, "\x00")
 					byFull[full] = hookEntry{id: shortHash(ev + "\x00" + c.Command), full: shortHash(full), label: ev + ": " + c.Command}
 				}
 			}
@@ -196,7 +200,7 @@ func describeChange(prev trustEntry, found bool, set hookSet) (string, []string)
 		switch {
 		case prev.pairs[pair]:
 		case prev.ids[e.id]:
-			lines = append(lines, "changed: "+strconv.Quote(e.label)+" (matcher or timeout)")
+			lines = append(lines, "changed: "+strconv.Quote(e.label)+" (matcher, timeout or async)")
 		default:
 			lines = append(lines, "new: "+strconv.Quote(e.label))
 		}

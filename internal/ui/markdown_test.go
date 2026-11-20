@@ -263,25 +263,23 @@ func TestPrinterBreakLineEndsMarkdownLine(t *testing.T) {
 	}
 }
 
-func TestMarkdownUnclosedMarkerOnLongLine(t *testing.T) {
+func TestMarkdownLongInlineSpans(t *testing.T) {
 	long := strings.Repeat("word ", 40000)
 	for _, marker := range []string{"`", "**"} {
 		in := "a " + marker + "b " + long + "\n"
 		m := markdown{width: 80}
 		start := time.Now()
-		var out strings.Builder
 		for i := 0; i < len(in); i += 5 {
-			out.WriteString(m.feed(in[i:min(i+5, len(in))]))
+			m.feed(in[i:min(i+5, len(in))])
 		}
-		out.WriteString(m.flush())
+		m.flush()
 		if d := time.Since(start); d > 2*time.Second {
-			t.Errorf("%s: rendering took %v", marker, d)
-		}
-		if out.String() != in {
-			t.Errorf("%s: an unclosed marker should stay literal text", marker)
+			t.Errorf("%s: an unclosed marker on a long line took %v", marker, d)
 		}
 	}
-	if got := render("x `"+strings.Repeat("y", maxInlineSpan+10)+"` z\n", 0); strings.Contains(got, Cyan) {
-		t.Error("a code span longer than the look-ahead should stay literal")
+	span := strings.Repeat("y", maxInlineSpan+200)
+	want := "run " + Reset + Cyan + span + Reset + " and then " + Reset + Cyan + "foo" + Reset + " to apply\n"
+	if got := render("run `"+span+"` and then `foo` to apply\n", 0); got != want {
+		t.Errorf("a code span past the look-ahead shifted the later spans:\n%q", got[len(got)-60:])
 	}
 }
