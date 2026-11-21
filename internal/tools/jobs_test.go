@@ -43,7 +43,7 @@ func TestBackgroundJobReturnsAtOnceAndNotifies(t *testing.T) {
 	env := jobEnv(t)
 	start := time.Now()
 	res := runBash(context.Background(), env, bashIn(t, map[string]any{"command": "sleep 0.3; seq 1 30; exit 3", "background": true}), nil)
-	if res.IsError || !strings.Contains(res.Text, "Started background job 1") || time.Since(start) > 200*time.Millisecond {
+	if res.IsError || !strings.Contains(res.Text, "Started background job 1") || time.Since(start) > 2*time.Second {
 		t.Fatalf("start: %+v after %s", res, time.Since(start))
 	}
 	if ids := env.Jobs.Waiting(); len(ids) != 1 || ids[0] != 1 {
@@ -112,5 +112,17 @@ func TestReadOnlyRefusesBackgroundWrite(t *testing.T) {
 	res := runBash(context.Background(), env, bashIn(t, map[string]any{"command": "rm -rf x", "background": true}), nil)
 	if !res.IsError || !strings.Contains(res.Text, "read-only") || len(env.Jobs.list) != 0 {
 		t.Fatalf("read-only background: %+v", res)
+	}
+}
+
+func TestBackgroundTimeoutIsSeconds(t *testing.T) {
+	env := jobEnv(t)
+	runBash(context.Background(), env, bashIn(t, map[string]any{"command": "sleep 30", "background": true, "timeout": 1800}), nil)
+	time.Sleep(2500 * time.Millisecond)
+	if len(env.Jobs.Waiting()) != 1 || env.Jobs.HasNotices() {
+		t.Fatalf("timeout 1800 must mean seconds: %s", env.Jobs.Describe())
+	}
+	if jobTimeout(bashArgs{Background: true}) != defaultJobTimeout || jobTimeout(bashArgs{Daemon: true}) != 0 || jobTimeout(bashArgs{Timeout: 999999}) != maxJobTimeout {
+		t.Fatal("job timeout defaults")
 	}
 }

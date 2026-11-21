@@ -241,12 +241,15 @@ func (a *Agent) jobBlocks() []llm.Block {
 func (a *Agent) awaitJobs(ctx context.Context) bool {
 	announced := false
 	for {
-		if a.env.Jobs.HasNotices() || a.queued() {
+		if a.env.Jobs.HasNotices() {
 			return true
 		}
 		ids := a.env.Jobs.Waiting()
-		if len(ids) == 0 || ctx.Err() != nil {
+		if len(ids) == 0 {
 			return false
+		}
+		if a.queued() {
+			return true
 		}
 		if !announced {
 			announced = true
@@ -254,6 +257,8 @@ func (a *Agent) awaitJobs(ctx context.Context) bool {
 		}
 		select {
 		case <-ctx.Done():
+			a.env.Jobs.StopWaiting()
+			return false
 		case <-a.env.Jobs.Changed():
 		case <-a.wake:
 		}

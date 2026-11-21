@@ -35,6 +35,7 @@ type job struct {
 	command string
 	path    string
 	daemon  bool
+	nowait  bool
 	start   time.Time
 	cmd     *exec.Cmd
 	cancel  context.CancelFunc
@@ -60,11 +61,19 @@ func (j *Jobs) Waiting() []int {
 	defer j.mu.Unlock()
 	var ids []int
 	for _, jb := range j.list {
-		if jb.status == "" && !jb.daemon {
+		if jb.status == "" && !jb.daemon && !jb.nowait {
 			ids = append(ids, jb.id)
 		}
 	}
 	return ids
+}
+
+func (j *Jobs) StopWaiting() {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	for _, jb := range j.list {
+		jb.nowait = true
+	}
 }
 
 func (j *Jobs) HasNotices() bool {
@@ -135,12 +144,7 @@ func (j *Jobs) start(ctx context.Context, cmd *exec.Cmd, cancel context.CancelFu
 func (j *Jobs) finish(jb *job, err error, timedOut bool, timeout time.Duration) {
 	var exitErr *exec.ExitError
 	status := "exit 0"
-	j.mu.Lock()
-	killed := jb.killed
-	j.mu.Unlock()
 	switch {
-	case killed:
-		status = "killed"
 	case timedOut:
 		status = fmt.Sprintf("timed out after %s", timeout)
 	case errors.As(err, &exitErr) && exitErr.ExitCode() >= 0:
@@ -152,8 +156,10 @@ func (j *Jobs) finish(jb *job, err error, timedOut bool, timeout time.Duration) 
 	}
 	notice := jb.notice(status)
 	j.mu.Lock()
-	jb.status = status
-	if !killed {
+	if jb.killed {
+		jb.status = "killed"
+	} else {
+		jb.status = status
 		j.notices = append(j.notices, Notice{ID: jb.id, Status: status, Text: notice})
 	}
 	j.mu.Unlock()
@@ -235,7 +241,7 @@ func fmtDuration(d time.Duration) string {
 	return strings.TrimSuffix(d.String(), "0s")
 }
 
-func (j *Jobs) describe() string {
+func (j *Jobs) Describe() string {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	if len(j.list) == 0 {
@@ -285,9 +291,8 @@ func startJob(env *Env, a bashArgs) Result {
 	}
 	var ctx context.Context
 	var cancel context.CancelFunc
-	timeout := time.Duration(0)
-	if a.Timeout > 0 {
-		timeout = time.Duration(min(normTimeout(a.Timeout), maxJobTimeout)) * time.Second
+	timeout := time.Duration(jobTimeout(a)) * time.Second
+	if timeout > 0 {
 		ctx, cancel = context.WithTimeout(context.Background(), timeout)
 	} else {
 		ctx, cancel = context.WithCancel(context.Background())
@@ -306,13 +311,19 @@ func startJob(env *Env, a bashArgs) Result {
 	return Result{Text: text, Summary: fmt.Sprintf("job %d started", jb.id)}
 }
 
-const maxJobTimeout = 86400
+const (
+	defaultJobTimeout = 3600
+	maxJobTimeout     = 86400
+)
 
-func normTimeout(t int) int {
-	if t >= 1000 {
-		return (t + 999) / 1000
+func jobTimeout(a bashArgs) int {
+	switch {
+	case a.Timeout > 0:
+		return min(a.Timeout, maxJobTimeout)
+	case a.Daemon:
+		return 0
 	}
-	return t
+	return defaultJobTimeout
 }
 
 type jobsArgs struct {
@@ -347,7 +358,7 @@ func JobsTool() *Tool {
 				}
 				return Result{Text: fmt.Sprintf("job %d killed", a.Kill), Summary: fmt.Sprintf("killed %d", a.Kill)}
 			}
-			text := env.Jobs.describe()
+			text := env.Jobs.Describe()
 			return Result{Text: text, Summary: strings.SplitN(text, "\n", 2)[0]}
 		},
 		ParallelSafe: true,

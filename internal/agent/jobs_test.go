@@ -52,8 +52,11 @@ func TestCancelWhileWaitingForJob(t *testing.T) {
 	if !errors.Is(err, context.Canceled) || time.Since(start) > 5*time.Second {
 		t.Fatalf("err %v after %s", err, time.Since(start))
 	}
-	if ids := a.env.Jobs.Waiting(); len(ids) != 1 {
-		t.Fatalf("Ctrl-C should only stop waiting, jobs %v", ids)
+	if ids := a.env.Jobs.Waiting(); len(ids) != 0 {
+		t.Fatalf("after Ctrl-C later turns should not wait for the job again: %v", ids)
+	}
+	if !strings.Contains(a.env.Jobs.Describe(), "running") {
+		t.Fatal("Ctrl-C should leave the job running")
 	}
 	msgs := a.Messages()
 	if msgs[len(msgs)-1].Text() != "waiting" {
@@ -110,5 +113,17 @@ func TestNoticeOfIdleJobJoinsNextTurn(t *testing.T) {
 	first := p.requests[len(p.requests)-1]
 	if got := lastText(first[len(first)-1]); !strings.Contains(got, "next") || !strings.Contains(got, `status="exit 4"`) {
 		t.Fatalf("notice of a job that finished between turns should join the next user message: %q", got)
+	}
+}
+
+func TestQueueDuringLastReplyWithoutJobsEndsTurn(t *testing.T) {
+	p := &fakeProvider{}
+	a := newAgent(t, p)
+	p.onCall = func(int) { a.Queue([]llm.Block{{Type: llm.BlockText, Text: "later"}}) }
+	if _, stats, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "go"}}); err != nil || stats.Requests != 1 {
+		t.Fatalf("stats %+v err %v", stats, err)
+	}
+	if q := a.DrainQueue(); len(q) != 1 {
+		t.Fatalf("queued item should be left for the next turn, got %v", q)
 	}
 }

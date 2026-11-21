@@ -151,6 +151,8 @@ class Session:
                             if sub:
                                 c["sub"] = Session(p, sub, self.depth + 1)
                     turn["steps"].append(step)
+            elif m and m["role"] == "user" and turn and m["blocks"] and all(b["type"] == "text" and b.get("text", "").startswith("<background-job") for b in m["blocks"]):
+                turn["steps"].append({"kind": "wait", "dur": t - prev_t, "text": "\n\n".join(b["text"] for b in m["blocks"])})
             elif m and m["role"] == "user":
                 text = "\n".join(b.get("text", "") for b in m["blocks"] if b["type"] == "text")
                 imgs = sum(1 for b in m["blocks"] if b["type"] == "image")
@@ -463,6 +465,12 @@ class Renderer:
                     f'<span class="meta">kept {s["kept"]} messages</span><span class="chev"></span></summary>'
                     f'<div class="callbody">{self.section("summary", "<pre>" + esc(s["summary"]) + "</pre>")}</div></details>')
             return self.row(aid, "compaction", s["dur"], scale, body)
+        if s["kind"] == "wait":
+            n = s["text"].count("<background-job")
+            body = (f'<details class="call"><summary class="line"><span class="nm">wait</span><span class="main"><span class="note">background job{"s" if n > 1 else ""} finished</span></span>'
+                    f'<span class="meta"></span><span class="chev"></span></summary>'
+                    f'<div class="callbody">{self.section("notice", "<pre>" + esc(s["text"]) + "</pre>")}</div></details>')
+            return self.row(aid, "wait", s["dur"], scale, body)
         if s["kind"] == "drop":
             return self.row(None, "other", None, scale, '<div class="line"><span class="nm"></span><span class="main note">last message dropped</span><span></span><span></span></div>')
         n = len(s["calls"])

@@ -92,6 +92,7 @@ func run(o options) error {
 	}
 	defer a.Session().Close()
 	defer func() { agent.RemoveScratchIfEmpty(a.Session().ID) }()
+	defer a.KillJobs()
 	skills, sys := agent.LoadPrompt(cwd, cfg, agent.ScratchDir(a.Session().ID))
 	a.SetSystem(sys)
 	hooks.Session, hooks.SessionID, hooks.ReadOnly = a.Session().Path, a.Session().ID, a.ReadOnly

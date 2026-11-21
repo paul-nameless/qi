@@ -191,7 +191,7 @@
           },
           "timeout": {
             "type": "integer",
-            "description": "Timeout in seconds (default 120, max 600; for a background job default none, max 86400)"
+            "description": "Timeout in seconds (default 120, max 600; background job: default 3600, max 86400; daemon: none unless set)"
           },
           "background": {
             "type": "boolean",
