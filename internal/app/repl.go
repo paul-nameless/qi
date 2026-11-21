@@ -400,6 +400,9 @@ func (r *repl) turn(prepare func(context.Context) ([]llm.Block, error), draft st
 		return err
 	})
 	r.display.EndBlock()
+	if err == nil {
+		r.display.Images(final)
+	}
 	r.lastCancelled = errors.Is(err, context.Canceled)
 	if !r.lastCancelled {
 		r.notifyTurn(final, err, time.Since(start))

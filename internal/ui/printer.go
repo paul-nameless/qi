@@ -48,6 +48,7 @@ type Printer struct {
 	promptFinal func(width int) string
 	shown       shownFrame
 	md          markdown
+	images      bool
 }
 
 type shownFrame struct {
@@ -57,7 +58,46 @@ type shownFrame struct {
 }
 
 func NewPrinter(out *os.File) *Printer {
-	return &Printer{out: out, TTY: IsTerminal(out), atLineStart: true, running: map[string]*toolState{}}
+	p := &Printer{out: out, TTY: IsTerminal(out), atLineStart: true, running: map[string]*toolState{}}
+	p.images = p.TTY && KittyGraphics(os.Getenv)
+	return p
+}
+
+func (p *Printer) Images(text string) {
+	if !p.images {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	box := p.imageBox()
+	drawn := map[string]bool{}
+	var b strings.Builder
+	for _, src := range imagePaths(text) {
+		if drawn[src] || len(drawn) == maxImagesPerBlock {
+			continue
+		}
+		if seq, err := kittyImage(src, box); err == nil {
+			drawn[src] = true
+			b.WriteString(seq + "\n")
+		}
+	}
+	if b.Len() == 0 {
+		return
+	}
+	if !p.atLineStart {
+		p.write("\n")
+	}
+	p.write(b.String())
+}
+
+func (p *Printer) imageBox() imageBox {
+	cols, rows := p.size()
+	box := imageBox{cols: max(1, cols-1), rows: max(1, min(rows-2, max(rows/2, 8))), cellW: fallbackCellW, cellH: fallbackCellH}
+	ws, err := unix.IoctlGetWinsize(int(p.out.Fd()), unix.TIOCGWINSZ)
+	if err == nil && ws.Col > 0 && ws.Row > 0 && ws.Xpixel >= ws.Col && ws.Ypixel >= ws.Row {
+		box.cellW, box.cellH, box.exact = int(ws.Xpixel/ws.Col), int(ws.Ypixel/ws.Row), true
+	}
+	return box
 }
 
 func (p *Printer) Color(code, s string) string {

@@ -36,7 +36,8 @@ Care:
 
 Output:
 - Be concise. Lead with the answer, skip preamble. In long tasks, say in one line what you are doing before a batch of tool calls.
-- Finish with a short summary of what changed or what you found. Reference code as path:line.`
+- Finish with a short summary of what changed or what you found. Reference code as path:line.
+- To show the user an image file (a chart, screenshot or render), mention its path in your answer; the terminal may draw it inline.`
 
 type Skill struct {
 	Name        string
