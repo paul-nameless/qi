@@ -43,7 +43,6 @@ type job struct {
 	start   time.Time
 	cmd     *exec.Cmd
 	cancel  context.CancelFunc
-	done    chan struct{}
 	gone    chan struct{}
 	status  string
 	killed  bool
@@ -143,7 +142,7 @@ func (j *Jobs) start(ctx context.Context, cmd *exec.Cmd, cancel context.CancelFu
 		f.Close()
 		return nil, err
 	}
-	jb := &job{id: id, command: command, path: path, daemon: daemon, start: time.Now(), cmd: cmd, cancel: cancel, done: make(chan struct{}), gone: make(chan struct{})}
+	jb := &job{id: id, command: command, path: path, daemon: daemon, start: time.Now(), cmd: cmd, cancel: cancel, gone: make(chan struct{})}
 	j.mu.Lock()
 	j.list = append(j.list, jb)
 	j.mu.Unlock()
@@ -185,7 +184,7 @@ func (j *Jobs) finish(jb *job, err error, timedOut bool, timeout time.Duration) 
 	case err != nil && !errors.Is(err, exec.ErrWaitDelay):
 		status = err.Error()
 	}
-	notice := jb.notice(status)
+	notice := jb.notice(status, !timedOut && proc.Alive(jb.cmd.Process.Pid), timeout)
 	j.mu.Lock()
 	if jb.killed {
 		jb.status = "killed"
@@ -194,14 +193,13 @@ func (j *Jobs) finish(jb *job, err error, timedOut bool, timeout time.Duration) 
 		j.notices = append(j.notices, Notice{ID: jb.id, Status: status, Text: notice})
 	}
 	j.mu.Unlock()
-	close(jb.done)
 	select {
 	case j.changed <- struct{}{}:
 	default:
 	}
 }
 
-func (jb *job) notice(status string) string {
+func (jb *job) notice(status string, leftovers bool, timeout time.Duration) string {
 	lines, tail := fileTail(jb.path)
 	var b strings.Builder
 	fmt.Fprintf(&b, "<background-job id=\"%d\" status=%q ran=%q>\ncommand: %s\n", jb.id, status, fmtDuration(time.Since(jb.start)), jb.command)
@@ -213,8 +211,12 @@ func (jb *job) notice(status string) string {
 	default:
 		fmt.Fprintf(&b, "output: %d lines in %s, last %d:\n%s\n", lines, jb.path, noticeTailLines, tail)
 	}
-	if proc.Alive(jb.cmd.Process.Pid) {
-		fmt.Fprintf(&b, "processes it started are still running; stop them with the jobs tool (kill %d)\n", jb.id)
+	if leftovers {
+		until := ""
+		if timeout > 0 {
+			until = fmt.Sprintf(" until the job's %s timeout", timeout)
+		}
+		fmt.Fprintf(&b, "processes it started are still running%s; stop them sooner with the jobs tool (kill %d)\n", until, jb.id)
 	}
 	b.WriteString("</background-job>")
 	return b.String()
@@ -372,7 +374,7 @@ func JobsTool() *Tool {
 		Def: llm.ToolDef{
 			Name:        "jobs",
 			Description: "List the background bash jobs of this session with their state, pid and output file, or stop one with kill (its whole process group is terminated). Read a job's output with bash on its output file.",
-			Schema:      json.RawMessage(`{"type":"object","properties":{"kill":{"type":"integer","description":"Id of a running job to stop"}}}`),
+			Schema:      json.RawMessage(`{"type":"object","properties":{"kill":{"type":"integer","description":"Id of a job to stop, including processes left running after its shell exited"}}}`),
 		},
 		Label: func(env *Env, in json.RawMessage) string {
 			a, _ := decode[jobsArgs](in)

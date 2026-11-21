@@ -205,7 +205,7 @@
         "properties": {
           "kill": {
             "type": "integer",
-            "description": "Id of a running job to stop"
+            "description": "Id of a job to stop, including processes left running after its shell exited"
           }
         }
       },
