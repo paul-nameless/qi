@@ -53,6 +53,7 @@ type Agent struct {
 
 	busy sync.Mutex
 	conv conversation
+	wake chan struct{}
 }
 
 type live struct {
@@ -75,9 +76,9 @@ type conversation struct {
 }
 
 func New(o Options) *Agent {
-	a := &Agent{cwd: o.Cwd, ui: o.UI, headless: o.Headless}
+	a := &Agent{cwd: o.Cwd, ui: o.UI, headless: o.Headless, wake: make(chan struct{}, 1)}
 	a.readOnly.Store(o.ReadOnly)
-	a.env = &tools.Env{Cwd: o.Cwd, ReadOnly: a.ReadOnly, Allow: o.Config.ReadOnlyAllow, BashTimeout: o.Config.BashTimeout, SpillDir: o.SpillDir, Subagent: o.Subagent}
+	a.env = &tools.Env{Cwd: o.Cwd, ReadOnly: a.ReadOnly, Allow: o.Config.ReadOnlyAllow, BashTimeout: o.Config.BashTimeout, SpillDir: o.SpillDir, Subagent: o.Subagent, Jobs: tools.NewJobs()}
 	a.live = live{cfg: o.Config, provider: o.Provider}
 	a.conv.registry = tools.NewRegistry(o.Tools...)
 	return a
@@ -136,6 +137,7 @@ func (a *Agent) resetConversation(msgs []llm.Message) {
 func (a *Agent) Reset(s *session.Session) {
 	a.busy.Lock()
 	defer a.busy.Unlock()
+	a.env.Jobs.KillAll()
 	a.setSession(s)
 	a.resetConversation(nil)
 	a.SetContextTokens(0)
@@ -144,6 +146,7 @@ func (a *Agent) Reset(s *session.Session) {
 func (a *Agent) Load(s *session.Session, ld session.Loaded) {
 	a.busy.Lock()
 	defer a.busy.Unlock()
+	a.env.Jobs.KillAll()
 	a.setSession(s)
 	a.resetConversation(ld.Messages)
 	a.restoreMode()
@@ -208,8 +211,64 @@ func (a *Agent) SetContextTokens(n int) {
 
 func (a *Agent) Queue(blocks []llm.Block) {
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	a.live.steer = append(a.live.steer, blocks...)
+	a.mu.Unlock()
+	select {
+	case a.wake <- struct{}{}:
+	default:
+	}
+}
+
+func (a *Agent) queued() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return len(a.live.steer) > 0
+}
+
+func (a *Agent) KillJobs() {
+	a.env.Jobs.KillAll()
+}
+
+func (a *Agent) jobBlocks() []llm.Block {
+	var out []llm.Block
+	for _, n := range a.env.Jobs.TakeNotices() {
+		a.ui.Info(fmt.Sprintf("background job %d finished: %s", n.ID, n.Status))
+		out = append(out, llm.Block{Type: llm.BlockText, Text: n.Text})
+	}
+	return out
+}
+
+func (a *Agent) awaitJobs(ctx context.Context) bool {
+	announced := false
+	for {
+		if a.env.Jobs.HasNotices() || a.queued() {
+			return true
+		}
+		ids := a.env.Jobs.Waiting()
+		if len(ids) == 0 || ctx.Err() != nil {
+			return false
+		}
+		if !announced {
+			announced = true
+			a.ui.Info(fmt.Sprintf("waiting for background %s (Ctrl-C stops waiting, the job keeps running)", jobList(ids)))
+		}
+		select {
+		case <-ctx.Done():
+		case <-a.env.Jobs.Changed():
+		case <-a.wake:
+		}
+	}
+}
+
+func jobList(ids []int) string {
+	parts := make([]string, len(ids))
+	for i, id := range ids {
+		parts[i] = strconv.Itoa(id)
+	}
+	if len(ids) == 1 {
+		return "job " + parts[0]
+	}
+	return "jobs " + strings.Join(parts, ", ")
 }
 
 func (a *Agent) DrainQueue() []llm.Block {
@@ -390,6 +449,7 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 	if cb, ok := a.changesBlock(); ok {
 		blocks = append(blocks, cb)
 	}
+	blocks = append(blocks, a.jobBlocks()...)
 	if mb, ok := a.modeBlock(); ok {
 		blocks = append(blocks, mb)
 	}
@@ -453,7 +513,10 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 			if cb, ok := a.changesBlock(); ok {
 				next = append(next, cb)
 			}
-		} else {
+		} else if !a.awaitJobs(ctx) {
+			if ctx.Err() != nil {
+				return "", stats, context.Canceled
+			}
 			if a.conv.onStop != nil {
 				if cont, reason := a.conv.onStop(ctx, msg.Text(), stopActive); cont {
 					stopActive = true
@@ -468,6 +531,7 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 				return msg.Text(), stats, nil
 			}
 		}
+		next = append(next, a.jobBlocks()...)
 		if q := a.DrainQueue(); len(q) > 0 {
 			next = append(next, llm.Block{Type: llm.BlockText, Text: llm.QueuedLead})
 			next = append(next, q...)

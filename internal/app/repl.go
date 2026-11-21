@@ -346,6 +346,7 @@ func (r *repl) settle(limit time.Duration) {
 }
 
 func (r *repl) closeResources() {
+	r.agent.KillJobs()
 	if r.mcp != nil {
 		r.mcp.Close()
 	}

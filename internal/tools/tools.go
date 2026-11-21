@@ -56,6 +56,7 @@ type Env struct {
 	BashTimeout int
 	SpillDir    string
 	Subagent    SubagentFunc
+	Jobs        *Jobs
 	PreHook     Hook
 	PostHook    PostHook
 	files       fileTimes
@@ -318,15 +319,19 @@ func (e *Env) capOutput(out string) string {
 	return head + fmt.Sprintf("\n… %d lines omitted. Full output: %s\n", len(lines)-headLines-tailLines, path) + tail
 }
 
-func (e *Env) spill(out string) (string, error) {
-	dir := e.SpillDir
-	if dir == "" {
-		base, err := os.UserCacheDir()
-		if err != nil {
-			base = os.TempDir()
-		}
-		dir = filepath.Join(base, "qi", "out")
+func (e *Env) outDir() string {
+	if e.SpillDir != "" {
+		return e.SpillDir
 	}
+	base, err := os.UserCacheDir()
+	if err != nil {
+		base = os.TempDir()
+	}
+	return filepath.Join(base, "qi", "out")
+}
+
+func (e *Env) spill(out string) (string, error) {
+	dir := e.outDir()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}

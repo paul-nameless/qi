@@ -239,7 +239,7 @@ func submitPrompt(ctx context.Context, a *agent.Agent, display notifier, hooks *
 
 func buildAgent(cfg config.Config, o options, cwd string, p llm.Provider, display agent.Display, headless, isSub bool, extra ...*tools.Tool) (*agent.Agent, *agent.SubagentRunner) {
 	opts := agent.Options{Config: cfg, Cwd: cwd, Provider: p, UI: display, Headless: headless, ReadOnly: o.readOnly || cfg.ReadOnly}
-	opts.Tools = []*tools.Tool{tools.Read(), tools.Write(), tools.Edit(), tools.Bash()}
+	opts.Tools = []*tools.Tool{tools.Read(), tools.Write(), tools.Edit(), tools.Bash(), tools.JobsTool()}
 	var runner *agent.SubagentRunner
 	if !isSub {
 		runner = &agent.SubagentRunner{ConfigPath: o.configPath, Profile: cfg.Profile, Provider: cfg.Provider, SystemPromptFile: o.systemPromptFile, Cwd: cwd, MCP: cfg.MCP}

@@ -79,6 +79,7 @@ func runHeadless(a *agent.Agent, display *ui.Printer, hooks *agent.Hooks, prompt
 		return err
 	}
 	start := time.Now()
+	defer a.KillJobs()
 	final, stats, err := a.Turn(ctx, blocks)
 	display.EndBlock()
 	display.Info(stats.String(a.ContextShort(), time.Since(start), time.Now()) + " · " + resourceUsage())

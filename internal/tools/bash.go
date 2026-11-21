@@ -18,8 +18,10 @@ import (
 )
 
 type bashArgs struct {
-	Command string `json:"command"`
-	Timeout int    `json:"timeout"`
+	Command    string `json:"command"`
+	Timeout    int    `json:"timeout"`
+	Background bool   `json:"background"`
+	Daemon     bool   `json:"daemon"`
 }
 
 func Bash() *Tool {
@@ -28,7 +30,7 @@ func Bash() *Tool {
 		Def: llm.ToolDef{
 			Name:        "bash",
 			Description: "Run a shell command with bash in the working directory. stdin is empty, output is stdout+stderr combined, long output is truncated to head and tail with the full text saved to a file. Use rg/fd/ls/cat/sed for search and inspection.",
-			Schema:      json.RawMessage(`{"type":"object","properties":{"command":{"type":"string"},"timeout":{"type":"integer","description":"Timeout in seconds (default 120, max 600)"}},"required":["command"]}`),
+			Schema:      json.RawMessage(`{"type":"object","properties":{"command":{"type":"string"},"timeout":{"type":"integer","description":"Timeout in seconds (default 120, max 600; for a background job default none, max 86400)"},"background":{"type":"boolean","description":"Run as a background job for long builds and test runs: returns at once with the job id and output file, and you get a message with the exit status and output tail when it exits, so don't poll or sleep for it"},"daemon":{"type":"boolean","description":"Run in the background for servers and watchers that are not meant to exit: your turn does not wait for it"}},"required":["command"]}`),
 		},
 		Label: func(env *Env, in json.RawMessage) string {
 			a, _ := decode[bashArgs](in)
@@ -198,6 +200,20 @@ func readOnlyEnv() []string {
 	}
 }
 
+func bashCmd(ctx context.Context, env *Env, command string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, "bash", "-c", command)
+	if env.readOnly() {
+		cmd = readOnlySandbox(ctx, command)
+	}
+	cmd.Dir = env.Cwd
+	cmd.Env = append(os.Environ(), "PAGER=cat", "GIT_PAGER=cat", "GIT_TERMINAL_PROMPT=0", "TERM=dumb", "NO_COLOR=1", "CLICOLOR=0")
+	if env.readOnly() {
+		cmd.Env = append(cmd.Env, readOnlyEnv()...)
+	}
+	proc.Setup(cmd, proc.Session, proc.Grace)
+	return cmd
+}
+
 func runBash(ctx context.Context, env *Env, in json.RawMessage, progress func(string)) Result {
 	a, err := decode[bashArgs](in)
 	if err != nil {
@@ -211,20 +227,14 @@ func runBash(ctx context.Context, env *Env, in json.RawMessage, progress func(st
 			return errResult("read-only mode: %v", err)
 		}
 	}
+	if a.Background || a.Daemon {
+		return startJob(env, a)
+	}
 	timeout := bashTimeout(a.Timeout, env.BashTimeout)
 	tctx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(tctx, "bash", "-c", a.Command)
-	if env.readOnly() {
-		cmd = readOnlySandbox(tctx, a.Command)
-	}
-	cmd.Dir = env.Cwd
-	cmd.Env = append(os.Environ(), "PAGER=cat", "GIT_PAGER=cat", "GIT_TERMINAL_PROMPT=0", "TERM=dumb", "NO_COLOR=1", "CLICOLOR=0")
-	if env.readOnly() {
-		cmd.Env = append(cmd.Env, readOnlyEnv()...)
-	}
-	proc.Setup(cmd, proc.Session, proc.Grace)
+	cmd := bashCmd(tctx, env, a.Command)
 	out := &progressWriter{progress: progress}
 	cmd.Stdout = out
 	cmd.Stderr = out

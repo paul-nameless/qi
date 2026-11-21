@@ -14,7 +14,7 @@ A small coding agent for the terminal, built just because.
 ## What it does
 
 - Talks to any OpenAI-compatible API, and Anthropic's native API.
-- Tools: `read`, `write`, `edit`, `bash`, `subagent`. Several calls in one response run in parallel.
+- Tools: `read`, `write`, `edit`, `bash`, `jobs`, `subagent`. Several calls in one response run in parallel. Long builds and servers run as background bash jobs; the agent gets a message when one exits instead of polling.
 - Prompt caching, sessions saved as JSONL, automatic compaction when the context fills up and idle compaction.
 - MCP servers start on demand, with per-server limits on which tools the agent may use.
 - Two modes, toggled with shift+tab: yolo (default) and read-only (no edits, bash limited to an allowlist).

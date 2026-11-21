@@ -183,12 +183,36 @@
             },
             "timeout": {
               "type": "integer",
-              "description": "Timeout in seconds (default 120, max 600)"
+              "description": "Timeout in seconds (default 120, max 600; for a background job default none, max 86400)"
+            },
+            "background": {
+              "type": "boolean",
+              "description": "Run as a background job for long builds and test runs: returns at once with the job id and output file, and you get a message with the exit status and output tail when it exits, so don't poll or sleep for it"
+            },
+            "daemon": {
+              "type": "boolean",
+              "description": "Run in the background for servers and watchers that are not meant to exit: your turn does not wait for it"
             }
           },
           "required": [
             "command"
           ]
+        }
+      },
+      "type": "function"
+    },
+    {
+      "function": {
+        "description": "List the background bash jobs of this session with their state, pid and output file, or stop one with kill (its whole process group is terminated). Read a job's output with bash on its output file.",
+        "name": "jobs",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "kill": {
+              "type": "integer",
+              "description": "Id of a running job to stop"
+            }
+          }
         }
       },
       "type": "function"
