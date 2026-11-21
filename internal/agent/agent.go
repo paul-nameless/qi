@@ -304,14 +304,15 @@ func (a *Agent) request(l live, msgs []llm.Message) llm.Request {
 
 func (a *Agent) onDelta(d llm.Delta, showReasoning bool) bool {
 	switch {
+	case d.Text == "":
 	case d.Kind == llm.DeltaText && !a.headless:
 		a.ui.Text(d.Text)
+		return true
 	case d.Kind == llm.DeltaReasoning && showReasoning:
 		a.ui.Reasoning(d.Text)
-	default:
-		return false
+		return !a.headless
 	}
-	return true
+	return false
 }
 
 type TurnStats struct {

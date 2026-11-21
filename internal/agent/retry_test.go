@@ -18,6 +18,8 @@ const (
 	sseStart     = "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":1}}}\n\n"
 	sseText      = "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"hi\"}}\n\n"
 	sseThinking  = "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"hmm\"}}\n\n"
+	sseEmptyText = "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"\"}}\n\n"
+	sseStop      = "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
 	sseOverload  = "event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"busy\"}}\n\n"
 	sseTooLong   = "event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"prompt is too long: 300000 tokens > 200000 maximum\"}}\n\n"
 	statusPrefix = "status:"
@@ -64,6 +66,8 @@ func TestStreamRetryAttempts(t *testing.T) {
 		{"cut after shown thinking", false, false, func(int) string { return sseStart + sseThinking }, 1, 0, func(err error) bool { return errors.Is(err, llm.ErrIncomplete) }},
 		{"cut after hidden thinking", true, false, func(int) string { return sseStart + sseThinking }, 3, 2, func(err error) bool { return errors.Is(err, llm.ErrIncomplete) }},
 		{"cut after text in headless mode", false, true, func(int) string { return sseStart + sseText }, 3, 2, func(err error) bool { return errors.Is(err, llm.ErrIncomplete) }},
+		{"cut after thinking in headless mode", false, true, func(int) string { return sseStart + sseThinking }, 3, 2, func(err error) bool { return errors.Is(err, llm.ErrIncomplete) }},
+		{"cut after an empty text delta", false, false, func(int) string { return sseStart + sseEmptyText }, 3, 2, func(err error) bool { return errors.Is(err, llm.ErrIncomplete) }},
 		{"context too long", false, false, func(int) string { return sseStart + sseTooLong }, 1, 0, contextTooLong},
 		{"worst case interleaving", false, false, func(n int) string {
 			if n%4 == 0 {
@@ -93,5 +97,23 @@ func TestStreamRetryAttempts(t *testing.T) {
 		if !c.check(err) || n.Load() != c.requests || len(slept) != c.sleeps {
 			t.Errorf("%s: %d requests, %d sleeps, err %v; want %d requests, %d sleeps", c.name, n.Load(), len(slept), err, c.requests, c.sleeps)
 		}
+	}
+}
+
+func TestStreamRetryKeepsOnlyTheSuccessfulAttempt(t *testing.T) {
+	old := llm.Sleep
+	llm.Sleep = func(ctx context.Context, d time.Duration) error { return ctx.Err() }
+	defer func() { llm.Sleep = old }()
+	url, n := scriptedServer(t, func(n int) string {
+		if n == 1 {
+			return sseStart + sseThinking
+		}
+		return sseStart + sseText + sseStop
+	})
+	show := false
+	a := New(Options{Config: config.Config{Model: "claude-haiku-5-5", MaxTokens: 10, ShowReasoning: &show}, Provider: llm.NewAnthropic(url, "k"), UI: nopDisplay{}})
+	msg, _, err := a.stream(context.Background())
+	if err != nil || n.Load() != 2 || len(msg.Blocks) != 1 || msg.Text() != "hi" {
+		t.Fatalf("err %v, %d requests, blocks %+v", err, n.Load(), msg.Blocks)
 	}
 }
