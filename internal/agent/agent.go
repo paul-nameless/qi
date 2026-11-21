@@ -302,17 +302,16 @@ func (a *Agent) request(l live, msgs []llm.Message) llm.Request {
 	}
 }
 
-func (a *Agent) onDelta(d llm.Delta, showReasoning bool) {
-	switch d.Kind {
-	case llm.DeltaText:
-		if !a.headless {
-			a.ui.Text(d.Text)
-		}
-	case llm.DeltaReasoning:
-		if showReasoning {
-			a.ui.Reasoning(d.Text)
-		}
+func (a *Agent) onDelta(d llm.Delta, showReasoning bool) bool {
+	switch {
+	case d.Kind == llm.DeltaText && !a.headless:
+		a.ui.Text(d.Text)
+	case d.Kind == llm.DeltaReasoning && showReasoning:
+		a.ui.Reasoning(d.Text)
+	default:
+		return false
 	}
+	return true
 }
 
 type TurnStats struct {
@@ -537,14 +536,13 @@ func streamBackoff(attempt int) time.Duration {
 
 func (a *Agent) stream(ctx context.Context) (llm.Message, llm.Usage, error) {
 	for attempt := 0; ; attempt++ {
-		emitted := false
+		shown := false
 		l := a.snapshot()
 		show := l.cfg.ShowReasoningOn()
 		msg, usage, err := l.provider.Stream(ctx, a.request(l, a.conv.messages), func(d llm.Delta) {
-			emitted = true
-			a.onDelta(d, show)
+			shown = a.onDelta(d, show) || shown
 		})
-		if err == nil || emitted || attempt == streamAttempts-1 || ctx.Err() != nil || !llm.Retryable(err) {
+		if err == nil || shown || attempt == streamAttempts-1 || ctx.Err() != nil || !llm.Retryable(err) {
 			return msg, usage, err
 		}
 		a.ui.Info("retrying: " + tools.OneLine(err.Error(), 100))
