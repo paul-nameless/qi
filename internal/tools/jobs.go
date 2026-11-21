@@ -44,6 +44,7 @@ type job struct {
 	cmd     *exec.Cmd
 	cancel  context.CancelFunc
 	done    chan struct{}
+	gone    chan struct{}
 	status  string
 	killed  bool
 }
@@ -98,8 +99,8 @@ func (j *Jobs) KillAll() {
 	j.mu.Lock()
 	var running []*job
 	for _, jb := range j.list {
-		if jb.status == "" {
-			jb.killed = true
+		if !jb.isGone() {
+			jb.killed = jb.killed || jb.status == ""
 			running = append(running, jb)
 		}
 	}
@@ -108,9 +109,18 @@ func (j *Jobs) KillAll() {
 		jb.cancel()
 	}
 	for _, jb := range running {
-		<-jb.done
+		<-jb.gone
 	}
 	j.TakeNotices()
+}
+
+func (jb *job) isGone() bool {
+	select {
+	case <-jb.gone:
+		return true
+	default:
+		return false
+	}
 }
 
 func (j *Jobs) start(ctx context.Context, cmd *exec.Cmd, cancel context.CancelFunc, timeout time.Duration, command, dir string, daemon bool) (*job, error) {
@@ -133,17 +143,17 @@ func (j *Jobs) start(ctx context.Context, cmd *exec.Cmd, cancel context.CancelFu
 		f.Close()
 		return nil, err
 	}
-	jb := &job{id: id, command: command, path: path, daemon: daemon, start: time.Now(), cmd: cmd, cancel: cancel, done: make(chan struct{})}
+	jb := &job{id: id, command: command, path: path, daemon: daemon, start: time.Now(), cmd: cmd, cancel: cancel, done: make(chan struct{}), gone: make(chan struct{})}
 	j.mu.Lock()
 	j.list = append(j.list, jb)
 	j.mu.Unlock()
 	go func() {
 		err := cmd.Wait()
-		waitGroup(ctx, cmd.Process.Pid)
 		f.Close()
-		timedOut := errors.Is(ctx.Err(), context.DeadlineExceeded)
+		j.finish(jb, err, errors.Is(ctx.Err(), context.DeadlineExceeded), timeout)
+		waitGroup(ctx, cmd.Process.Pid)
 		cancel()
-		j.finish(jb, err, timedOut, timeout)
+		close(jb.gone)
 	}()
 	return jb, nil
 }
@@ -202,6 +212,9 @@ func (jb *job) notice(status string) string {
 		fmt.Fprintf(&b, "output (%s):\n%s\n", jb.path, tail)
 	default:
 		fmt.Fprintf(&b, "output: %d lines in %s, last %d:\n%s\n", lines, jb.path, noticeTailLines, tail)
+	}
+	if proc.Alive(jb.cmd.Process.Pid) {
+		fmt.Fprintf(&b, "processes it started are still running; stop them with the jobs tool (kill %d)\n", jb.id)
 	}
 	b.WriteString("</background-job>")
 	return b.String()
@@ -271,8 +284,11 @@ func (j *Jobs) Describe() string {
 	var b strings.Builder
 	for _, jb := range j.list {
 		state := jb.status
-		if state == "" {
+		switch {
+		case state == "":
 			state = "running " + fmtDuration(time.Since(jb.start))
+		case !jb.isGone():
+			state += ", processes it started still running"
 		}
 		kind := ""
 		if jb.daemon {
@@ -295,14 +311,14 @@ func (j *Jobs) kill(id int) error {
 		j.mu.Unlock()
 		return fmt.Errorf("no background job %d", id)
 	}
-	if target.status != "" {
+	if target.isGone() {
 		j.mu.Unlock()
 		return fmt.Errorf("job %d already finished: %s", id, target.status)
 	}
-	target.killed = true
+	target.killed = target.killed || target.status == ""
 	j.mu.Unlock()
 	target.cancel()
-	<-target.done
+	<-target.gone
 	return nil
 }
 

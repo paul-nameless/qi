@@ -127,19 +127,28 @@ func TestBackgroundTimeoutIsSeconds(t *testing.T) {
 	}
 }
 
-func TestJobLivesUntilItsProcessGroupExits(t *testing.T) {
+func TestLeftoverProcessesStayKillable(t *testing.T) {
 	env := jobEnv(t)
-	runBash(context.Background(), env, bashIn(t, map[string]any{"command": "sleep 30 > /dev/null 2>&1 &", "daemon": true}), nil)
-	pgid := env.Jobs.list[0].cmd.Process.Pid
-	time.Sleep(500 * time.Millisecond)
-	if !strings.Contains(env.Jobs.Describe(), "running") || env.Jobs.HasNotices() {
-		t.Fatalf("a job whose shell exited but whose children run is still running: %s", env.Jobs.Describe())
+	start := time.Now()
+	runBash(context.Background(), env, bashIn(t, map[string]any{"command": "sleep 30 > /dev/null 2>&1 & echo started", "background": true}), nil)
+	n := waitNotice(t, env.Jobs)
+	if n.Status != "exit 0" || !strings.Contains(n.Text, "still running") || time.Since(start) > 5*time.Second {
+		t.Fatalf("notice should come at shell exit with its status: %+v after %s", n, time.Since(start))
 	}
+	if len(env.Jobs.Waiting()) != 0 || !strings.Contains(env.Jobs.Describe(), "still running") {
+		t.Fatalf("leftovers must not hold the turn: %v %s", env.Jobs.Waiting(), env.Jobs.Describe())
+	}
+	env.Jobs.mu.Lock()
+	pgid := env.Jobs.list[0].cmd.Process.Pid
+	env.Jobs.mu.Unlock()
 	if res := JobsTool().Run(context.Background(), env, json.RawMessage(`{"kill":1}`), nil); res.IsError {
 		t.Fatalf("kill: %+v", res)
 	}
 	if syscall.Kill(-pgid, 0) == nil {
-		t.Fatal("backgrounded child survived kill")
+		t.Fatal("leftover child survived kill")
+	}
+	if res := JobsTool().Run(context.Background(), env, json.RawMessage(`{"kill":1}`), nil); !res.IsError {
+		t.Fatalf("second kill: %+v", res)
 	}
 }
 
