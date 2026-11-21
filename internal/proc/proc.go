@@ -67,6 +67,10 @@ func killAfter(pgid int, grace time.Duration) {
 	_ = syscall.Kill(-pgid, syscall.SIGKILL)
 }
 
+func Alive(pgid int) bool {
+	return alive(pgid)
+}
+
 func alive(pgid int) bool {
 	return syscall.Kill(-pgid, 0) == nil
 }

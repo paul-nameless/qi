@@ -2,6 +2,8 @@ package tools
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,9 +17,11 @@ import (
 	"time"
 
 	"github.com/paul-nameless/qi/internal/llm"
+	"github.com/paul-nameless/qi/internal/proc"
 )
 
 const (
+	groupPoll       = 100 * time.Millisecond
 	noticeTailLines = 20
 	noticeTailBytes = 2000
 )
@@ -117,8 +121,10 @@ func (j *Jobs) start(ctx context.Context, cmd *exec.Cmd, cancel context.CancelFu
 	j.seq++
 	id := j.seq
 	j.mu.Unlock()
-	path := filepath.Join(dir, fmt.Sprintf("job-%d-%s.log", id, time.Now().Format("20060102-150405")))
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	suffix := make([]byte, 3)
+	_, _ = rand.Read(suffix)
+	path := filepath.Join(dir, fmt.Sprintf("job-%d-%s-%s.log", id, time.Now().Format("20060102-150405"), hex.EncodeToString(suffix)))
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o600)
 	if err != nil {
 		return nil, err
 	}
@@ -133,12 +139,27 @@ func (j *Jobs) start(ctx context.Context, cmd *exec.Cmd, cancel context.CancelFu
 	j.mu.Unlock()
 	go func() {
 		err := cmd.Wait()
+		waitGroup(ctx, cmd.Process.Pid)
 		f.Close()
 		timedOut := errors.Is(ctx.Err(), context.DeadlineExceeded)
 		cancel()
 		j.finish(jb, err, timedOut, timeout)
 	}()
 	return jb, nil
+}
+
+func waitGroup(ctx context.Context, pgid int) {
+	for proc.Alive(pgid) {
+		select {
+		case <-ctx.Done():
+			_ = proc.Terminate(pgid, proc.Grace)
+			for deadline := time.Now().Add(proc.Grace + time.Second); proc.Alive(pgid) && time.Now().Before(deadline); {
+				time.Sleep(groupPoll)
+			}
+			return
+		case <-time.After(groupPoll):
+		}
+	}
 }
 
 func (j *Jobs) finish(jb *job, err error, timedOut bool, timeout time.Duration) {

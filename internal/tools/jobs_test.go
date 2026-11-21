@@ -126,3 +126,31 @@ func TestBackgroundTimeoutIsSeconds(t *testing.T) {
 		t.Fatal("job timeout defaults")
 	}
 }
+
+func TestJobLivesUntilItsProcessGroupExits(t *testing.T) {
+	env := jobEnv(t)
+	runBash(context.Background(), env, bashIn(t, map[string]any{"command": "sleep 30 > /dev/null 2>&1 &", "daemon": true}), nil)
+	pgid := env.Jobs.list[0].cmd.Process.Pid
+	time.Sleep(500 * time.Millisecond)
+	if !strings.Contains(env.Jobs.Describe(), "running") || env.Jobs.HasNotices() {
+		t.Fatalf("a job whose shell exited but whose children run is still running: %s", env.Jobs.Describe())
+	}
+	if res := JobsTool().Run(context.Background(), env, json.RawMessage(`{"kill":1}`), nil); res.IsError {
+		t.Fatalf("kill: %+v", res)
+	}
+	if syscall.Kill(-pgid, 0) == nil {
+		t.Fatal("backgrounded child survived kill")
+	}
+}
+
+func TestJobLogNamesAreUnique(t *testing.T) {
+	dir := t.TempDir()
+	a, b := &Env{Cwd: dir, SpillDir: dir, Jobs: NewJobs()}, &Env{Cwd: dir, SpillDir: dir, Jobs: NewJobs()}
+	t.Cleanup(a.Jobs.KillAll)
+	t.Cleanup(b.Jobs.KillAll)
+	runBash(context.Background(), a, bashIn(t, map[string]any{"command": "true", "background": true}), nil)
+	runBash(context.Background(), b, bashIn(t, map[string]any{"command": "true", "background": true}), nil)
+	if a.Jobs.list[0].path == b.Jobs.list[0].path {
+		t.Fatal("two processes' job 1 share a log file")
+	}
+}
