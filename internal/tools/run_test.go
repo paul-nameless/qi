@@ -420,6 +420,10 @@ func TestCellImages(t *testing.T) {
 	if len(res.Images) != maxCellImages || !strings.Contains(res.Text, "2 more were dropped") {
 		t.Errorf("image cap: %q, %d images", res.Text, len(res.Images))
 	}
+	want := fmt.Sprintf("so you can see it (at most %d images per run call); the user does not see it, so to show an image to the user, put its full path in your answer.", maxCellImages)
+	if !strings.Contains(k.run.Def.Description, want) {
+		t.Errorf("read doc lacks %q", want)
+	}
 }
 
 func TestCellMCP(t *testing.T) {

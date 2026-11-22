@@ -56,7 +56,7 @@ func Read() *Tool {
 		Code: &CodeSpec{
 			Name:   "read",
 			Params: []string{"file_path"},
-			Doc:    "read(path, {offset, limit}) → string — file text without line numbers; offset is the 1-based first line, limit the number of lines (default: the whole file). A directory gives its entries, one per line. An image file (png, jpg, gif, webp) is attached to the result of this run call so you see it; {crop: [x, y, width, height]} shows a region at full resolution.",
+			Doc:    fmt.Sprintf("read(path, {offset, limit}) → string — file text without line numbers; offset is the 1-based first line, limit the number of lines (default: the whole file). A directory gives its entries, one per line. An image file (png, jpg, gif, webp) is attached to the result of this run call so you can see it (at most %d images per run call); the user does not see it, so to show an image to the user, put its full path in your answer. {crop: [x, y, width, height]} shows a region at full resolution.", maxCellImages),
 		},
 		Label: func(env *Env, in json.RawMessage) string {
 			a, _ := decode[readArgs](in)
