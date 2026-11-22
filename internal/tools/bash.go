@@ -37,6 +37,11 @@ func Bash() *Tool {
 			return "bash " + OneLine(a.Command, 70)
 		},
 		Run: runBash,
+		Code: &CodeSpec{
+			Name:   "bash",
+			Params: []string{"command"},
+			Doc:    "bash(command, {timeout, background, daemon}) → {output, exit_code, timed_out} — stdin is empty, output is stdout+stderr combined; never throws on a non-zero exit. timeout in seconds (default 120, max 600). {background: true} starts a job for long builds and test runs and returns at once with a string naming the job id and its output file; you get a message when it exits, so don't poll or sleep for it. {daemon: true} is for servers and watchers that are not meant to exit. Use rg/fd/ls/sed for search and inspection.",
+		},
 	}
 }
 
@@ -224,12 +229,31 @@ func runBash(ctx context.Context, env *Env, in json.RawMessage, progress func(st
 	}
 	if env.readOnly() {
 		if err := CheckReadOnly(a.Command, env.Cwd, env.Allow); err != nil {
-			return errResult("read-only mode: %v", err)
+			return deniedResult("read-only mode: %v", err)
 		}
 	}
 	if a.Background || a.Daemon {
 		return startJob(env, a)
 	}
+	run, err := execBash(ctx, env, a, progress)
+	if err != nil {
+		return errResult("%v", err)
+	}
+	if inCell(ctx) {
+		return run.value()
+	}
+	return run.result(env)
+}
+
+type bashRun struct {
+	output      string
+	code        int
+	timeout     int
+	timedOut    bool
+	interrupted bool
+}
+
+func execBash(ctx context.Context, env *Env, a bashArgs, progress func(string)) (bashRun, error) {
 	timeout := bashTimeout(a.Timeout, env.BashTimeout)
 	tctx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 	defer cancel()
@@ -239,39 +263,78 @@ func runBash(ctx context.Context, env *Env, in json.RawMessage, progress func(st
 	cmd.Stdout = out
 	cmd.Stderr = out
 	runErr := cmd.Run()
-	text := strings.TrimRight(out.String(), "\n")
-	code := 0
+	run := bashRun{output: strings.TrimRight(out.String(), "\n"), timeout: timeout}
 	var exitErr *exec.ExitError
 	switch {
 	case runErr == nil:
 	case errors.As(runErr, &exitErr):
-		code = exitErr.ExitCode()
+		run.code = exitErr.ExitCode()
 	case errors.Is(runErr, exec.ErrWaitDelay):
 	default:
 		if ctx.Err() == nil && tctx.Err() == nil {
-			return errResult("%v", runErr)
+			return run, runErr
 		}
 	}
-	lines := 0
-	if text != "" {
-		lines = strings.Count(text, "\n") + 1
-	}
-	text = env.capOutput(text)
-	summary := fmt.Sprintf("%d lines", lines)
 	switch {
 	case ctx.Err() != nil:
-		text += "\n[interrupted by user]"
-		summary = "interrupted"
+		run.interrupted = true
 	case tctx.Err() != nil:
-		text += fmt.Sprintf("\n[timed out after %ds; the process group was killed]", timeout)
-		summary = fmt.Sprintf("timed out after %ds", timeout)
-		code = -1
-	case code != 0:
-		text += fmt.Sprintf("\n[exit code %d]", code)
-		summary = fmt.Sprintf("exit %d · %d lines", code, lines)
+		run.timedOut, run.code = true, -1
 	}
+	return run, nil
+}
+
+func (r bashRun) lines() int {
+	if r.output == "" {
+		return 0
+	}
+	return strings.Count(r.output, "\n") + 1
+}
+
+func (r bashRun) summary() string {
+	switch {
+	case r.interrupted:
+		return "interrupted"
+	case r.timedOut:
+		return fmt.Sprintf("timed out after %ds", r.timeout)
+	case r.code != 0:
+		return fmt.Sprintf("exit %d · %d lines", r.code, r.lines())
+	}
+	return fmt.Sprintf("%d lines", r.lines())
+}
+
+func (r bashRun) suffix() string {
+	switch {
+	case r.interrupted:
+		return "\n[interrupted by user]"
+	case r.timedOut:
+		return fmt.Sprintf("\n[timed out after %ds; the process group was killed]", r.timeout)
+	case r.code != 0:
+		return fmt.Sprintf("\n[exit code %d]", r.code)
+	}
+	return ""
+}
+
+func (r bashRun) result(env *Env) Result {
+	text := env.capOutput(r.output) + r.suffix()
 	if text == "" {
 		text = "(no output)"
 	}
-	return Result{Text: text, IsError: code != 0 || ctx.Err() != nil, Summary: summary}
+	return Result{Text: text, IsError: r.code != 0 || r.interrupted, Summary: r.summary()}
+}
+
+func (r bashRun) value() Result {
+	text := r.output + r.suffix()
+	if text == "" {
+		text = "(no output)"
+	}
+	v, err := json.Marshal(struct {
+		Output   string `json:"output"`
+		ExitCode int    `json:"exit_code"`
+		TimedOut bool   `json:"timed_out"`
+	}{r.output, r.code, r.timedOut})
+	if err != nil {
+		return errResult("encode bash result: %v", err)
+	}
+	return Result{Text: text, Value: v, IsError: r.interrupted, Summary: r.summary()}
 }

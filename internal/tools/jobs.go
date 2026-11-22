@@ -401,5 +401,9 @@ func JobsTool() *Tool {
 			return Result{Text: text, Summary: strings.SplitN(text, "\n", 2)[0]}
 		},
 		ParallelSafe: true,
+		Code: &CodeSpec{
+			Name: "jobs",
+			Doc:  "jobs({kill}) → string — list this session's background jobs, or stop one by id.",
+		},
 	}
 }

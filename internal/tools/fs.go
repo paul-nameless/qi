@@ -52,6 +52,11 @@ func Read() *Tool {
 			Schema:      json.RawMessage(`{"type":"object","properties":{"file_path":{"type":"string","description":"Path to the file or directory"},"offset":{"type":"integer","description":"1-based line number to start from"},"limit":{"type":"integer","description":"Maximum number of lines to read"},"crop":{"type":"array","items":{"type":"integer"},"description":"Images only: [x, y, width, height] in original pixels; returns that region at full resolution (scaled down only if larger than 1568px)"}},"required":["file_path"]}`),
 		},
 		Path: pathKey,
+		Code: &CodeSpec{
+			Name:   "read",
+			Params: []string{"file_path"},
+			Doc:    "read(path, {offset, limit}) → string — file text without line numbers; offset is the 1-based first line, limit the number of lines (default: the whole file). A directory gives its entries, one per line. An image file (png, jpg, gif, webp) is attached to the result of this run call so you see it; {crop: [x, y, width, height]} shows a region at full resolution.",
+		},
 		Label: func(env *Env, in json.RawMessage) string {
 			a, _ := decode[readArgs](in)
 			l := "read " + env.rel(env.resolve(a.FilePath))
@@ -72,7 +77,11 @@ func Read() *Tool {
 				return errResult("file_path is required")
 			}
 			path := env.resolve(a.FilePath)
-			res := readPath(path, a.Offset, a.Limit, a.Crop)
+			text := numberedText
+			if inCell(ctx) {
+				text = rawText
+			}
+			res := readFile(path, a.Offset, a.Limit, a.Crop, text)
 			if !res.IsError {
 				env.files.remember(path)
 			}
@@ -82,6 +91,10 @@ func Read() *Tool {
 }
 
 func readPath(path string, offset, limit int, crop []int) Result {
+	return readFile(path, offset, limit, crop, numberedText)
+}
+
+func readFile(path string, offset, limit int, crop []int, text func(data string, offset, limit int) Result) Result {
 	st, err := os.Stat(path)
 	if err != nil {
 		return errResult("%v", err)
@@ -112,10 +125,38 @@ func readPath(path string, offset, limit int, crop []int) Result {
 	if bytes.IndexByte(probe, 0) >= 0 {
 		return Result{Text: fmt.Sprintf("binary file, %d bytes", len(data)), Summary: "binary"}
 	}
-	if len(data) == 0 {
+	return text(string(data), offset, limit)
+}
+
+func rawText(data string, offset, limit int) Result {
+	if data == "" {
+		return Result{Summary: "empty"}
+	}
+	lines := strings.SplitAfter(data, "\n")
+	if lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	if offset < 1 {
+		offset = 1
+	}
+	if offset > len(lines) {
+		return errResult("offset %d is past the end of the file (%d lines)", offset, len(lines))
+	}
+	end := len(lines)
+	if limit > 0 {
+		end = min(offset-1+limit, len(lines))
+	}
+	if offset == 1 && end == len(lines) {
+		return Result{Text: data, Summary: fmt.Sprintf("%d lines", end)}
+	}
+	return Result{Text: strings.Join(lines[offset-1:end], ""), Summary: fmt.Sprintf("%d lines", end-offset+1)}
+}
+
+func numberedText(data string, offset, limit int) Result {
+	if data == "" {
 		return Result{Text: "(empty file)", Summary: "empty"}
 	}
-	lines := strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
+	lines := strings.Split(strings.TrimSuffix(data, "\n"), "\n")
 	if offset < 1 {
 		offset = 1
 	}
@@ -233,9 +274,14 @@ func Write() *Tool {
 		},
 		Path:  pathKey,
 		Label: func(env *Env, in json.RawMessage) string { return "write " + env.rel(pathKey(env, in)) },
+		Code: &CodeSpec{
+			Name:   "write",
+			Params: []string{"file_path", "content"},
+			Doc:    "write(path, content) → string — create or overwrite a file; prefer edit for changes to existing files.",
+		},
 		Run: func(ctx context.Context, env *Env, in json.RawMessage, _ func(string)) Result {
 			if env.readOnly() {
-				return errResult("read-only mode: write is not allowed")
+				return deniedResult("read-only mode: write is not allowed")
 			}
 			a, err := decode[writeArgs](in)
 			if err != nil {
@@ -289,9 +335,15 @@ func Edit() *Tool {
 		},
 		Path:  pathKey,
 		Label: func(env *Env, in json.RawMessage) string { return "edit " + env.rel(pathKey(env, in)) },
+		Code: &CodeSpec{
+			Name:   "edit",
+			Params: []string{"file_path", "old_string", "new_string"},
+			Alias:  map[string]string{"all": "replace_all"},
+			Doc:    "edit(path, old, new, {all}) → string — replace old with new; old must match exactly once (include enough surrounding lines) unless all is true.",
+		},
 		Run: func(ctx context.Context, env *Env, in json.RawMessage, _ func(string)) Result {
 			if env.readOnly() {
-				return errResult("read-only mode: edit is not allowed")
+				return deniedResult("read-only mode: edit is not allowed")
 			}
 			a, err := decode[editArgs](in)
 			if err != nil {

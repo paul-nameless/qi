@@ -16,19 +16,34 @@ type subagentArgs struct {
 	Effort string `json:"effort"`
 }
 
-func Subagent(mainModel string, menu []config.SubagentModel, efforts []string) *Tool {
-	var desc strings.Builder
-	desc.WriteString("Run a task in a separate agent with a fresh context and get back only its final answer. Use it for self-contained side work (searching a codebase, reviewing, summarizing logs) to keep this conversation small, and run several at once for independent tasks. The subagent sees none of this conversation, so put every detail it needs in the prompt. It has the same tools and the current mode.\n\nModels:\n")
+const subagentIntro = "Run a task in a separate agent with a fresh context and get back only its final answer. Use it for self-contained side work (searching a codebase, reviewing, summarizing logs) to keep this conversation small, and run several at once for independent tasks. The subagent sees none of this conversation, so put every detail it needs in the prompt."
+
+func subagentMenu(mainModel string, menu []config.SubagentModel, efforts []string, indent string) (string, []string) {
+	var b strings.Builder
 	names := []string{}
 	if len(menu) == 0 {
-		fmt.Fprintf(&desc, "- %s: the current model\n", mainModel)
+		fmt.Fprintf(&b, "%s- %s: the current model\n", indent, mainModel)
 		names = append(names, mainModel)
 	}
 	for _, m := range menu {
-		fmt.Fprintf(&desc, "- %s (%s): %s\n", m.Name, m.Model, m.UseFor)
+		fmt.Fprintf(&b, "%s- %s (%s): %s\n", indent, m.Name, m.Model, m.UseFor)
 		names = append(names, m.Name)
 	}
-	fmt.Fprintf(&desc, "\nEfforts: %s. Higher effort thinks longer and costs more.", strings.Join(efforts, ", "))
+	if indent == "" {
+		b.WriteString("\n")
+	}
+	fmt.Fprintf(&b, "%sEfforts: %s. Higher effort thinks longer and costs more.", indent, strings.Join(efforts, ", "))
+	return b.String(), names
+}
+
+func subagentDoc(mainModel string, menu []config.SubagentModel, efforts []string) string {
+	list, _ := subagentMenu(mainModel, menu, efforts, "  ")
+	return "subagent(prompt, {model, effort}) → string — r" + subagentIntro[1:] + " It has the same functions and the current mode. At most 20 per run call; the run timeout pauses while a subagent runs (each has its own 30 minute limit). model defaults to the first one below.\n  Models:\n" + list
+}
+
+func Subagent(mainModel string, menu []config.SubagentModel, efforts []string) *Tool {
+	list, names := subagentMenu(mainModel, menu, efforts, "")
+	desc := subagentIntro + " It has the same tools and the current mode.\n\nModels:\n" + list
 	schema := map[string]any{
 		"type": "object",
 		"properties": map[string]any{
@@ -40,9 +55,14 @@ func Subagent(mainModel string, menu []config.SubagentModel, efforts []string) *
 	}
 	raw, _ := json.Marshal(schema)
 	return &Tool{
-		Def:          llm.ToolDef{Name: "subagent", Description: desc.String(), Schema: raw},
+		Def:          llm.ToolDef{Name: "subagent", Description: desc, Schema: raw},
 		ParallelSafe: true,
 		HookNames:    []string{"Agent", "Task"},
+		Code: &CodeSpec{
+			Name:   "subagent",
+			Params: []string{"prompt"},
+			Doc:    subagentDoc(mainModel, menu, efforts),
+		},
 		Label: func(env *Env, in json.RawMessage) string {
 			a, _ := decode[subagentArgs](in)
 			return fmt.Sprintf("subagent %s/%s %s", a.Model, a.Effort, OneLine(a.Prompt, 50))
@@ -58,17 +78,32 @@ func Subagent(mainModel string, menu []config.SubagentModel, efforts []string) *
 			if env.Subagent == nil {
 				return errResult("subagents are not available here")
 			}
-			model, provider := a.Model, ""
-			for _, m := range menu {
-				if m.Name == a.Model {
-					model, provider = m.Model, m.Provider
-				}
-			}
+			model, provider := subagentModel(a.Model, mainModel, menu)
 			answer, err := env.Subagent(ctx, SubagentTask{Prompt: a.Prompt, Model: model, Provider: provider, Effort: a.Effort}, progress)
 			if err != nil {
 				return errResult("subagent failed: %v", err)
 			}
-			return Result{Text: env.capOutput(answer), Summary: fmt.Sprintf("%d chars", len(answer))}
+			summary := fmt.Sprintf("%d chars", len(answer))
+			if !inCell(ctx) {
+				answer = env.capOutput(answer)
+			}
+			return Result{Text: answer, Summary: summary}
 		},
 	}
+}
+
+func subagentModel(name, mainModel string, menu []config.SubagentModel) (string, string) {
+	if name == "" {
+		if len(menu) == 0 {
+			return mainModel, ""
+		}
+		return menu[0].Model, menu[0].Provider
+	}
+	model, provider := name, ""
+	for _, m := range menu {
+		if m.Name == name {
+			model, provider = m.Model, m.Provider
+		}
+	}
+	return model, provider
 }

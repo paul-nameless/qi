@@ -38,6 +38,16 @@ type Block struct {
 	Width     int             `json:"width,omitempty"`
 	Height    int             `json:"height,omitempty"`
 	Source    string          `json:"source,omitempty"`
+	Calls     []InnerCall     `json:"calls,omitempty"`
+}
+
+type InnerCall struct {
+	Tool    string          `json:"tool"`
+	Label   string          `json:"label,omitempty"`
+	OK      bool            `json:"ok"`
+	Summary string          `json:"summary,omitempty"`
+	Ms      int64           `json:"ms"`
+	Input   json.RawMessage `json:"input,omitempty"`
 }
 
 const (

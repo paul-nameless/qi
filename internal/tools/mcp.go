@@ -61,6 +61,11 @@ func toolSearch(m *mcp.Manager) *Tool {
 			}
 			return runToolSearch(ctx, env, m, a)
 		},
+		Code: &CodeSpec{
+			Name:   "tool_search",
+			Params: []string{"query", "server"},
+			Doc:    "tool_search(query, server) → string — find tools on the connected MCP servers by keywords, or list one server's tools; returns their input schemas. Servers:" + strings.ReplaceAll(serverLines(m), "\n- ", "\n  - "),
+		},
 	}
 }
 
@@ -180,7 +185,7 @@ func MCPTools(m *mcp.Manager) []*Tool {
 				return errResult("%v", err)
 			}
 			if env.readOnly() {
-				return errResult("read-only mode: MCP tools may have side effects and are disabled")
+				return deniedResult("read-only mode: MCP tools may have side effects and are disabled")
 			}
 			res, err := m.Call(ctx, a.Server, a.Tool, a.Arguments)
 			if err != nil {
@@ -207,11 +212,30 @@ func MCPTools(m *mcp.Manager) []*Tool {
 			if text == "" {
 				text = "(no output)"
 			}
-			return Result{Text: env.capOutput(text), IsError: res.IsError, Images: images, Summary: fmt.Sprintf("%d lines", strings.Count(text, "\n")+1)}
+			out := Result{Text: text, IsError: res.IsError, Images: images, Summary: fmt.Sprintf("%d lines", strings.Count(text, "\n")+1)}
+			if !inCell(ctx) {
+				out.Text = env.capOutput(text)
+				return out
+			}
+			out.Value = jsonValue(text)
+			return out
+		},
+		Code: &CodeSpec{
+			Name:   "mcp",
+			Params: []string{"server", "tool", "arguments"},
+			Doc:    "mcp(server, tool, args) → value — call an MCP tool found with tool_search; a JSON result comes back parsed, anything else as a string.",
 		},
 	}
 	call.Unwrap, call.Rewrap = unwrapMCPCall, rewrapMCPCall
 	return []*Tool{search, call}
+}
+
+func jsonValue(text string) json.RawMessage {
+	t := strings.TrimSpace(text)
+	if (strings.HasPrefix(t, "{") || strings.HasPrefix(t, "[")) && json.Valid([]byte(t)) {
+		return json.RawMessage(t)
+	}
+	return nil
 }
 
 func unwrapMCPCall(input json.RawMessage) (string, json.RawMessage) {

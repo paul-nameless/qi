@@ -23,11 +23,20 @@ type Result struct {
 	IsError bool
 	Images  []llm.Block
 	Summary string
+	Value   json.RawMessage
+	Denied  bool
+	Calls   []llm.InnerCall
 }
 
 func errResult(format string, a ...any) Result {
 	msg := fmt.Sprintf(format, a...)
 	return Result{Text: msg, IsError: true, Summary: msg}
+}
+
+func deniedResult(format string, a ...any) Result {
+	res := errResult(format, a...)
+	res.Denied = true
+	return res
 }
 
 type HookCall struct {
@@ -91,6 +100,10 @@ type Tool struct {
 	HookNames    []string
 	Unwrap       func(input json.RawMessage) (name string, args json.RawMessage)
 	Rewrap       func(input, args json.RawMessage) json.RawMessage
+	Code         *CodeSpec
+	Inner        *Registry
+	Reset        func(hadCells bool)
+	describe     func(inner *Registry) string
 }
 
 func (t *Tool) HookCall(call llm.Block) HookCall {
@@ -137,13 +150,48 @@ func NewRegistry(ts ...*Tool) *Registry {
 }
 
 func (r *Registry) Replace(t *Tool) {
+	if r.replaceTop(t) {
+		return
+	}
+	for _, outer := range r.tools {
+		if outer.Inner == nil || !outer.Inner.replaceTop(t) {
+			continue
+		}
+		if outer.describe != nil {
+			outer.Def.Description = outer.describe(outer.Inner)
+		}
+	}
+}
+
+func (r *Registry) replaceTop(t *Tool) bool {
 	for i, old := range r.tools {
 		if old.Def.Name == t.Def.Name {
 			r.tools[i] = t
 			r.byKey[t.Def.Name] = t
-			return
+			return true
 		}
 	}
+	return false
+}
+
+func (r *Registry) Reset(hadCells bool) {
+	for _, t := range r.tools {
+		if t.Reset != nil {
+			t.Reset(hadCells)
+		}
+	}
+}
+
+func (r *Registry) innerHint(name string) (string, bool) {
+	for _, outer := range r.tools {
+		if outer.Inner == nil {
+			continue
+		}
+		if t := outer.Inner.byKey[name]; t != nil && t.Code != nil {
+			return fmt.Sprintf("unknown tool %q: call await %s(...) inside %s", name, t.Code.Name, outer.Def.Name), true
+		}
+	}
+	return "", false
 }
 
 func (r *Registry) Defs() []llm.ToolDef {
@@ -205,13 +253,16 @@ func (r *Registry) runOne(ctx context.Context, env *Env, call llm.Block, ui UI) 
 	t := r.byKey[call.Name]
 	label := Label(t, env, call)
 	ui.ToolStart(call.ID, label)
-	res := r.invoke(ctx, env, t, call, ui)
-	line := label
-	if res.Summary != "" {
-		line += " · " + OneLine(res.Summary, 80)
+	res := r.invoke(withCall(ctx, call.ID, ui), env, t, call, ui)
+	ui.ToolDone(call.ID, !res.IsError, doneLine(label, res.Summary))
+	return llm.Block{Type: llm.BlockToolResult, ToolUseID: call.ID, Text: res.Text, IsError: res.IsError, Images: res.Images, Calls: res.Calls}
+}
+
+func doneLine(label, summary string) string {
+	if summary == "" {
+		return label
 	}
-	ui.ToolDone(call.ID, !res.IsError, line)
-	return llm.Block{Type: llm.BlockToolResult, ToolUseID: call.ID, Text: res.Text, IsError: res.IsError, Images: res.Images}
+	return label + " · " + OneLine(summary, 80)
 }
 
 func Label(t *Tool, env *Env, call llm.Block) (label string) {
@@ -227,7 +278,15 @@ func Label(t *Tool, env *Env, call llm.Block) (label string) {
 	return label
 }
 
-func (r *Registry) invoke(ctx context.Context, env *Env, t *Tool, call llm.Block, ui UI) (res Result) {
+func (r *Registry) invoke(ctx context.Context, env *Env, t *Tool, call llm.Block, ui UI) Result {
+	res, extra := r.invokeSplit(ctx, env, t, call, ui)
+	if extra != "" {
+		res.Text += "\n" + extra
+	}
+	return res
+}
+
+func (r *Registry) invokeSplit(ctx context.Context, env *Env, t *Tool, call llm.Block, ui UI) (res Result, extra string) {
 	defer func() {
 		if p := recover(); p != nil {
 			res = errResult("tool %s panicked: %v at %s", call.Name, p, panicSite())
@@ -235,31 +294,32 @@ func (r *Registry) invoke(ctx context.Context, env *Env, t *Tool, call llm.Block
 	}()
 	switch {
 	case ctx.Err() != nil:
-		return errResult("interrupted by user")
+		return errResult("interrupted by user"), ""
 	case t == nil:
-		return errResult("unknown tool %q", call.Name)
+		if hint, ok := r.innerHint(call.Name); ok {
+			return errResult("%s", hint), ""
+		}
+		return errResult("unknown tool %q", call.Name), ""
 	case llm.InvalidArgs(call.Input):
-		return errResult("invalid JSON arguments: %s", string(call.Input))
+		return errResult("invalid JSON arguments: %s", string(call.Input)), ""
 	}
 	if env.PreHook != nil {
 		block, reason, input := env.PreHook(ctx, t.HookCall(call))
 		if block {
-			return errResult("blocked by hook: %s", reason)
+			return deniedResult("blocked by hook: %s", reason), ""
 		}
 		if input != nil {
 			call.Input = t.rewrap(call.Input, input)
 		}
 	}
 	res = t.Run(ctx, env, call.Input, func(s string) { ui.ToolProgress(call.ID, s) })
-	if ctx.Err() != nil && !res.IsError {
+	if ctx.Err() != nil && !res.IsError && !inCell(ctx) {
 		res.Text += "\n[interrupted by user]"
 	}
 	if env.PostHook != nil {
-		if extra := env.PostHook(ctx, t.HookCall(call), res); extra != "" {
-			res.Text += "\n" + extra
-		}
+		extra = env.PostHook(ctx, t.HookCall(call), res)
 	}
-	return res
+	return res, extra
 }
 
 func panicSite() string {
@@ -296,20 +356,23 @@ func decode[T any](raw json.RawMessage) (T, error) {
 const (
 	maxOutBytes = 30000
 	maxOutLines = 400
-	headLines   = 150
-	tailLines   = 100
 )
 
 func (e *Env) capOutput(out string) string {
+	return e.capText(out, maxOutLines, maxOutBytes)
+}
+
+func (e *Env) capText(out string, maxLines, maxBytes int) string {
 	lines := strings.Split(out, "\n")
-	if len(out) <= maxOutBytes && len(lines) <= maxOutLines {
+	if len(out) <= maxBytes && len(lines) <= maxLines {
 		return out
 	}
 	path, err := e.spill(out)
 	if err != nil {
 		path = "(not saved: " + err.Error() + ")"
 	}
-	half := maxOutBytes / 2
+	half := maxBytes / 2
+	headLines, tailLines := maxLines*3/8, maxLines/4
 	if len(lines) <= headLines+tailLines {
 		head, tail := strutil.CutStart(out, half), strutil.CutEnd(out, half)
 		return head + fmt.Sprintf("\n… %d bytes omitted. Full output: %s\n", len(out)-len(head)-len(tail), path) + tail
