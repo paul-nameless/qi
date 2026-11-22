@@ -33,6 +33,7 @@ func (c *cell) result(end cellEnd, value, hint string) Result {
 	case failure != "":
 		add(failure)
 		add(hint)
+		c.saveAnswers()
 		add(c.completed())
 	default:
 		add(value)
@@ -42,7 +43,7 @@ func (c *cell) result(end cellEnd, value, hint string) Result {
 		add("Uncaught error in a callback: " + errText(c.timerErr))
 	}
 	add(strings.Join(c.extras, "\n"))
-	add(c.lateNote(end.lateStop))
+	add(c.lateNote(end))
 	add(c.lateStopNote(end))
 	if c.lostImgs > 0 {
 		add(fmt.Sprintf("Note: only the first %d images are attached; %d more were dropped.", maxCellImages, c.lostImgs))
@@ -89,24 +90,64 @@ func (c *cell) completed() string {
 	head := "Calls that completed:"
 	if len(marks) > maxCompletedList {
 		head = fmt.Sprintf("Calls that completed (last %d of %d):", maxCompletedList, len(marks))
-		marks = marks[len(marks)-maxCompletedList:]
+		cut := len(marks) - maxCompletedList
+		marks = append(c.answerMarks(cut), marks[cut:]...)
 	}
 	return head + "\n" + strings.Join(marks, "\n")
 }
 
-func (c *cell) lateNote(stopped bool) string {
+func (c *cell) answerMarks(before int) []string {
+	var out []string
+	for _, a := range c.answers {
+		if a.mark < before {
+			out = append(out, c.marks[a.mark])
+		}
+	}
+	return out
+}
+
+func (c *cell) saveAnswers() {
+	for _, a := range c.answers {
+		path, err := c.env.spill(a.text)
+		if err != nil {
+			c.marks[a.mark] += " → answer not saved: " + err.Error()
+			continue
+		}
+		c.marks[a.mark] += " → answer saved to " + path
+	}
+}
+
+func (c *cell) lateNote(end cellEnd) string {
 	if c.late == 0 {
 		return ""
 	}
-	waited := " and " + pluralVerb(c.late) + " waited for"
-	if stopped {
-		waited = ""
-	}
-	note := fmt.Sprintf("Note: %s %s still running when the code finished%s; await every call you start.", plural(c.late, "call"), pluralVerb(c.late), waited)
+	note := c.lateHead(end)
 	if len(c.lateFails) == 0 {
 		return note
 	}
 	return note + " Failed:\n" + strings.Join(c.lateFails, "\n")
+}
+
+func (c *cell) lateHead(end cellEnd) string {
+	running := fmt.Sprintf("%s %s still running", plural(c.late, "call"), pluralVerb(c.late))
+	if end.err != nil {
+		if end.lateStop {
+			return fmt.Sprintf("Note: the code failed while %s.", running)
+		}
+		return fmt.Sprintf("Note: the code failed while %s; %s waited for.", running, pronounWas(c.late))
+	}
+	waited := " and " + pluralVerb(c.late) + " waited for"
+	if end.lateStop {
+		waited = ""
+	}
+	return fmt.Sprintf("Note: %s when the code finished%s; await every call you start.", running, waited)
+}
+
+func pronounWas(n int) string {
+	if n == 1 {
+		return "it was"
+	}
+	return "they were"
 }
 
 func (c *cell) failedNote() string {

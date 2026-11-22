@@ -3,10 +3,12 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image/color"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -565,6 +567,45 @@ func TestCellSubagents(t *testing.T) {
 	k.want(`let n = 0; try { for (; n < 25; n++) await subagent("q" + n) } catch (e) { return n + " " + e.message }`, "20 too many subagent calls in one run call (limit 20)")
 }
 
+func TestCellFailureSavesSubagentAnswers(t *testing.T) {
+	k := newCellKit(t, Subagent("m", nil, nil))
+	k.env.Subagent = func(ctx context.Context, task SubagentTask, progress func(string)) (string, error) {
+		switch task.Prompt {
+		case "fail":
+			time.Sleep(50 * time.Millisecond)
+			return "", errors.New("api error 402")
+		case "slow":
+			time.Sleep(300 * time.Millisecond)
+		}
+		return "report for " + task.Prompt, nil
+	}
+	res := k.wantErr(`await Promise.all([subagent("quick"), subagent("slow"), subagent("fail")])`, "ToolError: subagent failed: api error 402", "Note: the code failed while 1 call was still running; it was waited for.")
+	if strings.Contains(res.Text, "await every call") {
+		t.Errorf("failed cell blames unawaited calls: %q", res.Text)
+	}
+	for _, name := range []string{"quick", "slow"} {
+		m := regexp.MustCompile(`✓ subagent m/default ` + name + ` → answer saved to (\S+)`).FindStringSubmatch(res.Text)
+		if m == nil {
+			t.Fatalf("%s: no saved answer in %q", name, res.Text)
+		}
+		if data, err := os.ReadFile(m[1]); err != nil || string(data) != "report for "+name {
+			t.Errorf("%s: saved %q, %v", name, data, err)
+		}
+	}
+	k.wantErr(`await subagent("first"); for (let i = 0; i < 35; i++) await tick(); null.x`, "(last 30 of 36):\n✓ subagent m/default first → answer saved to ")
+	if res = k.cellCtx(context.Background(), `await subagent("quick"); while (true) {}`, 1); !strings.Contains(res.Text, "timed out after 1s") || !strings.Contains(res.Text, "✓ subagent m/default quick → answer saved to ") {
+		t.Errorf("timeout: %q", res.Text)
+	}
+	k.env.SpillDir = t.TempDir()
+	if res = k.cell(`const r = await Promise.allSettled([subagent("quick"), subagent("fail")]); r.map(x => x.status).join(" ")`); res.IsError || !strings.HasPrefix(res.Text, "fulfilled rejected\n") {
+		t.Errorf("allSettled: %+v", res)
+	}
+	k.want(`(await Promise.all([subagent("a"), subagent("b")])).join(", ")`, "report for a, report for b")
+	if files, _ := os.ReadDir(k.env.SpillDir); len(files) != 0 {
+		t.Errorf("a successful cell saved %d answers", len(files))
+	}
+}
+
 func TestSubagentLabelDefaults(t *testing.T) {
 	menu := []config.SubagentModel{{Name: "fast", Model: "m-fast"}}
 	sub := Subagent("main", menu, []string{"low"})
@@ -735,12 +776,12 @@ func TestCellRedeclaredFunctions(t *testing.T) {
 func TestCellErrorKeptWhenWaitStops(t *testing.T) {
 	k := newCellKit(t)
 	res := k.cellCtx(context.Background(), `await Promise.all([bash("sleep 100", {timeout: 600}), read("nope")])`, 1)
-	for _, want := range []string{"ToolError: stat ", "Calls that completed:\n✗ read nope\nNote: 1 call was still running when the code finished; await every call you start. Failed:\nbash sleep 100: ", "Note: waiting for the calls still running stopped: timed out after 1s"} {
+	for _, want := range []string{"ToolError: stat ", "Calls that completed:\n✗ read nope\nNote: the code failed while 1 call was still running. Failed:\nbash sleep 100: ", "Note: waiting for the calls still running stopped: timed out after 1s"} {
 		if !res.IsError || !strings.Contains(res.Text, want) {
 			t.Errorf("timeout: %q lacks %q", res.Text, want)
 		}
 	}
-	if !strings.HasPrefix(res.Text, "ToolError: stat ") || strings.Contains(res.Text, "waited for") || strings.Contains(res.Text, "✗ bash") {
+	if !strings.HasPrefix(res.Text, "ToolError: stat ") || strings.Contains(res.Text, "waited for") || strings.Contains(res.Text, "await every call") || strings.Contains(res.Text, "✗ bash") {
 		t.Errorf("timeout: %q", res.Text)
 	}
 	ctx, cancel := context.WithCancel(context.Background())

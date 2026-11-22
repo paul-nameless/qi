@@ -42,6 +42,11 @@ type outcome struct {
 	record llm.InnerCall
 }
 
+type answer struct {
+	mark int
+	text string
+}
+
 type cellEnd struct {
 	value    jsvm.Value
 	err      error
@@ -76,6 +81,7 @@ type cell struct {
 	subagents int
 	records   []llm.InnerCall
 	marks     []string
+	answers   []answer
 	images    []llm.Block
 	lostImgs  int
 	extras    []string
@@ -423,6 +429,7 @@ func (c *cell) record(o outcome, p *pendingCall) {
 	}
 	if !rejects(o.res) {
 		c.marks = append(c.marks, mark+o.label)
+		c.keepAnswer(o)
 		return
 	}
 	line := o.label + ": " + OneLine(o.res.Text, 200)
@@ -432,6 +439,12 @@ func (c *cell) record(o outcome, p *pendingCall) {
 	}
 	c.marks = append(c.marks, mark+o.label)
 	c.fails = append(c.fails, mark+line)
+}
+
+func (c *cell) keepAnswer(o outcome) {
+	if o.record.Tool == "subagent" && !o.res.IsError {
+		c.answers = append(c.answers, answer{mark: len(c.marks) - 1, text: o.res.Text})
+	}
 }
 
 func rejects(res Result) bool {
