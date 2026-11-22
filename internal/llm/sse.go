@@ -63,6 +63,10 @@ type APIError struct {
 	retryAfter time.Duration
 }
 
+func (e *APIError) throttled() bool {
+	return e.Status == http.StatusTooManyRequests || (e.Status == http.StatusPaymentRequired && e.retryAfter > 0)
+}
+
 func (e *APIError) Error() string {
 	body := strings.TrimSpace(e.Body)
 	if len(body) > 600 {

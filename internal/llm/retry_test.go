@@ -25,6 +25,8 @@ func TestRetryableClassification(t *testing.T) {
 	}{
 		{"400", &APIError{Status: 400}, false},
 		{"429", &APIError{Status: 429}, true},
+		{"402 out of credits", &APIError{Status: 402}, false},
+		{"402 with retry-after", &APIError{Status: 402, retryAfter: time.Minute}, true},
 		{"503", &APIError{Status: 503}, true},
 		{"cancelled", post(context.Canceled), false},
 		{"deadline", post(context.DeadlineExceeded), false},
@@ -103,6 +105,11 @@ func TestRequestAttempts(t *testing.T) {
 		{"server error", 503, nil, 4, []time.Duration{time.Second, 2 * time.Second, 3 * time.Second}},
 		{"retry-after", 429, map[string]string{"Retry-After": "30"}, 4, []time.Duration{30 * time.Second, 30 * time.Second, 30 * time.Second}},
 		{"bad request", 400, nil, 1, nil},
+		{"out of credits", 402, nil, 1, nil},
+		{"in-flight budget", 402, map[string]string{"Retry-After": "120"}, 4, []time.Duration{120 * time.Second, 120 * time.Second, 120 * time.Second}},
+		{"retry-after past the cap", 402, map[string]string{"Retry-After": "300"}, 1, nil},
+		{"retry-after zero", 402, map[string]string{"Retry-After": "0"}, 1, nil},
+		{"retry-after date", 402, map[string]string{"Retry-After": "Wed, 21 Oct 2026 07:28:00 GMT"}, 1, nil},
 	}
 	for _, c := range cases {
 		slept := fakeSleep(t)
