@@ -46,15 +46,19 @@ type Exception struct {
 }
 
 func (e *Exception) Error() string {
-	if e.Stack != "" && strings.HasPrefix(e.Stack, e.Name) {
-		return e.Stack
-	}
 	head := e.Message
 	if e.Name != "" {
 		head = e.Name + ": " + e.Message
 	}
-	if e.Stack != "" {
-		return head + "\n" + e.Stack
+	frames := e.Stack
+	if !strings.HasPrefix(frames, "    at ") {
+		frames = ""
+		if i := strings.Index(e.Stack, "\n    at "); i >= 0 {
+			frames = e.Stack[i+1:]
+		}
+	}
+	if frames != "" {
+		return head + "\n" + frames
 	}
 	return head
 }
@@ -119,12 +123,26 @@ func (vm *VM) makeError(kind, msg string) *object {
 	return o
 }
 
-func (vm *VM) attachStack(o *object, name, msg string) {
-	head := name
-	if msg != "" {
-		head = name + ": " + msg
+func (vm *VM) namedError(name, msg string) *object {
+	o := vm.makeError(name, msg)
+	if vm.errorProtos[name] == nil && name != "Error" {
+		o.defineHidden("name", strV(name))
+		if ed, ok := o.inner.(*errorData); ok {
+			ed.head = errorHead(name, msg)
+		}
 	}
-	ed := &errorData{head: head}
+	return o
+}
+
+func errorHead(name, msg string) string {
+	if msg == "" {
+		return name
+	}
+	return name + ": " + msg
+}
+
+func (vm *VM) attachStack(o *object, name, msg string) {
+	ed := &errorData{head: errorHead(name, msg)}
 	for f := vm.top; f != nil && len(ed.frames) < 50; f = f.parent {
 		if f.code != nil && f.code.src != nil {
 			ed.frames = append(ed.frames, stackFrame{f.code, f.pos})
@@ -180,9 +198,20 @@ func (vm *VM) protectAll(fn func()) {
 	defer func() {
 		if r := recover(); r != nil {
 			vm.restore(st)
+			if vm.top != nil && isUnwind(r) {
+				panic(r)
+			}
 		}
 	}()
 	fn()
+}
+
+func isUnwind(r any) bool {
+	switch r.(type) {
+	case *interruptSignal, killSignal:
+		return true
+	}
+	return false
 }
 
 func (vm *VM) syntaxException(src *source, se *syntaxErr) *Exception {

@@ -2,8 +2,6 @@ package jsvm
 
 import (
 	"math"
-	"math/big"
-	"math/bits"
 	"strconv"
 	"strings"
 )
@@ -166,22 +164,7 @@ func parseIntRadix(s string, radix int) float64 {
 		return parseIntDigits(s, 10, false)
 	}
 	if radix&(radix-1) == 0 {
-		if n*bits.Len(uint(radix-1)) <= 53 {
-			return parseIntDigits(s, radix, false)
-		}
-		s = strings.TrimLeft(s, "0")
-		if s == "" {
-			return 0
-		}
-		if len(s) > 1100 {
-			return math.Inf(1)
-		}
-		b, ok := new(big.Int).SetString(s, radix)
-		if !ok {
-			return math.NaN()
-		}
-		f, _ := new(big.Float).SetInt(b).Float64()
-		return f
+		return parseIntDigits(s, radix, false)
 	}
 	const maxMultiplier = 0xFFFFFFFF / 36
 	number := 0.0

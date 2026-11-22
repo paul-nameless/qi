@@ -155,3 +155,68 @@ func TestCallArgsNotRetained(t *testing.T) {
 	}
 	runtime.KeepAlive(vm)
 }
+
+func TestInterruptInsideToString(t *testing.T) {
+	for _, src := range []string{
+		"throw {toString() { for (;;) {} }}",
+		"try { [].map({toString() { for (;;) {} }}) } catch (e) { 'caught' }",
+	} {
+		vm := New(Options{})
+		timer := time.AfterFunc(30*time.Millisecond, vm.Interrupt)
+		_, err := vm.RunCell("cell.js", src)
+		timer.Stop()
+		if err != ErrInterrupted {
+			t.Errorf("%s: got %v, want ErrInterrupted", src, err)
+		}
+		vm.ClearInterrupt()
+		if v, err := vm.RunCell("cell.js", "1 + 1"); err != nil || ToString(v) != "2" {
+			t.Errorf("after interrupt: %v %v", ToString(v), err)
+		}
+	}
+}
+
+func TestShapeTreeReleased(t *testing.T) {
+	vm := New(Options{})
+	vm.RunCell("cell.js", "1")
+	runtime.GC()
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	v, err := vm.RunCell("cell.js", "let n = 0; for (let r = 0; r < 2000; r++) { const idx = {}; for (let c = 0; c < 30; c++) idx['id' + r + '_' + c] = c; n += Object.keys(JSON.parse(JSON.stringify(idx))).length } n")
+	if err != nil || ToString(v) != "60000" {
+		t.Fatal(ToString(v), err)
+	}
+	runtime.GC()
+	runtime.GC()
+	runtime.ReadMemStats(&after)
+	runtime.KeepAlive(vm)
+	if grow := int64(after.HeapAlloc) - int64(before.HeapAlloc); grow > 8<<20 {
+		t.Errorf("heap grew by %d MB: shapes of dead objects retained", grow>>20)
+	}
+	v, err = vm.RunCell("cell.js", "const a = {x: 1, y: 2}, b = {x: 3, y: 4}; const g = o => o.y; [g(a), g(b), Object.keys(JSON.parse('{\"x\":1,\"y\":2}')).join()].join()")
+	if err != nil || ToString(v) != "2,4,x,y" {
+		t.Error(ToString(v), err)
+	}
+}
+
+func TestMicrotaskFloodHitsLimit(t *testing.T) {
+	vm := New(Options{MemoryLimit: 256 << 20})
+	_, err := vm.RunCell("cell.js", "const f = () => {}; while (true) queueMicrotask(f)")
+	if errName(err) != "RangeError" {
+		t.Errorf("want RangeError, got %v", err)
+	}
+	vm.AbandonPending()
+}
+
+func TestNamedErrorStacks(t *testing.T) {
+	vm := New(Options{})
+	if s := vm.Exception(vm.NewError("TypeError", "x")).Error(); s != "TypeError: x" {
+		t.Errorf("NewError: %q", s)
+	}
+	if s := vm.Exception(vm.NewError("ToolError", "boom")).Error(); s != "ToolError: boom" {
+		t.Errorf("NewError custom: %q", s)
+	}
+	_, err := vm.RunCell("cell.js", "const e = new Error('m'); e.name = 'ValidationError'; throw e")
+	if err == nil || err.Error() != "ValidationError: m\n    at cell.js:1:11" {
+		t.Errorf("renamed error: %q", err)
+	}
+}

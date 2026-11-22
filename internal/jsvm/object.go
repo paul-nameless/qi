@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"weak"
 )
 
 type objClass uint8
@@ -72,7 +73,8 @@ type hclass struct {
 	proto   *object
 	props   []shapeProp
 	table   []int32
-	trans   map[transKey]*hclass
+	trans   map[transKey]weak.Pointer[hclass]
+	pruned  int
 	lastKey transKey
 	last    *hclass
 	dict    bool
@@ -170,9 +172,11 @@ func (s *hclass) withProp(k propKey, flags propFlag) *hclass {
 	if s.last != nil && s.lastKey == tk {
 		return s.last
 	}
-	if c, ok := s.trans[tk]; ok {
-		s.lastKey, s.last = tk, c
-		return c
+	if w, ok := s.trans[tk]; ok {
+		if c := w.Value(); c != nil {
+			s.lastKey, s.last = tk, c
+			return c
+		}
 	}
 	n := len(s.props)
 	props := make([]shapeProp, n+1)
@@ -185,11 +189,23 @@ func (s *hclass) withProp(k propKey, flags propFlag) *hclass {
 		c.table = buildTable(props)
 	}
 	if s.trans == nil {
-		s.trans = make(map[transKey]*hclass, 1)
+		s.trans = make(map[transKey]weak.Pointer[hclass], 1)
 	}
-	s.trans[tk] = c
+	if len(s.trans) >= 2*s.pruned+16 {
+		s.pruneTrans()
+	}
+	s.trans[tk] = weak.Make(c)
 	s.lastKey, s.last = tk, c
 	return c
+}
+
+func (s *hclass) pruneTrans() {
+	for k, w := range s.trans {
+		if w.Value() == nil {
+			delete(s.trans, k)
+		}
+	}
+	s.pruned = len(s.trans)
 }
 
 func (s *hclass) toDict() *hclass {

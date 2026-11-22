@@ -282,9 +282,7 @@ func (vm *VM) asThrow(r any) (*jsThrow, bool) {
 	case *jsThrow:
 		return t, true
 	case runtime.Error:
-		o := vm.makeError("Error", "internal error: "+t.Error())
-		o.defineHidden("name", strV("InternalError"))
-		return &jsThrow{objV(o)}, true
+		return &jsThrow{objV(vm.namedError("InternalError", "internal error: "+t.Error()))}, true
 	}
 	return nil, false
 }
@@ -430,7 +428,10 @@ type job struct {
 	rej bool
 }
 
-func (vm *VM) enqueue(j job) { vm.jobs = append(vm.jobs, j) }
+func (vm *VM) enqueue(j job) {
+	vm.track(64)
+	vm.jobs = append(vm.jobs, j)
+}
 
 func (vm *VM) runJobs() {
 	for vm.jobHead < len(vm.jobs) {

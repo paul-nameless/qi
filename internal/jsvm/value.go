@@ -2,7 +2,10 @@ package jsvm
 
 import (
 	"math"
+	"math/big"
+	"math/bits"
 	"strconv"
+	"strings"
 )
 
 type Value struct {
@@ -355,6 +358,22 @@ func parseIntDigits(s string, base int, strict bool) float64 {
 			return g
 		}
 	}
+	if f >= 1<<53 && base&(base-1) == 0 {
+		return exactPow2(s[:n], base)
+	}
+	return f
+}
+
+func exactPow2(s string, base int) float64 {
+	s = strings.TrimLeft(s, "0")
+	if len(s)*bits.Len(uint(base-1)) > 1100 {
+		return math.Inf(1)
+	}
+	b, ok := new(big.Int).SetString(s, base)
+	if !ok {
+		return math.NaN()
+	}
+	f, _ := new(big.Float).SetInt(b).Float64()
 	return f
 }
 

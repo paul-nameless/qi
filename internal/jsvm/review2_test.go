@@ -199,11 +199,18 @@ func TestRev4Round1(t *testing.T) {
 		"const seen = []; JSON.stringify([1, , 3], (k, v) => { seen.push(typeof v); return v }); return seen.join()":                      "object,number,undefined,number",
 		"return JSON.stringify([1, , 3], (k, v) => v)":                                                                                    "[1,null,3]",
 		"const a = [1, 2, 3]; const [x = a.pop(), y, z = 9] = [undefined, ...a].slice(0, 2).concat([undefined]); return [x, y, z].join()": "3,1,9",
-		"const a = [undefined, 2, 3]; const [x = (a[1] = 7), y] = a; return [x, y].join()":                                                "7,2",
-		"const a = [undefined, 2]; const [x = a.length = 0, y] = a; return String(y)":                                                     "2",
+		"const a = [undefined, 2, 3]; const [x = (a[1] = 7), y] = a; return [x, y].join()":                                                "7,7",
+		"const a = [undefined, 2]; const [x = a.length = 0, y] = a; return String(y)":                                                     "undefined",
+		"const a = [undefined]; const [x = a.push(9), y] = a; return [x, y].join()":                                                       "2,9",
+		"const a = [undefined, 2]; const [x = a.pop(), y] = a; return [x, String(y)].join()":                                              "2,undefined",
+		"const a = []; const [x = a.push(1, 2), y] = a; return [x, String(y)].join()":                                                     "2,undefined",
+		"const a = [undefined, 1]; const [x = a.push(5), ...r] = a; return r.join()":                                                      "1,5",
 		"const [p, , q, ...r] = [1, , 3, 4, , 6]; return [p, q, r.length, r[1]].join()":                                                   "1,3,3,",
-		"return parseInt('g0000000002v', 32) === 576460752303423616":                                                                      "true",
-		"return parseInt('1fffffffffffff1', 16) === 0x1fffffffffffff1":                                                                    "true",
+		"const a = [1, 2, 3, 4]; return a.slice({valueOf() { a.splice(0); return 3 }}).length":                                            "0",
+		"return Promise.race(5).then(() => 'ok', e => e.name)":                                                                            "TypeError",
+		"return [0x200000000000011 === 144115188075855904, Number('0x200000000000011') === 144115188075855904, 0b100000000000000000000000000000000000000000000000000011 === 9007199254740996].join()": "true,true,true",
+		"return parseInt('g0000000002v', 32) === 576460752303423616":   "true",
+		"return parseInt('1fffffffffffff1', 16) === 0x1fffffffffffff1": "true",
 	}
 	for src, want := range cases {
 		s := newSession(t)

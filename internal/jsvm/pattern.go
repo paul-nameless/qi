@@ -67,46 +67,47 @@ func (c *compiler) arrayPatternWith(t *arrayPattern, ids identStore) func(f *fra
 			elems[i] = el{false, c.patternWith(x, ids)}
 		}
 	}
-	hasRest := false
-	for _, e := range elems {
-		hasRest = hasRest || e.rest
-	}
 	p := int32(t.pos)
 	return func(f *frame, v Value) {
 		vm := f.vm
+		var arr *object
 		var vals []Value
 		if o, ok := v.r.(*object); ok && o.class == classArray {
-			n := len(o.arr)
-			if !hasRest && n > len(elems) {
-				n = len(elems)
-			}
-			vals = make([]Value, n)
-			for i := range vals {
-				vals[i] = unhole(o.arr[i])
-			}
+			arr = o
 		} else {
 			f.pos = p
 			vals = vm.collect(v)
 		}
+		done := false
 		for i, e := range elems {
-			if e.assign == nil {
-				continue
-			}
 			if e.rest {
-				var rest []Value
-				if i < len(vals) {
-					rest = append([]Value(nil), vals[i:]...)
-				} else {
-					rest = []Value{}
+				rest := []Value{}
+				if arr != nil {
+					if !done && i < len(arr.arr) {
+						rest = make([]Value, len(arr.arr)-i)
+						for j := range rest {
+							rest[j] = unhole(arr.arr[i+j])
+						}
+					}
+				} else if i < len(vals) {
+					rest = append(rest, vals[i:]...)
 				}
 				e.assign(f, vm.newArrayV(rest))
 				continue
 			}
 			x := undefined
-			if i < len(vals) {
+			if arr != nil {
+				if done || i >= len(arr.arr) {
+					done = true
+				} else {
+					x = unhole(arr.arr[i])
+				}
+			} else if i < len(vals) {
 				x = vals[i]
 			}
-			e.assign(f, x)
+			if e.assign != nil {
+				e.assign(f, x)
+			}
 		}
 	}
 }

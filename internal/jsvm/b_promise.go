@@ -89,7 +89,11 @@ func (vm *VM) setupPromise() {
 	})
 	vm.method(ctor, "race", 1, func(vm *VM, this Value, args []Value) Value {
 		out := vm.newPromise()
-		items := append([]Value(nil), vm.collect(arg(args, 0))...)
+		var items []Value
+		if exc := vm.protect(func() { items = append([]Value(nil), vm.collect(arg(args, 0))...) }); exc != nil {
+			vm.rejectPromise(out, exc.v)
+			return objV(out)
+		}
 		for _, it := range items {
 			pr := vm.promiseResolve(it)
 			vm.addReaction(pr, &reaction{native: func(v Value, rej bool) {

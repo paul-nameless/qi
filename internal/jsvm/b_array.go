@@ -131,9 +131,7 @@ func (vm *VM) setupArray() {
 		n := len(a.arr)
 		s, e := relIndex(arg(args, 0), vm, n, 0), relIndex(arg(args, 1), vm, n, n)
 		e = min(e, len(a.arr))
-		if e < s {
-			e = s
-		}
+		s = min(s, e)
 		vm.reserveValues(e - s)
 		return vm.holey(append([]Value(nil), a.arr[s:e]...), a.holes)
 	})

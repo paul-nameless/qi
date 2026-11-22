@@ -48,7 +48,14 @@ func (vm *VM) guard(fn func()) (err error) {
 		}
 		switch t := r.(type) {
 		case *jsThrow:
+			if vm.intr.Load() != 0 {
+				err = ErrInterrupted
+				return
+			}
 			err = vm.exceptionFrom(t.v)
+			if vm.intr.Load() != 0 {
+				err = ErrInterrupted
+			}
 		case *interruptSignal:
 			err = ErrInterrupted
 		case killSignal:
@@ -183,14 +190,8 @@ func (vm *VM) IsPromise(v Value) bool { return promiseOf(v) != nil }
 func (vm *VM) Exception(v Value) *Exception { return vm.exceptionFrom(v) }
 
 func (vm *VM) NewError(name, msg string) Value {
-	o := vm.makeError("Error", validUTF8(msg))
-	if name != "Error" {
-		if p := vm.errorProtos[name]; p != nil {
-			o.setProto(p)
-		} else {
-			o.defineHidden("name", strV(name))
-		}
-	}
+	msg = validUTF8(msg)
+	o := vm.namedError(name, msg)
 	return objV(o)
 }
 
