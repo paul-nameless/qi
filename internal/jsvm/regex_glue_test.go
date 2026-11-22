@@ -44,8 +44,11 @@ func TestHostStringsSanitized(t *testing.T) {
 		t.Errorf("JSONParse length %s", got)
 	}
 	big := strings.Repeat("valid ascii ", 1<<16)
-	if s := validUTF8(big); s != big || &[]byte(s)[0] == nil {
+	if s := validUTF8(big); s != big {
 		t.Error("valid input changed")
+	}
+	if n := testing.AllocsPerRun(10, func() { _ = validUTF8(big) }); n != 0 {
+		t.Errorf("valid input copied: %v allocs", n)
 	}
 	if _, err := vm.RunCell("cell.js", "'\xff'.length"); err != nil {
 		t.Errorf("invalid source byte: %v", err)

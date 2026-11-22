@@ -128,21 +128,6 @@ func negateRanges(rs []rune, max rune) []rune {
 	return out
 }
 
-func clipRanges(rs []rune, max rune) []rune {
-	out := make([]rune, 0, len(rs))
-	for i := 0; i < len(rs); i += 2 {
-		if rs[i] > max {
-			continue
-		}
-		hi := rs[i+1]
-		if hi > max {
-			hi = max
-		}
-		out = append(out, rs[i], hi)
-	}
-	return out
-}
-
 func tableRanges(t *unicode.RangeTable) []rune {
 	var out []rune
 	for _, r := range t.R16 {

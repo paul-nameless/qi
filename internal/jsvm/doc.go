@@ -21,12 +21,16 @@
 // A VM is used from one goroutine at a time. Host functions registered with
 // SetFunc run synchronously; asynchronous host work returns a promise from
 // NewPromise and settles it later from the embedder's goroutine, followed by
-// RunJobs. Interrupt may be called from any goroutine: the running cell fails
-// with ErrInterrupted, which JavaScript cannot catch, and the VM stays usable
-// after ClearInterrupt. An interrupted RunCell or RunJobs also unwinds the
-// async functions of the most recent cell that are still suspended in await,
-// so they never resume; queued jobs stay queued. Uncaught JavaScript errors are returned as *Exception
-// with name, message, a V8-style stack ("    at fn (cell.js:LINE:COL)") and
+// RunJobs. Call RunJobs after every RunCell, including one that returned an
+// error: promise jobs a cell queued before it threw stay queued (as microtasks
+// do in a REPL) and run on the next RunJobs; AbandonPending drops them instead.
+// Interrupt may be called from any goroutine: the running cell fails with
+// ErrInterrupted, which JavaScript cannot catch, also when it lands inside a
+// host function's nested Call, CallValue or JSONStringify, and the VM stays
+// usable after ClearInterrupt. An interrupted RunCell or RunJobs also unwinds
+// the async functions of the most recent cell that are still suspended in
+// await, so they never resume; queued jobs stay queued. Uncaught JavaScript
+// errors are returned as *Exception with name, message, a V8-style stack ("    at fn (cell.js:LINE:COL)") and
 // the line and column of the innermost frame; syntax errors carry the line and
 // column of the offending token. Async functions run on coroutines
 // (iter.Pull), each with its own value stack; AbandonPending and Close unwind

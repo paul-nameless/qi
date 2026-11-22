@@ -258,12 +258,7 @@ func (vm *VM) newArray(vals []Value) *object {
 
 func (vm *VM) newArrayV(vals []Value) Value { return objV(vm.newArray(vals)) }
 
-func (o *object) isCallable() bool {
-	if o.class != classFunction {
-		return false
-	}
-	return true
-}
+func (o *object) isCallable() bool { return o.class == classFunction }
 
 func (o *object) getOwnSlot(k propKey) (int, propFlag) {
 	i := o.shape.lookup(k)

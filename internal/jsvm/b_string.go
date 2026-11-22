@@ -442,17 +442,6 @@ func digitRun(s string) int {
 	return i
 }
 
-func nonDigitRun(s string) int {
-	i := 0
-	for i < len(s) && (s[i] < '0' || s[i] > '9') {
-		i++
-	}
-	if i == 0 {
-		return 1
-	}
-	return i
-}
-
 func localeCompare(a, b string) int {
 	if a == b {
 		return 0

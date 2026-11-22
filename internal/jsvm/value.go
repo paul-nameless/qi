@@ -63,7 +63,6 @@ func strV(s string) Value         { return Value{r: newString(s)} }
 func objV(o *object) Value        { return Value{r: o} }
 func strVal(s *jstr) Value        { return Value{r: s} }
 func intV(i int) Value            { return Value{n: float64(i)} }
-func (v Value) isNum() bool       { return v.r == nil }
 func (v Value) isUndef() bool     { _, ok := v.r.(undefT); return ok }
 func (v Value) isNull() bool      { _, ok := v.r.(nullT); return ok }
 func (v Value) IsUndefined() bool { return v.isUndef() }

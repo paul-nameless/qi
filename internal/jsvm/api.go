@@ -130,6 +130,9 @@ func (vm *VM) SetFunc(name string, fn HostFunc) {
 		cp := append([]Value(nil), args...)
 		v, err := fn(vm, cp)
 		if err != nil {
+			if errors.Is(err, ErrInterrupted) || vm.intr.Load() != 0 {
+				panic(&interruptSignal{})
+			}
 			var ex *Exception
 			if errors.As(err, &ex) && ex.Value.r != nil {
 				vm.throw(ex.Value)

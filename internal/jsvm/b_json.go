@@ -451,7 +451,6 @@ type jsonWriter struct {
 	vm       *VM
 	b        []byte
 	indent   string
-	prefix   string
 	replacer *object
 	allow    map[string]bool
 	allowL   []propKey

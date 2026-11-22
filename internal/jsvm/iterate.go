@@ -182,7 +182,6 @@ type iterState struct {
 	s     string
 	isSet bool
 	done  bool
-	src   Value
 	fn    func() (Value, bool)
 }
 

@@ -443,15 +443,6 @@ func (s *jstr) byteOf(units int) int {
 	return b
 }
 
-func unitsEqual(a, b []uint16) bool {
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
 func isASCIIString(s string) bool {
 	for i := 0; i < len(s); i++ {
 		if s[i] >= 0x80 {

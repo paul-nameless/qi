@@ -32,14 +32,13 @@ type ref struct {
 }
 
 type scope struct {
-	vars    map[string]*binding
-	order   []*binding
-	parent  *scope
-	fn      *funcScope
-	funcs   []*funcNode
-	isFunc  bool
-	capture bool
-	params  *scope
+	vars   map[string]*binding
+	order  []*binding
+	parent *scope
+	fn     *funcScope
+	funcs  []*funcNode
+	isFunc bool
+	params *scope
 }
 
 type funcScope struct {

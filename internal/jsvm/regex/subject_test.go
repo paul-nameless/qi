@@ -123,7 +123,7 @@ func TestBackrefCharged(t *testing.T) {
 func TestBackrefNotOvercharged(t *testing.T) {
 	var b strings.Builder
 	for i := 0; b.Len() < 20000; i++ {
-		b.WriteString(fmt.Sprintf("%x-", i*7919))
+		fmt.Fprintf(&b, "%x-", i*7919)
 	}
 	line := b.String()
 	for _, p := range []string{`^(.+)\1`, `^(.+?)\1+$`} {

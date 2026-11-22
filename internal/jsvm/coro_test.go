@@ -220,3 +220,51 @@ func TestNamedErrorStacks(t *testing.T) {
 		t.Errorf("renamed error: %q", err)
 	}
 }
+
+func TestInterruptInNestedHostCall(t *testing.T) {
+	nested := map[string]func(vm *VM, args []Value) (Value, error){
+		"CallValue": func(vm *VM, args []Value) (Value, error) { return vm.CallValue(args[0], Undefined()) },
+		"Call":      func(vm *VM, args []Value) (Value, error) { return vm.Call("spin") },
+		"JSONStringify": func(vm *VM, args []Value) (Value, error) {
+			s, err := vm.JSONStringify(args[1])
+			return Str(s), err
+		},
+	}
+	for name, fn := range nested {
+		vm := New(Options{})
+		vm.SetFunc("nested", fn)
+		timer := time.AfterFunc(30*time.Millisecond, vm.Interrupt)
+		v, err := vm.RunCell("cell.js", "globalThis.spin = () => { for (;;) {} }; let r = 'none'; try { nested(spin, {toJSON() { for (;;) {} }}) } catch (e) { r = 'caught ' + e.message } r")
+		timer.Stop()
+		if err != ErrInterrupted {
+			t.Errorf("%s: got %q %v, want ErrInterrupted", name, ToString(v), err)
+		}
+		vm.ClearInterrupt()
+		if v, err := vm.RunCell("cell.js", "1 + 1"); err != nil || ToString(v) != "2" {
+			t.Errorf("%s: after interrupt: %v %v", name, ToString(v), err)
+		}
+	}
+}
+
+func TestJobsQueuedBeforeThrowStayQueued(t *testing.T) {
+	vm := New(Options{})
+	_, err := vm.RunCell("cell.js", "globalThis.ran = 0; Promise.resolve().then(() => { ran = 1 }); (async () => { await null; ran += 10 })(); throw new Error('boom')")
+	if errName(err) != "Error" {
+		t.Fatalf("want Error, got %v", err)
+	}
+	if n := vm.PendingJobs(); n != 2 {
+		t.Fatalf("pending jobs after failed cell: %d, want 2", n)
+	}
+	if err := vm.RunJobs(); err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := vm.RunCell("cell.js", "ran"); ToString(v) != "11" {
+		t.Errorf("ran = %s, want 11", ToString(v))
+	}
+	vm.RunCell("cell.js", "Promise.resolve().then(() => { ran = 99 }); throw 1")
+	vm.AbandonPending()
+	vm.RunJobs()
+	if v, _ := vm.RunCell("cell.js", "ran"); ToString(v) != "11" {
+		t.Errorf("after AbandonPending ran = %s, want 11", ToString(v))
+	}
+}
