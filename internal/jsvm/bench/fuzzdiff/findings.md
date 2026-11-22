@@ -3,6 +3,7 @@
 500,000 generated programs (25 seeds, three phases) on goja, modernc quickjs and jsvm. goja and quickjs agree on 466,773 (93.4%). jsvm crashes, hangs, internal errors: 0.
 
 ## jsvm bugs
+All seven are fixed as of commit 6356826; a fresh seed (31, 20,000 programs) shows 0 mismatches and 143 intended deviations.
 1. `new Date(0).getTimezoneOffset()` returns `-0` instead of `0` (18,707 hits).
 2. `Object.getOwnPropertyNames("ab")` gives `["0","1"]`, expected `["0","1","length"]` (1,921 hits).
 3. `"a,b,c".split(/,/y)` gives `["a,b,c"]`, expected `["a","b","c"]`; `"aab abc".split(new RegExp("[ab]+","y"))` gives `[""," abc"]`, expected `[""," ","c"]`. Split must build its own sticky splitter and try every position (2,085 hits).
