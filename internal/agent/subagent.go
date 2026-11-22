@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -18,12 +19,16 @@ import (
 	"github.com/paul-nameless/qi/internal/llm"
 	"github.com/paul-nameless/qi/internal/proc"
 	"github.com/paul-nameless/qi/internal/session"
+	"github.com/paul-nameless/qi/internal/strutil"
 	"github.com/paul-nameless/qi/internal/tools"
 )
 
 const (
 	subagentGrace    = 5 * time.Second
 	ParentSessionEnv = "QI_PARENT_SESSION"
+	fatalPrefix      = "qi: "
+	maxCause         = 500
+	maxFatalBytes    = 4 << 10
 )
 
 type SubagentRunner struct {
@@ -86,7 +91,7 @@ func (r *SubagentRunner) Run(parent context.Context, task tools.SubagentTask, pr
 		return "", err
 	}
 	stdout, out := io.Pipe()
-	stderr := &lineTail{max: 20}
+	stderr := &lineTail{}
 	cmd.Stdout, cmd.Stderr = out, stderr
 	if err := cmd.Start(); err != nil {
 		return "", err
@@ -100,7 +105,7 @@ func (r *SubagentRunner) Run(parent context.Context, task tools.SubagentTask, pr
 	case ctx.Err() != nil:
 		return "", ctx.Err()
 	case waitErr != nil && !errors.Is(waitErr, exec.ErrWaitDelay):
-		return "", fmt.Errorf("%w\n%s", waitErr, stderr.String())
+		return "", childError(waitErr, stderr.cause())
 	case res.err != nil:
 		return "", fmt.Errorf("read subagent output: %w", res.err)
 	case res.answer == "":
@@ -154,10 +159,18 @@ func (r *SubagentRunner) readEntries(rd io.Reader, progress func(string)) entrie
 	return entriesResult{answer, err}
 }
 
+func childError(waitErr error, cause string) error {
+	if cause == "" {
+		return waitErr
+	}
+	return fmt.Errorf("%w: %s", waitErr, cause)
+}
+
 type lineTail struct {
 	mu      sync.Mutex
-	max     int
-	lines   []string
+	last    string
+	fatal   []string
+	size    int
 	partial []byte
 }
 
@@ -183,18 +196,27 @@ func (t *lineTail) add(line string) {
 	if line = strings.TrimSpace(line); line == "" {
 		return
 	}
-	t.lines = append(t.lines, line)
-	if len(t.lines) > t.max {
-		t.lines = t.lines[1:]
+	t.last = line
+	switch {
+	case strings.HasPrefix(line, fatalPrefix):
+		t.fatal, t.size = []string{line}, len(line)
+	case t.fatal != nil && t.size < maxFatalBytes:
+		t.fatal = append(t.fatal, line)
+		t.size += len(line) + 1
 	}
 }
 
-func (t *lineTail) String() string {
+func (t *lineTail) cause() string {
 	t.mu.Lock()
-	defer t.mu.Unlock()
-	lines := t.lines
-	if rest := strings.TrimSpace(string(t.partial)); rest != "" {
-		lines = append(append([]string{}, lines...), rest)
+	end := &lineTail{last: t.last, fatal: slices.Clone(t.fatal), size: t.size}
+	end.add(string(t.partial))
+	t.mu.Unlock()
+	text := end.last
+	if end.fatal != nil {
+		text = strings.Join(strings.Fields(strings.Join(end.fatal, " ")), " ")
 	}
-	return strings.Join(lines, "\n")
+	if cut := strutil.CutStart(text, maxCause); cut != text {
+		return cut + "…"
+	}
+	return text
 }

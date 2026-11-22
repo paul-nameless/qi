@@ -12,9 +12,11 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/paul-nameless/qi/internal/llm"
 	"github.com/paul-nameless/qi/internal/session"
+	"github.com/paul-nameless/qi/internal/strutil"
 	"github.com/paul-nameless/qi/internal/tools"
 )
 
@@ -64,11 +66,23 @@ func TestSubagentReadsJSONEntries(t *testing.T) {
 	}
 }
 
-func TestSubagentFailureKeepsStderrTail(t *testing.T) {
-	r := &SubagentRunner{ReadOnly: func() bool { return false }, Label: func(b llm.Block) string { return b.Name }, Cwd: t.TempDir(), Exe: fakeChild(t, "", "qi: config: bad key\n", 1)}
-	_, err := r.Run(context.Background(), tools.SubagentTask{Prompt: "x", Model: "m"}, func(string) {})
-	if err == nil || !strings.Contains(err.Error(), "exit status 1") || !strings.Contains(err.Error(), "qi: config: bad key") {
-		t.Errorf("err %v", err)
+func TestSubagentFailureReportsFatalError(t *testing.T) {
+	long := "qi: api error 402: " + strings.Repeat("ж", 400)
+	cases := []struct{ stderr, want string }{
+		{"qi: config: bad key\n", "exit status 1: qi: config: bad key"},
+		{"**Reasoning**\nqi: no stdin within 5s, running without it\nthinking\n✓ read a.go\n5 req · done\nqi: api error 402: budget\nlate  words", "exit status 1: qi: api error 402: budget late words"},
+		{"thinking\nqi: api error 429: {\n  \"error\": {\n    \"message\": \"slow down\"\n  }\n}\n", `exit status 1: qi: api error 429: { "error": { "message": "slow down" } }`},
+		{"thinking\nlast words\n\n", "exit status 1: last words"},
+		{"", "exit status 1"},
+		{long + "\n", "exit status 1: " + strutil.CutStart(long, maxCause) + "…"},
+	}
+	r := &SubagentRunner{ReadOnly: func() bool { return false }, Label: func(b llm.Block) string { return b.Name }, Cwd: t.TempDir()}
+	for _, c := range cases {
+		r.Exe = fakeChild(t, "", c.stderr, 1)
+		_, err := r.Run(context.Background(), tools.SubagentTask{Prompt: "x", Model: "m"}, func(string) {})
+		if err == nil || err.Error() != c.want || !utf8.ValidString(err.Error()) {
+			t.Errorf("stderr %q:\ngot  %v\nwant %s", c.stderr, err, c.want)
+		}
 	}
 	r.Exe = fakeChild(t, entryLines(t, session.Entry{Type: "meta"}), "", 0)
 	if answer, err := r.Run(context.Background(), tools.SubagentTask{Prompt: "x", Model: "m"}, func(string) {}); err != nil || answer != "(the subagent returned no answer)" {
