@@ -482,6 +482,25 @@ func TestCellInnerUI(t *testing.T) {
 	}
 }
 
+func TestCellSourceUI(t *testing.T) {
+	k := newCellKit(t)
+	ui := &sourceUI{}
+	code := "await tick()\nreturn 1"
+	k.reg.Execute(context.Background(), k.env, []llm.Block{{ID: "r1", Name: "run", Input: mustJSON(t, runArgs{Code: code})}}, ui)
+	want := []string{"code r1 run await tick() return 1 | " + code, "start r1.1 tick", "done r1.1 tick", "done r1 run await tick() return 1 · 1 call · 1 line"}
+	if strings.Join(ui.events, "\n") != strings.Join(want, "\n") {
+		t.Errorf("ui events:\n%s", strings.Join(ui.events, "\n"))
+	}
+}
+
+type sourceUI struct{ recordUI }
+
+func (u *sourceUI) ToolStartCode(id, label, code string) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.events = append(u.events, "code "+id+" "+label+" | "+code)
+}
+
 type recordUI struct {
 	mu     sync.Mutex
 	events []string
@@ -707,4 +726,56 @@ func TestCellRedeclaredFunctions(t *testing.T) {
 	k.file("f.txt", "hi\n")
 	k.want(`const read = 1; const jobs = 2; var print = 3; let sleep = 4`, "(no output)")
 	k.want(`await sleep(1); print("p"); [await read("f.txt"), typeof jobs].join("")`, "p\nhi\nfunction")
+}
+
+func TestCellErrorKeptWhenWaitStops(t *testing.T) {
+	k := newCellKit(t)
+	res := k.cellCtx(context.Background(), `await Promise.all([bash("sleep 100", {timeout: 600}), read("nope")])`, 1)
+	for _, want := range []string{"ToolError: stat ", "Calls that completed:\n✗ read nope\nNote: 1 call was still running when the code finished; await every call you start. Failed:\nbash sleep 100: ", "Note: waiting for the calls still running stopped: timed out after 1s"} {
+		if !res.IsError || !strings.Contains(res.Text, want) {
+			t.Errorf("timeout: %q lacks %q", res.Text, want)
+		}
+	}
+	if !strings.HasPrefix(res.Text, "ToolError: stat ") || strings.Contains(res.Text, "waited for") || strings.Contains(res.Text, "✗ bash") {
+		t.Errorf("timeout: %q", res.Text)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(300*time.Millisecond, cancel)
+	res = k.cellCtx(ctx, `bash("sleep 100", {timeout: 600}); undefinedName`, 0)
+	if !res.IsError || !strings.HasPrefix(res.Text, "ReferenceError: undefinedName is not defined") || !strings.Contains(res.Text, "No variables are defined in this VM yet.") || !strings.HasSuffix(res.Text, "Note: waiting for the calls still running stopped: interrupted by user") {
+		t.Errorf("interrupt: %q", res.Text)
+	}
+}
+
+func TestRunDescriptionReservedNames(t *testing.T) {
+	k := newCellKit(t)
+	want := "- The names read, write, edit, bash, jobs, tick, sleep, setTimeout, clearTimeout and print are set again at the start of every run call: don't use them for your own variables.\n"
+	if desc := k.run.Def.Description; !strings.Contains(desc, want) || strings.Contains(desc, "subagent,") {
+		t.Errorf("description:\n%s", desc)
+	}
+}
+
+func TestCellFormatJobsDoNotLeak(t *testing.T) {
+	k := newCellKit(t)
+	k.want(`return {toJSON() { Promise.resolve().then(() => write("late.txt", "x")); Promise.resolve().then(() => console.log("job ran")); return 1 }}`, "job ran\n1")
+	res := k.cell(`await sleep(1); 2`)
+	if res.IsError || res.Text != "2" || len(res.Calls) != 0 {
+		t.Errorf("next cell: %+v", res)
+	}
+	if _, err := os.Stat(filepath.Join(k.dir, "late.txt")); err == nil {
+		t.Error("a promise job queued while formatting wrote a file")
+	}
+	start := time.Now()
+	k.want(`return {toJSON() { const spin = () => Promise.resolve().then(spin); spin(); return 3 }}`, "3")
+	if d := time.Since(start); d > 2*formatTimeout {
+		t.Errorf("an endless job loop held the result for %v", d)
+	}
+	k.want(`await sleep(1); 4`, "4")
+}
+
+func TestCellParkedFunctionResumesInLaterCell(t *testing.T) {
+	k := newCellKit(t)
+	k.want(`globalThis.out = []; globalThis.gate = new Promise(r => { globalThis.open = r }); (async () => { await gate; out.push("resumed") })(); "parked"`, "parked")
+	k.want(`return {toJSON() { return "formatted" }}`, `"formatted"`)
+	k.want(`open(); await sleep(1); out.join()`, "resumed")
 }

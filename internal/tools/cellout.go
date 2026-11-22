@@ -124,7 +124,11 @@ func (c *cell) lateStopNote(end cellEnd) string {
 	if !end.lateStop {
 		return ""
 	}
-	return "Note: the code finished and its result is kept, but waiting for the calls still running stopped: " + c.failure(cellEnd{stopped: true})
+	stopped := c.failure(cellEnd{stopped: true})
+	if end.err != nil {
+		return "Note: waiting for the calls still running stopped: " + stopped
+	}
+	return "Note: the code finished and its result is kept, but waiting for the calls still running stopped: " + stopped
 }
 
 func pluralVerb(n int) string {

@@ -70,7 +70,7 @@ func TestCodeModeRunReadsAndEdits(t *testing.T) {
 	if res.IsError || res.Text != "old text" || len(res.Calls) != 2 || res.Calls[1].Tool != "edit" {
 		t.Errorf("result %+v", res)
 	}
-	if got := out.String(); !strings.Contains(got, "· run const s") || !strings.Contains(got, "  ✓ read a.txt") || !strings.Contains(got, "✓ run · 2 calls") {
+	if got := out.String(); !strings.Contains(got, "· run\n    const s = await read(\"a.txt\"); await edit") || !strings.Contains(got, "  ✓ read a.txt") || !strings.Contains(got, "✓ run · 2 calls") {
 		t.Errorf("output:\n%s", got)
 	}
 	entries, err := session.Entries(r.agent.Session().Path)
@@ -219,5 +219,75 @@ func TestRenderRunCell(t *testing.T) {
 	}
 	if other := renderTranscript([]llm.Message{bashCall("b", "ls")}, 0, 0); other != "· bash {\"command\":\"ls\"}\n" {
 		t.Errorf("bash: %q", other)
+	}
+}
+
+func TestConfigTogglesRunCode(t *testing.T) {
+	p := scripted(runCall("c1", "await read(\"a.txt\")\nreturn 1"), textReply("one"), runCall("c2", "await read(\"a.txt\")\nreturn 2"))
+	r, out := testRepl(t, config.Config{Model: "m", Picker: "grep '^run_code'"}, p)
+	if err := os.WriteFile(filepath.Join(r.agent.Cwd(), "a.txt"), []byte("x\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	goTurn(r)
+	full := out.String()
+	if !strings.Contains(full, "· run\n    await read(\"a.txt\")\n    return 1\n  ✓ read a.txt") || !strings.Contains(full, "✓ run · 1 call · 1 line") {
+		t.Errorf("full view:\n%s", full)
+	}
+	editor := r.editor
+	r.editor = nil
+	r.handleInput("/config")
+	r.editor = editor
+	if got := out.String()[len(full):]; !strings.Contains(got, "run_code        full ") || !strings.Contains(got, "run_code: compact for this session") || r.agent.Config().RunCodeOn() {
+		t.Fatalf("toggle printed %q, run_code %v", got, r.agent.Config().RunCodeOn())
+	}
+	before := len(out.String())
+	goTurn(r)
+	if got := out.String()[before:]; !strings.Contains(got, "· run await read(\"a.txt\") return 2\n  ✓ read a.txt") || strings.Contains(got, "    return 2") {
+		t.Errorf("compact view:\n%s", got)
+	}
+	if !strings.Contains(full, "    return 1") {
+		t.Error("earlier output changed")
+	}
+	before = len(out.String())
+	r.handleInput("/config run_code")
+	r.handleInput("/config show_reasoning")
+	r.handleInput("/config nope")
+	if got := out.String()[before:]; !strings.Contains(got, "run_code: full for this session") || !strings.Contains(got, "show_reasoning: off for this session") || !strings.Contains(got, `unknown setting "nope" (switchable: run_code, show_reasoning)`) || !r.agent.Config().RunCodeOn() || r.agent.Config().ShowReasoningOn() {
+		t.Errorf("typed toggle printed %q", got)
+	}
+}
+
+func TestRunCodeToggleSurvivesProfileSwitch(t *testing.T) {
+	t.Setenv("QI_SESSION_DIR", t.TempDir())
+	path := filepath.Join(t.TempDir(), "config.json")
+	data := `{"api_key": "k", "model": "m", "profiles": {"quiet": {"run_code": false}, "loud": {"run_code": true, "show_reasoning": false}}}`
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Resolve(config.Options{Path: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	display, _ := capturePrinter(t)
+	o := options{configPath: path}
+	a, runner := buildAgent(cfg, o, t.TempDir(), scripted(), display, true, false)
+	r := &repl{agent: a, display: display, hooks: &agent.Hooks{}, runner: runner, opts: o}
+	if err := r.newSession(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { r.closeResources() })
+	if err := r.switchProfile("quiet"); err != nil || r.agent.Config().RunCodeOn() {
+		t.Fatalf("without a toggle the profile's run_code applies: %v %v", r.agent.Config().RunCodeOn(), err)
+	}
+	r.report(r.toggleSetting("run_code"))
+	if err := r.switchProfile("loud"); err != nil || !r.agent.Config().RunCodeOn() || r.agent.Config().ShowReasoningOn() {
+		t.Fatalf("after the switch: run_code %v show_reasoning %v %v", r.agent.Config().RunCodeOn(), r.agent.Config().ShowReasoningOn(), err)
+	}
+	r.report(r.toggleSetting("run_code"))
+	if err := r.switchProfile("loud"); err != nil || r.agent.Config().RunCodeOn() {
+		t.Errorf("the session toggle should win over the profile: %v %v", r.agent.Config().RunCodeOn(), err)
+	}
+	if err := r.switchModel("other"); err != nil || r.agent.Config().RunCodeOn() || r.agent.Model() != "other" {
+		t.Errorf("/model kept the toggle: %v %v", r.agent.Config().RunCodeOn(), err)
 	}
 }

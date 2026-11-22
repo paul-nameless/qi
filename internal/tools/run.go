@@ -68,6 +68,10 @@ func Run(inner *Registry) *Tool {
 			a, _ := decode[runArgs](in)
 			return "run " + OneLine(a.Code, 70)
 		},
+		Source: func(in json.RawMessage) string {
+			a, _ := decode[runArgs](in)
+			return a.Code
+		},
 		Run: r.run,
 	}
 }

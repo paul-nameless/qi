@@ -114,7 +114,7 @@ func TestNullInProfileResetsToDefault(t *testing.T) {
 func TestBoolKeysProfileOverridesGlobal(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("QI_CONFIG_DIR", dir)
-	keys := map[string]func(Config) bool{"terminal_images": Config.TerminalImagesOn, "code_mode": Config.CodeModeOn}
+	keys := map[string]func(Config) bool{"terminal_images": Config.TerminalImagesOn, "code_mode": Config.CodeModeOn, "run_code": Config.RunCodeOn}
 	for key, on := range keys {
 		path := writeConfig(t, dir, "config.json", strings.ReplaceAll(`{"KEY": false, "profiles": {"on": {"KEY": true}, "same": {"model": "m"}, "reset": {"KEY": null}}}`, "KEY", key))
 		for profile, want := range map[string]bool{"": false, "on": true, "same": false, "reset": true} {

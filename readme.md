@@ -88,6 +88,8 @@ The agent finds MCP tools with `tool_search` and calls them with `mcp_call` (`mc
 
 On by default. The model gets a single tool, `run`, which executes JavaScript in an in-process VM. The functions `read`, `write`, `edit`, `bash`, `jobs`, `subagent`, `tool_search` and `mcp` are async JavaScript functions there; each call goes through hooks, read-only mode and the stale-file check like a direct tool call, and shows as its own line under the `run` line. Variables stay defined between `run` calls; this state lives in memory only and is dropped on `/clear`, on resume and at exit (not on compaction).
 
+The terminal shows the whole code of each `run` call (dim, up to 200 lines) with its tool calls under it; `"run_code": false`, globally or in a profile, shows one line per call instead, and `/config` switches it for the session.
+
 `"code_mode": false`, globally or in a profile, gives the model those tools directly instead. It is read at startup: `/profile` and `/model` keep the startup value until you restart qi. Subagents read the same config.
 
 ## Use
@@ -105,7 +107,7 @@ Keys: shift+tab toggles read-only, ctrl+g opens `$EDITOR`, ctrl+r searches past 
 
 Images: local PNG, JPEG and GIF files whose paths appear in the final answer of a turn are drawn after it (up to 4) in terminals with the kitty graphics protocol (Ghostty, kitty), not inside tmux or screen. `"terminal_images": false` turns this off, globally or in a profile.
 
-Commands: `/help`, `/keys`, `/status`, `/config`, `/clear`, `/context`, `/compact`, `/reload`, `/resume`, `/history`, `/copy`, `/model`, `/profile`, `/effort`, `/skills`, `/mcp`, `/exit`, plus `/<skill or command>`. `/` on an empty line opens the picker.
+Commands: `/help`, `/keys`, `/status`, `/config`, `/clear`, `/context`, `/compact`, `/reload`, `/resume`, `/history`, `/copy`, `/model`, `/profile`, `/effort`, `/skills`, `/mcp`, `/exit`, plus `/<skill or command>`. `/` on an empty line opens the picker. `/config` shows the config file, the external tools and the settings `run_code` and `show_reasoning`, then opens the picker to switch one for this session (`/config run_code` does it without the picker); the switch is kept across `/profile` and `/model` and never written to the file.
 
 ## External tools
 

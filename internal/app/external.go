@@ -306,5 +306,5 @@ func (r *repl) configInfo() string {
 		}
 		fmt.Fprintf(&b, "\n  %-15s %s  %s%s", kv[0], state, tools.OneLine(strings.ReplaceAll(kv[1], "{picker}", picker), 90), note)
 	}
-	return b.String()
+	return b.String() + "\n" + r.settingsInfo()
 }

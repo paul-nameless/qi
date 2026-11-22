@@ -25,16 +25,17 @@ import (
 )
 
 type repl struct {
-	agent    *agent.Agent
-	display  *ui.Printer
-	editor   *ui.Editor
-	term     *ui.Terminal
-	skills   []agent.Skill
-	commands []agent.Command
-	hooks    *agent.Hooks
-	runner   *agent.SubagentRunner
-	opts     options
-	mcp      *mcp.Manager
+	agent     *agent.Agent
+	display   *ui.Printer
+	editor    *ui.Editor
+	term      *ui.Terminal
+	skills    []agent.Skill
+	commands  []agent.Command
+	hooks     *agent.Hooks
+	runner    *agent.SubagentRunner
+	opts      options
+	mcp       *mcp.Manager
+	overrides map[string]bool
 
 	mu            sync.Mutex
 	turnCancel    context.CancelFunc
@@ -380,6 +381,7 @@ func (r *repl) turn(prepare func(context.Context) ([]llm.Block, error), draft st
 		if err != nil {
 			return err
 		}
+		r.display.SetRunCode(r.agent.Config().RunCodeOn())
 		collectCtx, stopCollect := context.WithCancel(context.Background())
 		queue := r.startQueue(ctx)
 		draftCh := make(chan string, 1)
@@ -613,6 +615,7 @@ func (r *repl) apply(cfg config.Config, baseProvider string) error {
 		return err
 	}
 	r.keepCodeMode(&cfg)
+	r.keepSettings(&cfg)
 	r.agent.Reconfigure(cfg, newProvider(cfg, key))
 	if r.runner != nil {
 		r.runner.Profile, r.runner.Provider = cfg.Profile, baseProvider

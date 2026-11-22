@@ -146,7 +146,18 @@ func (c *cell) formatBounded(v jsvm.Value, lateStop bool) string {
 	stop := c.watch(ctx.Done())
 	defer c.vm.ClearInterrupt()
 	defer stop()
-	return c.format(v)
+	text := c.format(v)
+	c.runFormatJobs()
+	return text
+}
+
+func (c *cell) runFormatJobs() {
+	for c.vm.PendingJobs() > 0 {
+		if err := c.vm.RunJobs(); errors.Is(err, jsvm.ErrInterrupted) {
+			c.vm.AbandonPending()
+			return
+		}
+	}
 }
 
 func (c *cell) watch(done <-chan struct{}) func() {
@@ -220,11 +231,7 @@ func (c *cell) finishWith(end cellEnd) cellEnd {
 }
 
 func stopWaiting(end cellEnd) cellEnd {
-	if end.err == nil {
-		end.lateStop = true
-		return end
-	}
-	end.stopped = true
+	end.lateStop = true
 	return end
 }
 
@@ -414,8 +421,8 @@ func (c *cell) record(o outcome, p *pendingCall) {
 	if o.res.IsError {
 		mark = "✗ "
 	}
-	c.marks = append(c.marks, mark+o.label)
 	if !rejects(o.res) {
+		c.marks = append(c.marks, mark+o.label)
 		return
 	}
 	line := o.label + ": " + OneLine(o.res.Text, 200)
@@ -423,6 +430,7 @@ func (c *cell) record(o outcome, p *pendingCall) {
 		c.lateFails = append(c.lateFails, line)
 		return
 	}
+	c.marks = append(c.marks, mark+o.label)
 	c.fails = append(c.fails, mark+line)
 }
 

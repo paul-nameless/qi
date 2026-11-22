@@ -51,6 +51,7 @@ type Printer struct {
 	shown       shownFrame
 	md          markdown
 	images      bool
+	runCode     bool
 }
 
 type shownFrame struct {
@@ -60,7 +61,7 @@ type shownFrame struct {
 }
 
 func NewPrinter(out *os.File) *Printer {
-	p := &Printer{out: out, TTY: IsTerminal(out), atLineStart: true, running: map[string]*toolState{}}
+	p := &Printer{out: out, TTY: IsTerminal(out), atLineStart: true, running: map[string]*toolState{}, runCode: true}
 	p.images = p.TTY && KittyGraphics(os.Getenv)
 	return p
 }
@@ -419,15 +420,49 @@ func (p *Printer) Error(s string) {
 func (p *Printer) ToolStart(id, label string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	p.startTool(id, label)
+}
+
+func (p *Printer) ToolStartCode(id, label, code string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	st := p.startTool(id, label)
+	if !p.runCode || strings.TrimSpace(code) == "" {
+		return
+	}
+	st.headed = true
+	name, _, _ := strings.Cut(st.label, " ")
+	p.write(p.Color(Dim, "· "+name+"\n"+CodeBlock(code, maxCodeLines)) + "\n")
+}
+
+func (p *Printer) SetRunCode(full bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.runCode = full
+}
+
+func (p *Printer) startTool(id, label string) *toolState {
 	p.endReasoning()
 	p.flushMarkdown()
 	if !p.atLineStart {
 		p.write("\n")
 	}
-	p.running[id] = &toolState{label: Sanitize(label), start: time.Now(), parent: p.parentOf(id)}
+	st := &toolState{label: Sanitize(label), start: time.Now(), parent: p.parentOf(id)}
+	p.running[id] = st
 	p.order = append(p.order, id)
 	p.startTicker()
 	p.redraw()
+	return st
+}
+
+const maxCodeLines = 200
+
+func CodeBlock(code string, limit int) string {
+	lines := strings.Split(strings.Trim(Sanitize(code), "\n"), "\n")
+	if limit > 0 && len(lines) > limit {
+		lines = append(lines[:limit], fmt.Sprintf("… %d more lines", len(lines)-limit))
+	}
+	return "    " + strings.Join(lines, "\n    ")
 }
 
 func (p *Printer) ToolProgress(id, progress string) {

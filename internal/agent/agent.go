@@ -210,6 +210,14 @@ func (a *Agent) SetEffort(effort string) {
 	a.live.cfg.ReasoningEffort = effort
 }
 
+func (a *Agent) EditConfig(edit func(*config.Config)) {
+	a.busy.Lock()
+	defer a.busy.Unlock()
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	edit(&a.live.cfg)
+}
+
 func (a *Agent) ContextTokens() int {
 	a.mu.Lock()
 	defer a.mu.Unlock()

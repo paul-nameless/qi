@@ -101,6 +101,7 @@ type Tool struct {
 	Unwrap       func(input json.RawMessage) (name string, args json.RawMessage)
 	Rewrap       func(input, args json.RawMessage) json.RawMessage
 	Code         *CodeSpec
+	Source       func(input json.RawMessage) string
 	Inner        *Registry
 	Reset        func(hadCells bool)
 	describe     func(inner *Registry) string
@@ -208,6 +209,18 @@ type UI interface {
 	ToolDone(id string, ok bool, line string)
 }
 
+type SourceUI interface {
+	ToolStartCode(id, label, code string)
+}
+
+func startCall(ui UI, t *Tool, call llm.Block, label string) {
+	if s, ok := ui.(SourceUI); ok && t != nil && t.Source != nil {
+		s.ToolStartCode(call.ID, label, t.Source(call.Input))
+		return
+	}
+	ui.ToolStart(call.ID, label)
+}
+
 func (r *Registry) Execute(ctx context.Context, env *Env, calls []llm.Block, ui UI) []llm.Block {
 	results := make([]llm.Block, len(calls))
 	groups := map[string][]int{}
@@ -252,7 +265,7 @@ func (r *Registry) Execute(ctx context.Context, env *Env, calls []llm.Block, ui 
 func (r *Registry) runOne(ctx context.Context, env *Env, call llm.Block, ui UI) llm.Block {
 	t := r.byKey[call.Name]
 	label := Label(t, env, call)
-	ui.ToolStart(call.ID, label)
+	startCall(ui, t, call, label)
 	res := r.invoke(withCall(ctx, call.ID, ui), env, t, call, ui)
 	ui.ToolDone(call.ID, !res.IsError, doneLine(label, res.Summary))
 	return llm.Block{Type: llm.BlockToolResult, ToolUseID: call.ID, Text: res.Text, IsError: res.IsError, Images: res.Images, Calls: res.Calls}

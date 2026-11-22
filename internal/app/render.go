@@ -97,8 +97,7 @@ func toolUseText(blk llm.Block, width int) string {
 	if blk.Name != "run" || json.Unmarshal(blk.Input, &a) != nil || strings.TrimSpace(a.Code) == "" {
 		return "· " + blk.Name + " " + ui.Sanitize(tools.OneLine(string(blk.Input), width))
 	}
-	code := firstLines(strings.Trim(ui.Sanitize(a.Code), "\n"), codeLines)
-	return "· run\n    " + strings.ReplaceAll(code, "\n", "\n    ")
+	return "· run\n" + ui.CodeBlock(a.Code, codeLines)
 }
 
 func callLines(calls []llm.InnerCall) string {

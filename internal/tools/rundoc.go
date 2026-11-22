@@ -13,6 +13,7 @@ Rules:
 - A single call is fine: ` + "`return await read(\"go.mod\")`" + `. Start independent calls together with Promise.all (up to 8 run at once) and await every call you start.
 - Results inside the VM are not cut, except bash output past its first and last 512 KB (truncated is then true; redirect to a file for more): filter, count and summarize in code instead of printing everything.
 - Never run two edits of the same file at once.
+- The names {names} are set again at the start of every run call: don't use them for your own variables.
 - The call times out after 300 s (timeout changes it, up to 1800). bash() times out on its own after its timeout and returns the output so far with timed_out true, so a hanging command does not stop your code. Start long builds and test runs with {background: true}.
 - A timeout or interrupt stops the code; variables assigned before it stay.
 - The language is a JavaScript subset: no classes, generators, getters or setters, Symbol, labels, BigInt, import or require. There is no fs, process or fetch: use the functions above. sleep(ms), setTimeout and clearTimeout work.
@@ -37,5 +38,16 @@ func runDescription(inner *Registry) string {
 			docs = append(docs, t.Code.Doc)
 		}
 	}
-	return runIntro + strings.Join(docs, "\n") + runRules
+	return runIntro + strings.Join(docs, "\n") + strings.Replace(runRules, "{names}", reservedNames(inner), 1)
+}
+
+func reservedNames(inner *Registry) string {
+	var names []string
+	for _, t := range inner.tools {
+		if t.Code != nil {
+			names = append(names, t.Code.Name)
+		}
+	}
+	names = append(names, "sleep", "setTimeout", "clearTimeout", "print")
+	return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
 }

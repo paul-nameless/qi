@@ -65,6 +65,7 @@ func run(o options) error {
 	} else {
 		display = ui.NewPrinter(os.Stdout)
 	}
+	display.SetRunCode(cfg.RunCodeOn() && !isSub)
 
 	if headless && cfg.MaxRounds == 0 {
 		cfg.MaxRounds = 200
