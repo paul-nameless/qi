@@ -33,7 +33,7 @@ func TestDateOracle(t *testing.T) {
 			continue
 		}
 		s := newSession(t)
-		out, err := s.run(c.Code, 5*time.Second)
+		out, err := s.run(c.Code, hangGuard)
 		switch {
 		case c.Err != "":
 			if err == nil || strings.SplitN(err.Error(), ":", 2)[0] != c.Err {

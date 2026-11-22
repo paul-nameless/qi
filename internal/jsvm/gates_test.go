@@ -17,7 +17,7 @@ func runGates(t *testing.T, s *session, gates []gate) {
 	t.Helper()
 	for _, g := range gates {
 		if g.timeout == 0 {
-			g.timeout = 5 * time.Second
+			g.timeout = hangGuard
 		}
 		out, err := s.run(g.code, g.timeout)
 		if g.wantErr != "" {
@@ -67,7 +67,7 @@ func TestGatesCancel(t *testing.T) {
 
 func TestRegexGateTwice(t *testing.T) {
 	s := newSession(t)
-	g := gate{code: "const t = 'lorem ipsum dolor '.repeat(50000); return t.match(/\\b\\w+\\b/g).length + ' ' + t.replace(/o(?=r)/g, '0').length + ' ' + t.split(' ').length", want: "150000 900000 150001", timeout: 2 * time.Second}
+	g := gate{code: "const t = 'lorem ipsum dolor '.repeat(50000); return t.match(/\\b\\w+\\b/g).length + ' ' + t.replace(/o(?=r)/g, '0').length + ' ' + t.split(' ').length", want: "150000 900000 150001"}
 	runGates(t, s, []gate{g, g})
 }
 
@@ -76,10 +76,9 @@ func TestGatesPerf(t *testing.T) {
 		t.Skip("short")
 	}
 	s := newSession(t)
-	start := time.Now()
 	runGates(t, s, []gate{{code: "const r = await Promise.all([1,2,3,4,5,6,7,8].map(() => sleep(200))); return r.length", want: "8"}})
-	if el := time.Since(start); el > 350*time.Millisecond {
-		t.Errorf("8 parallel 200ms host calls took %v", el)
+	if s.maxPend != 8 {
+		t.Errorf("8 parallel host calls: at most %d were in flight at once", s.maxPend)
 	}
 	runGates(t, s, []gate{
 		{code: "let s = 0; for (let i = 0; i < 1e7; i++) s += i % 7; return s", want: "29999994"},

@@ -29,18 +29,31 @@ type hresult struct {
 	epoch       int
 }
 
+var hangGuard = 60 * time.Second * time.Duration(1+4*raceFactor)
+
+func limitAbove(n int64) int64 {
+	forceGC()
+	var probe VM
+	return int64(probe.heapBytes()) + n
+}
+
 type session struct {
 	vm      *VM
 	out     strings.Builder
 	results chan hresult
 	pending int
+	maxPend int
 	calls   int
+	vnow    int
+	seq     int
+	sleeps  map[string][2]int
+	held    map[string]hresult
 	epoch   int
 	tools   func(name string, args []json.RawMessage) (any, error)
 }
 
 func newSession(t testing.TB) *session {
-	s := &session{vm: New(Options{MemoryLimit: 512 << 20}), results: make(chan hresult, 1024), tools: fakeTool}
+	s := &session{vm: New(Options{MemoryLimit: 512 << 20}), results: make(chan hresult, 1024), tools: fakeTool, sleeps: map[string][2]int{}, held: map[string]hresult{}}
 	s.vm.SetFunc("__host", func(vm *VM, args []Value) (Value, error) {
 		str := func(i int) string {
 			if i < len(args) {
@@ -53,8 +66,19 @@ func newSession(t testing.TB) *session {
 			s.out.WriteString(str(1) + "\n")
 		case "call":
 			s.pending++
+			s.maxPend = max(s.maxPend, s.pending)
 			s.calls++
 			id, name, raw := str(1), str(2), str(3)
+			if name == "sleep" {
+				var a []int
+				_ = json.Unmarshal([]byte(raw), &a)
+				ms := 0
+				if len(a) > 0 {
+					ms = a[0]
+				}
+				s.seq++
+				s.sleeps[id] = [2]int{s.vnow + ms, s.seq}
+			}
 			ep := s.epoch
 			go func() {
 				var a []json.RawMessage
@@ -131,6 +155,23 @@ func bigIssues(n int) any {
 	return map[string]any{"nodes": nodes, "pageInfo": map[string]any{"hasNextPage": false}}
 }
 
+func (s *session) nextSleep() (hresult, bool) {
+	best := ""
+	for id, d := range s.sleeps {
+		if b, ok := s.sleeps[best]; !ok || d[0] < b[0] || (d[0] == b[0] && d[1] < b[1]) {
+			best = id
+		}
+	}
+	r, ok := s.held[best]
+	if !ok {
+		return r, false
+	}
+	s.vnow = s.sleeps[best][0]
+	delete(s.sleeps, best)
+	delete(s.held, best)
+	return r, true
+}
+
 func (s *session) settle(r hresult) error {
 	s.pending--
 	_, err := s.vm.Call("__settle", Str(r.id), Str(r.ok), Str(r.val))
@@ -141,10 +182,13 @@ func (s *session) run(code string, timeout time.Duration) (string, error) {
 	s.out.Reset()
 	s.epoch++
 	s.pending = 0
+	s.vnow = 0
+	s.sleeps = map[string][2]int{}
+	s.held = map[string]hresult{}
 	deadline := time.Now().Add(timeout)
-	timer := time.AfterFunc(timeout, s.vm.Interrupt)
+	stop := s.vm.InterruptAfter(timeout)
 	defer func() {
-		timer.Stop()
+		stop()
 		s.vm.ClearInterrupt()
 	}()
 	res, err := s.vm.RunCell("cell.js", code)
@@ -165,15 +209,26 @@ func (s *session) run(code string, timeout time.Duration) (string, error) {
 		if s.pending == 0 {
 			return s.out.String(), errors.New("the script is waiting on a promise that can never settle")
 		}
+		if r, ok := s.nextSleep(); ok {
+			if err := s.settle(r); err != nil {
+				return s.out.String(), err
+			}
+			continue
+		}
 		select {
 		case r := <-s.results:
 			if r.epoch != s.epoch {
+				continue
+			}
+			if _, ok := s.sleeps[r.id]; ok {
+				s.held[r.id] = r
 				continue
 			}
 			if err := s.settle(r); err != nil {
 				return s.out.String(), err
 			}
 		case <-time.After(time.Until(deadline)):
+			stop()
 			s.vm.ClearInterrupt()
 			_, _ = s.vm.Call("__abort", Str("cancelled"))
 			_ = s.vm.RunJobs()

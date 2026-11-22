@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"runtime/debug"
+	"sync"
+	"time"
 )
 
 type HostFunc func(vm *VM, args []Value) (Value, error)
@@ -168,6 +170,22 @@ func (vm *VM) CallValue(fn, this Value, args ...Value) (Value, error) {
 func (vm *VM) Interrupt() { vm.intr.Store(1) }
 
 func (vm *VM) ClearInterrupt() { vm.intr.Store(0) }
+
+func (vm *VM) InterruptAfter(d time.Duration) (stop func()) {
+	done := make(chan struct{})
+	t := time.AfterFunc(d, func() {
+		vm.Interrupt()
+		close(done)
+	})
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			if !t.Stop() {
+				<-done
+			}
+		})
+	}
+}
 
 func (vm *VM) NewPromise() (Value, func(Value), func(Value)) {
 	p := &object{shape: vm.promiseProto.rootShape(), class: classPromise, inner: &promise{}}

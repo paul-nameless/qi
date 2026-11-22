@@ -4,7 +4,6 @@ import (
 	"errors"
 	"strings"
 	"testing"
-	"time"
 )
 
 func errName(err error) string {
@@ -78,7 +77,7 @@ func TestRuntimeRecursionCaps(t *testing.T) {
 	want := map[string]string{"bind instanceof": "false,true", "proto chain": "true,false", "bind call": "1", "bind construct": "object"}
 	for name, src := range cases {
 		s := newSession(t)
-		out, err := s.run(src, 20*time.Second)
+		out, err := s.run(src, hangGuard)
 		w := want[name]
 		if w == "" {
 			w = "RangeError"

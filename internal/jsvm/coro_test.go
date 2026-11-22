@@ -47,9 +47,9 @@ func TestParkedCoroutinesReleased(t *testing.T) {
 	if err != nil || ToString(keep) != "1" {
 		t.Fatal(err)
 	}
-	timer := time.AfterFunc(20*time.Millisecond, vm.Interrupt)
+	stop := vm.InterruptAfter(20 * time.Millisecond)
 	_, err = vm.RunCell("cell.js", "const p2 = (async () => { await new Promise(() => {}) })(); while (true) {}")
-	timer.Stop()
+	stop()
 	vm.ClearInterrupt()
 	if err != ErrInterrupted {
 		t.Fatalf("want interrupt, got %v", err)
@@ -109,9 +109,9 @@ func TestInterruptedJobsCancelLatestCell(t *testing.T) {
 	if _, err := vm.RunCell("cell.js", "Promise.resolve().then(() => { while (true) {} }); 1"); err != nil {
 		t.Fatal(err)
 	}
-	timer := time.AfterFunc(20*time.Millisecond, vm.Interrupt)
+	stop := vm.InterruptAfter(20 * time.Millisecond)
 	err := vm.RunJobs()
-	timer.Stop()
+	stop()
 	vm.ClearInterrupt()
 	if err != ErrInterrupted {
 		t.Fatalf("want interrupt, got %v", err)
@@ -122,9 +122,9 @@ func TestInterruptedJobsCancelLatestCell(t *testing.T) {
 		t.Errorf("earlier cell's coroutine killed: out = %s", ToString(v))
 	}
 	vm.RunCell("cell.js", "globalThis.out = 0; (async () => { await new Promise(res => { globalThis.r = res }); out = 2 })(); Promise.resolve().then(() => { while (true) {} }); 1")
-	timer = time.AfterFunc(20*time.Millisecond, vm.Interrupt)
+	stop = vm.InterruptAfter(20 * time.Millisecond)
 	err = vm.RunJobs()
-	timer.Stop()
+	stop()
 	vm.ClearInterrupt()
 	if err != ErrInterrupted {
 		t.Fatalf("want interrupt, got %v", err)
@@ -162,9 +162,9 @@ func TestInterruptInsideToString(t *testing.T) {
 		"try { [].map({toString() { for (;;) {} }}) } catch (e) { 'caught' }",
 	} {
 		vm := New(Options{})
-		timer := time.AfterFunc(30*time.Millisecond, vm.Interrupt)
+		stop := vm.InterruptAfter(30 * time.Millisecond)
 		_, err := vm.RunCell("cell.js", src)
-		timer.Stop()
+		stop()
 		if err != ErrInterrupted {
 			t.Errorf("%s: got %v, want ErrInterrupted", src, err)
 		}
@@ -233,9 +233,9 @@ func TestInterruptInNestedHostCall(t *testing.T) {
 	for name, fn := range nested {
 		vm := New(Options{})
 		vm.SetFunc("nested", fn)
-		timer := time.AfterFunc(30*time.Millisecond, vm.Interrupt)
+		stop := vm.InterruptAfter(30 * time.Millisecond)
 		v, err := vm.RunCell("cell.js", "globalThis.spin = () => { for (;;) {} }; let r = 'none'; try { nested(spin, {toJSON() { for (;;) {} }}) } catch (e) { r = 'caught ' + e.message } r")
-		timer.Stop()
+		stop()
 		if err != ErrInterrupted {
 			t.Errorf("%s: got %q %v, want ErrInterrupted", name, ToString(v), err)
 		}
@@ -266,5 +266,22 @@ func TestJobsQueuedBeforeThrowStayQueued(t *testing.T) {
 	vm.RunJobs()
 	if v, _ := vm.RunCell("cell.js", "ran"); ToString(v) != "11" {
 		t.Errorf("after AbandonPending ran = %s, want 11", ToString(v))
+	}
+}
+
+func TestInterruptAfterStopLeavesNoLateInterrupt(t *testing.T) {
+	vm := New(Options{})
+	for i := 0; i < 2000; i++ {
+		stop := vm.InterruptAfter(time.Duration(i%50) * time.Microsecond)
+		stop()
+		stop()
+		vm.ClearInterrupt()
+		if vm.intr.Load() != 0 {
+			t.Fatalf("iteration %d: interrupt landed after stop and ClearInterrupt", i)
+		}
+	}
+	time.Sleep(5 * time.Millisecond)
+	if _, err := vm.RunCell("cell.js", "for (let i = 0; i < 1e5; i++) {}"); err != nil {
+		t.Fatalf("stale interrupt: %v", err)
 	}
 }

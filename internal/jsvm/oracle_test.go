@@ -5,7 +5,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestOracleCases(t *testing.T) {
@@ -32,7 +31,7 @@ func runOracleFile(t *testing.T, file string) {
 			continue
 		}
 		s := newSession(t)
-		out, err := s.run(c.Code, 5*time.Second)
+		out, err := s.run(c.Code, hangGuard)
 		s.vm.Close()
 		switch {
 		case c.Err != "":

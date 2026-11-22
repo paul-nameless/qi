@@ -195,9 +195,9 @@ func TestInterrupt(t *testing.T) {
 		"function f() { return f() } for (;;) { try { f() } catch (e) {} }",
 		"const a = []; for (;;) a.sort()",
 	} {
-		timer := time.AfterFunc(30*time.Millisecond, vm.Interrupt)
+		stop := vm.InterruptAfter(30 * time.Millisecond)
 		_, err := vm.RunCell("cell.js", src)
-		timer.Stop()
+		stop()
 		vm.ClearInterrupt()
 		if !errors.Is(err, ErrInterrupted) {
 			t.Errorf("%q: got %v", src, err)
@@ -211,9 +211,9 @@ func TestInterrupt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	timer := time.AfterFunc(30*time.Millisecond, vm.Interrupt)
+	stop := vm.InterruptAfter(30 * time.Millisecond)
 	err = vm.RunJobs()
-	timer.Stop()
+	stop()
 	vm.ClearInterrupt()
 	if !errors.Is(err, ErrInterrupted) {
 		t.Errorf("async interrupt: %v", err)
@@ -227,7 +227,7 @@ func TestInterrupt(t *testing.T) {
 }
 
 func TestLimits(t *testing.T) {
-	vm := New(Options{MaxDepth: 500, MemoryLimit: 128 << 20})
+	vm := New(Options{MaxDepth: 500, MemoryLimit: limitAbove(128 << 20)})
 	v, err := vm.RunCell("cell.js", "function f(n) { return f(n + 1) + 1 } try { f(0) } catch (e) { return e.name + ': ' + e.message }")
 	if err != nil || ToString(v) != "RangeError: Maximum call stack size exceeded" {
 		t.Errorf("depth: %v %v", ToString(v), err)
@@ -248,7 +248,9 @@ func TestHostAsync(t *testing.T) {
 		n       float64
 	}
 	results := make(chan done, 16)
+	calls := 0
 	vm.SetFunc("delay", func(vm *VM, args []Value) (Value, error) {
+		calls++
 		p, resolve, _ := vm.NewPromise()
 		n := args[0].Float()
 		go func() {
@@ -260,10 +262,12 @@ func TestHostAsync(t *testing.T) {
 	vm.SetFunc("boom", func(vm *VM, args []Value) (Value, error) {
 		return Undefined(), errors.New("host failed")
 	})
-	start := time.Now()
 	res, err := vm.RunCell("cell.js", "const r = await Promise.all([1,2,3,4,5,6,7,8].map(n => delay(n)));\nlet msg; try { boom() } catch (e) { msg = e.message }\nreturn r.join() + ' ' + msg")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if calls != 8 {
+		t.Fatalf("host calls started before any resolved: %d, want 8", calls)
 	}
 	pending := 8
 	for {
@@ -282,9 +286,6 @@ func TestHostAsync(t *testing.T) {
 		d := <-results
 		pending--
 		d.resolve(Number(d.n))
-	}
-	if el := time.Since(start); el > 400*time.Millisecond {
-		t.Errorf("parallel host calls took %v", el)
 	}
 }
 

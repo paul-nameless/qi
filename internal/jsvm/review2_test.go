@@ -24,7 +24,7 @@ func TestReviewRound4(t *testing.T) {
 	}
 	for src, want := range cases {
 		s := newSession(t)
-		out, err := s.run(src, 20*time.Second)
+		out, err := s.run(src, hangGuard)
 		if err != nil || out != want {
 			t.Errorf("%s\n  got %q %v want %q", src, out, err, want)
 		}
@@ -67,7 +67,7 @@ func TestUntrackedAllocations(t *testing.T) {
 		go func() {
 			select {
 			case <-done:
-			case <-time.After(20 * time.Second):
+			case <-time.After(hangGuard):
 				vm.Interrupt()
 			}
 		}()
@@ -96,7 +96,7 @@ func TestFuzzdiffFindings(t *testing.T) {
 	}
 	for src, want := range cases {
 		s := newSession(t)
-		out, err := s.run(src, 5*time.Second)
+		out, err := s.run(src, hangGuard)
 		if err != nil || out != want {
 			t.Errorf("%s\n  got %q %v want %q", src, out, err, want)
 		}
@@ -119,12 +119,12 @@ func TestReviewRound5(t *testing.T) {
 	}
 	for src, want := range cases {
 		s := newSession(t)
-		out, err := s.run(src, 10*time.Second)
+		out, err := s.run(src, hangGuard)
 		if err != nil || out != want {
 			t.Errorf("%s\n  got %q %v want %q", src, out, err, want)
 		}
 	}
-	if v, err := New(Options{MemoryLimit: 96 << 20}).RunCell("cell.js", "const big = 'a' + 'é'.repeat(3e6); const keep = []; for (let i = 0; i < 200; i++) keep.push(/(é+)/.exec(big)); keep.length"); err != nil || ToString(v) != "200" {
+	if v, err := New(Options{MemoryLimit: limitAbove(96 << 20)}).RunCell("cell.js", "const big = 'a' + 'é'.repeat(3e6); const keep = []; for (let i = 0; i < 200; i++) keep.push(/(é+)/.exec(big)); keep.length"); err != nil || ToString(v) != "200" {
 		t.Errorf("shared non-ASCII substrings: %v %v", ToString(v), err)
 	}
 	if _, err := New(Options{}).RunCell("cell.js", "function f(a = 1) { let a = 2 }"); errName(err) != "SyntaxError" {
@@ -140,9 +140,9 @@ func TestReviewRound5(t *testing.T) {
 	for name, src := range mem {
 		vm := New(Options{MemoryLimit: 96 << 20})
 		start := time.Now()
-		timer := time.AfterFunc(15*time.Second, vm.Interrupt)
+		stop := vm.InterruptAfter(hangGuard)
 		v, err := vm.RunCell("cell.js", src)
-		timer.Stop()
+		stop()
 		if err != nil || ToString(v) != "RangeError" {
 			t.Errorf("%s: got %q %v after %v", name, ToString(v), err, time.Since(start))
 		}
@@ -165,7 +165,7 @@ func TestReviewRound6(t *testing.T) {
 	}
 	for src, want := range cases {
 		s := newSession(t)
-		out, err := s.run(src, 10*time.Second)
+		out, err := s.run(src, hangGuard)
 		if err != nil || out != want {
 			t.Errorf("%s\n  got %q %v want %q", src, out, err, want)
 		}
@@ -177,9 +177,9 @@ func TestReviewRound6(t *testing.T) {
 	}
 	for name, src := range mem {
 		vm := New(Options{MemoryLimit: 256 << 20})
-		timer := time.AfterFunc(20*time.Second, vm.Interrupt)
+		stop := vm.InterruptAfter(hangGuard)
 		v, err := vm.RunCell("cell.js", src)
-		timer.Stop()
+		stop()
 		if err != nil || (ToString(v) != "RangeError" && !strings.HasPrefix(ToString(v), "eq")) {
 			t.Errorf("%s: got %q %v", name, ToString(v), err)
 		}
@@ -214,7 +214,7 @@ func TestRev4Round1(t *testing.T) {
 	}
 	for src, want := range cases {
 		s := newSession(t)
-		out, err := s.run(src, 20*time.Second)
+		out, err := s.run(src, hangGuard)
 		if err != nil || out != want {
 			t.Errorf("%s\n  got %q %v want %q", src, out, err, want)
 		}

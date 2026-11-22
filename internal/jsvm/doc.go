@@ -27,7 +27,10 @@
 // Interrupt may be called from any goroutine: the running cell fails with
 // ErrInterrupted, which JavaScript cannot catch, also when it lands inside a
 // host function's nested Call, CallValue or JSONStringify, and the VM stays
-// usable after ClearInterrupt. An interrupted RunCell or RunJobs also unwinds
+// usable after ClearInterrupt. The interrupt flag is sticky: a timer that calls
+// Interrupt can fire after the run it was meant for, so use InterruptAfter for
+// timeouts and call its stop function before ClearInterrupt (stop waits for a
+// callback that has already fired; time.AfterFunc's Stop does not). An interrupted RunCell or RunJobs also unwinds
 // the async functions of the most recent cell that are still suspended in
 // await, so they never resume; queued jobs stay queued. Uncaught JavaScript
 // errors are returned as *Exception with name, message, a V8-style stack ("    at fn (cell.js:LINE:COL)") and
