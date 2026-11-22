@@ -39,10 +39,13 @@ func (vm *VM) guard(fn func()) (err error) {
 	st := vm.save()
 	defer func() {
 		r := recover()
+		if r != nil {
+			vm.restore(st)
+		}
+		clear(vm.stack[vm.sp:])
 		if r == nil {
 			return
 		}
-		vm.restore(st)
 		switch t := r.(type) {
 		case *jsThrow:
 			err = vm.exceptionFrom(t.v)

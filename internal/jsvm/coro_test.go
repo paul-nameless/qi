@@ -135,3 +135,23 @@ func TestInterruptedJobsCancelLatestCell(t *testing.T) {
 		t.Errorf("latest cell's coroutine resumed after interrupt: out = %s", ToString(v))
 	}
 }
+
+func TestCallArgsNotRetained(t *testing.T) {
+	vm := New(Options{})
+	if _, err := vm.RunCell("cell.js", "1"); err != nil {
+		t.Fatal(err)
+	}
+	runtime.GC()
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	v, err := vm.RunCell("cell.js", "JSON.parse(JSON.stringify(Array.from({length: 200000}, (_, i) => ({i, s: 'v' + i})))).length")
+	if err != nil || ToString(v) != "200000" {
+		t.Fatal(ToString(v), err)
+	}
+	runtime.GC()
+	runtime.ReadMemStats(&after)
+	if grow := int64(after.HeapAlloc) - int64(before.HeapAlloc); grow > 8<<20 {
+		t.Errorf("heap grew by %d MB after the cell; temporaries retained", grow>>20)
+	}
+	runtime.KeepAlive(vm)
+}

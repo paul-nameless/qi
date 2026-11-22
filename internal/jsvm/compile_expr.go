@@ -117,11 +117,27 @@ func (c *compiler) template(t *tmplNode) expr {
 	if len(exprs) == 0 {
 		return constExpr(strV(quasis[0]))
 	}
+	fixed := 0
+	for _, q := range quasis {
+		fixed += len(q)
+	}
 	return func(f *frame) Value {
+		var buf [8]string
+		parts := buf[:0]
+		n := fixed
+		for _, e := range exprs {
+			s := f.vm.toString(e(f))
+			n += len(s)
+			parts = append(parts, s)
+		}
 		b := sbuf{vm: f.vm}
+		if n <= maxStringLen {
+			b.vm.reserve(n)
+			b.Grow(n)
+		}
 		b.add(quasis[0])
-		for i, e := range exprs {
-			b.add(f.vm.toString(e(f)))
+		for i, s := range parts {
+			b.add(s)
 			b.add(quasis[i+1])
 		}
 		return b.value()
@@ -374,7 +390,7 @@ func typeofStr(v Value) *jstr {
 
 func init() {
 	for _, s := range []string{"undefined", "object", "boolean", "number", "string", "symbol", "function", "bigint"} {
-		typeofStrs[s] = &jstr{s: s, n: len(s), info: strKnown | strASCII | strShared}
+		typeofStrs[s] = &jstr{s: s, n: int32(len(s)), info: strKnown | strASCII | strShared}
 	}
 }
 

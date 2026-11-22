@@ -75,9 +75,9 @@ func (vm *VM) setupString() {
 			s := vm.thisStr(this, name)
 			vm.flat(s)
 			if !s.isASCII() && s.n > 1<<20 {
-				if e := s.x(); !e.reserved {
+				if e := s.x().more(); !e.reserved {
 					e.reserved = true
-					vm.reserve(2 * s.n)
+					vm.reserve(2 * s.size())
 				}
 			}
 			return fn(vm, s, args)
@@ -223,8 +223,8 @@ func (vm *VM) setupString() {
 		if f*float64(s.n) > 1<<29 {
 			vm.throwError("RangeError", "Invalid string length")
 		}
-		vm.reserve(int(f) * s.n)
-		vm.track(int(f) * s.n)
+		vm.reserve(int(f) * s.size())
+		vm.track(int(f) * s.size())
 		return strV(strings.Repeat(s.flat(), int(f)))
 	})
 	m("concat", 1, func(vm *VM, s *jstr, args []Value) Value {
@@ -276,7 +276,7 @@ func (vm *VM) caseMap(s *jstr, fn func(string) string) Value {
 		if 3*s.n > maxStringLen {
 			vm.throwError("RangeError", "Invalid string length")
 		}
-		vm.reserve(3 * s.n)
+		vm.reserve(3 * s.size())
 	}
 	out := fn(s.flat())
 	if len(out) > maxStringLen {
@@ -287,7 +287,7 @@ func (vm *VM) caseMap(s *jstr, fn func(string) string) Value {
 }
 
 func derived(parent *jstr, s string) Value {
-	if len(s) == parent.n {
+	if len(s) == parent.size() {
 		return strVal(parent)
 	}
 	if parent.isASCII() {
@@ -339,7 +339,7 @@ func (vm *VM) pad(s *jstr, args []Value, start bool) Value {
 		vm.throwError("RangeError", "Invalid string length")
 	}
 	target := int(tf)
-	if fu := utf16Len(fill); target/fu*len(fill)+s.n > maxStringLen {
+	if fu := utf16Len(fill); target/fu*len(fill)+s.size() > maxStringLen {
 		vm.throwError("RangeError", "Invalid string length")
 	} else {
 		vm.reserve(target / fu * len(fill))

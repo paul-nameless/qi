@@ -20,33 +20,43 @@ const chunkMax = 256
 
 type jstr struct {
 	s    string
-	rope *ropeNode
-	n    int
-	info uint8
 	ext  *strExt
-}
-
-type ropeNode struct {
-	left, right *jstr
+	n    int32
+	info uint8
 }
 
 type strExt struct {
+	left, right *jstr
+	ulen        int
+	posB, posU  int32
+	idx         *strIdx
+}
+
+type strIdx struct {
 	sub      *regex.Subject
 	u16      []uint16
-	ulen     int
-	posB     int
-	posU     int
 	markB    []int32
 	markU    []int32
 	reserved bool
 }
 
+func (e *strExt) more() *strIdx {
+	if e.idx == nil {
+		e.idx = &strIdx{}
+	}
+	return e.idx
+}
+
+func (s *jstr) isRope() bool { return s.ext != nil && s.ext.left != nil }
+
+func (s *jstr) size() int { return int(s.n) }
+
 const markStep = 256
 
-func (s *jstr) buildMarks(e *strExt) {
+func (s *jstr) buildMarks(e *strIdx) {
 	str := s.flat()
-	e.markB = make([]int32, 0, s.n/markStep+1)
-	e.markU = make([]int32, 0, s.n/markStep+1)
+	e.markB = make([]int32, 0, s.size()/markStep+1)
+	e.markU = make([]int32, 0, s.size()/markStep+1)
 	u, next := 0, 0
 	for b := 0; b < len(str); {
 		if u >= next {
@@ -65,22 +75,23 @@ func (s *jstr) buildMarks(e *strExt) {
 }
 
 func (s *jstr) nearest(e *strExt, byByte bool, target int) (int, int) {
-	cur := e.posU
+	cur := int(e.posU)
 	if byByte {
-		cur = e.posB
+		cur = int(e.posB)
 	}
 	if cur <= target && target-cur < 4*markStep {
-		return e.posB, e.posU
+		return int(e.posB), int(e.posU)
 	}
 	if s.n < 4*markStep {
 		return 0, 0
 	}
-	if e.markB == nil {
-		s.buildMarks(e)
+	m := e.more()
+	if m.markB == nil {
+		s.buildMarks(m)
 	}
-	marks := e.markU
+	marks := m.markU
 	if byByte {
-		marks = e.markB
+		marks = m.markB
 	}
 	lo, hi := 0, len(marks)
 	for lo+1 < hi {
@@ -91,14 +102,14 @@ func (s *jstr) nearest(e *strExt, byByte bool, target int) (int, int) {
 			hi = mid
 		}
 	}
-	return int(e.markB[lo]), int(e.markU[lo])
+	return int(m.markB[lo]), int(m.markU[lo])
 }
 
 func (s *jstr) regexSubject() *regex.Subject {
 	if s.info&strShared != 0 || s.n < 256 {
 		return regex.NewSubject(s.flat())
 	}
-	e := s.x()
+	e := s.x().more()
 	if e.sub == nil {
 		e.sub = regex.NewSubject(s.flat())
 	}
@@ -131,34 +142,37 @@ func newString(s string) *jstr {
 	if len(s) == 1 && s[0] < 128 {
 		return asciiChars[s[0]]
 	}
-	return &jstr{s: s, n: len(s)}
+	return &jstr{s: s, n: int32(len(s))}
 }
 
 func newASCII(s string) *jstr {
 	if len(s) == 1 && s[0] < 128 {
 		return asciiChars[s[0]]
 	}
-	return &jstr{s: s, n: len(s), info: strKnown | strASCII}
+	return &jstr{s: s, n: int32(len(s)), info: strKnown | strASCII}
 }
 
 func (s *jstr) flat() string {
-	if s.rope == nil {
+	if !s.isRope() {
 		return s.s
 	}
 	var buf strings.Builder
-	buf.Grow(s.n)
+	buf.Grow(s.size())
 	stack := []*jstr{s}
 	for len(stack) > 0 {
 		t := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
-		for t.rope != nil {
-			stack = append(stack, t.rope.right)
-			t = t.rope.left
+		for t.isRope() {
+			stack = append(stack, t.ext.right)
+			t = t.ext.left
 		}
 		buf.WriteString(t.s)
 	}
 	s.s = buf.String()
-	s.rope = nil
+	s.ext.left, s.ext.right = nil, nil
+	if s.ext.ulen == 0 && s.ext.idx == nil {
+		s.ext = nil
+	}
 	return s.s
 }
 
@@ -173,22 +187,26 @@ func concatStrings(a, b *jstr) *jstr {
 	a.scan()
 	b.scan()
 	info := strKnown | (a.info & b.info & strASCII) | ((a.info | b.info) & strAstral)
-	var ext *strExt
+	ulen := 0
 	if info&strASCII == 0 {
-		ext = &strExt{ulen: a.length() + b.length()}
+		ulen = a.length() + b.length()
 	}
 	if n < ropeMin {
+		var ext *strExt
+		if ulen > 0 {
+			ext = &strExt{ulen: ulen}
+		}
 		return &jstr{s: a.flat() + b.flat(), n: n, info: info, ext: ext}
 	}
-	if a.rope != nil && b.rope == nil && b.n < chunkMax {
-		if r := a.rope.right; r.rope == nil && r.n+b.n <= chunkMax {
+	if a.isRope() && !b.isRope() && b.n < chunkMax {
+		if r := a.ext.right; !r.isRope() && r.n+b.n <= chunkMax {
 			r.scan()
 			ri := strKnown | (r.info & b.info & strASCII) | ((r.info | b.info) & strAstral)
 			merged := &jstr{s: r.s + b.s, n: r.n + b.n, info: ri}
-			return &jstr{rope: &ropeNode{a.rope.left, merged}, n: n, info: info, ext: ext}
+			return &jstr{ext: &strExt{left: a.ext.left, right: merged, ulen: ulen}, n: n, info: info}
 		}
 	}
-	return &jstr{rope: &ropeNode{a, b}, n: n, info: info, ext: ext}
+	return &jstr{ext: &strExt{left: a, right: b, ulen: ulen}, n: n, info: info}
 }
 
 func (s *jstr) scan() {
@@ -224,7 +242,7 @@ func (s *jstr) units() []uint16 {
 		}
 		return u
 	}
-	e := s.x()
+	e := s.x().more()
 	if e.u16 == nil {
 		str := s.flat()
 		u := make([]uint16, 0, s.length())
@@ -243,12 +261,12 @@ func (s *jstr) units() []uint16 {
 
 func (s *jstr) length() int {
 	if s.isASCII() {
-		return s.n
+		return s.size()
 	}
 	e := s.x()
 	if e.ulen == 0 {
-		if e.u16 != nil {
-			e.ulen = len(e.u16)
+		if e.idx != nil && e.idx.u16 != nil {
+			e.ulen = len(e.idx.u16)
 		} else {
 			e.ulen = utf16Len(s.flat())
 		}
@@ -262,14 +280,14 @@ func (s *jstr) unitAt(off int) int {
 	}
 	str := s.flat()
 	e := s.x()
-	if off < e.posB && e.posB-off <= 256 {
-		u := e.posU - utf16Len(str[off:e.posB])
-		e.posB, e.posU = off, u
+	if off < int(e.posB) && int(e.posB)-off <= 256 {
+		u := int(e.posU) - utf16Len(str[off:e.posB])
+		e.posB, e.posU = int32(off), int32(u)
 		return u
 	}
 	b, u := s.nearest(e, true, off)
 	u += utf16Len(str[b:off])
-	e.posB, e.posU = off, u
+	e.posB, e.posU = int32(off), int32(u)
 	return u
 }
 
@@ -287,7 +305,7 @@ func (s *jstr) substring(from, to int) string {
 	if s.isASCII() {
 		return s.flat()[from:to]
 	}
-	if s.ext == nil || s.ext.u16 == nil || to-from > 64 {
+	if s.ext == nil || s.ext.idx == nil || s.ext.idx.u16 == nil || to-from > 64 {
 		b1 := s.byteOf(from)
 		if s.unitAt(b1) == from {
 			b2 := s.byteOf(to)
@@ -392,8 +410,8 @@ func (s *jstr) byteOf(units int) int {
 	}
 	str := s.flat()
 	e := s.x()
-	if units < e.posU && e.posU-units <= 64 {
-		b, u := e.posB, e.posU
+	if units < int(e.posU) && int(e.posU)-units <= 64 {
+		b, u := int(e.posB), int(e.posU)
 		for u > units && b > 0 {
 			r, size := utf8.DecodeLastRuneInString(str[:b])
 			if r >= 0x10000 {
@@ -407,7 +425,7 @@ func (s *jstr) byteOf(units int) int {
 			b -= size
 		}
 		if u == units {
-			e.posB, e.posU = b, u
+			e.posB, e.posU = int32(b), int32(u)
 			return b
 		}
 	}
@@ -421,7 +439,7 @@ func (s *jstr) byteOf(units int) int {
 		}
 		b += size
 	}
-	e.posB, e.posU = b, u
+	e.posB, e.posU = int32(b), int32(u)
 	return b
 }
 

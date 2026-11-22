@@ -360,7 +360,7 @@ func (p *jsonParser) str() *jstr {
 			if ascii {
 				return newASCII(v)
 			}
-			return &jstr{s: v, n: len(v)}
+			return &jstr{s: v, n: int32(len(v))}
 		}
 		if c == '\\' {
 			return p.strSlow(start)
@@ -555,10 +555,10 @@ func (w *jsonWriter) value(v Value, holder *object, key propKey) bool {
 		}
 	case *jstr:
 		if r.n > 1<<20 {
-			if len(w.b)+r.n > maxStringLen {
+			if len(w.b)+r.size() > maxStringLen {
 				w.vm.throwError("RangeError", "Invalid string length")
 			}
-			w.vm.reserve(len(w.b) + 6*r.n)
+			w.vm.reserve(len(w.b) + 6*r.size())
 		}
 		w.b = appendQuoted(w.b, w.vm.flat(r))
 		if len(w.b) > maxStringLen {

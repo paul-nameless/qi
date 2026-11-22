@@ -114,7 +114,7 @@ const maxStringLen = 1<<29 - 24
 func (vm *VM) concatNum(s *jstr, f float64, numFirst bool) *jstr {
 	var nb [32]byte
 	d := appendNumber(nb[:0], f)
-	n := s.n + len(d)
+	n := s.size() + len(d)
 	if n >= ropeMin {
 		ds := newASCII(string(d))
 		if numFirst {
@@ -133,16 +133,16 @@ func (vm *VM) concatNum(s *jstr, f float64, numFirst bool) *jstr {
 		b.Write(d)
 	}
 	vm.track(n + 48)
-	return &jstr{s: b.String(), n: n, info: strKnown | s.info&(strASCII|strAstral)}
+	return &jstr{s: b.String(), n: int32(n), info: strKnown | s.info&(strASCII|strAstral)}
 }
 
 func (vm *VM) concat(a, b *jstr) *jstr {
 	if a.n+b.n > maxStringLen {
 		vm.throwError("RangeError", "Invalid string length")
 	}
-	vm.track(b.n + 64)
+	vm.track(b.size() + 64)
 	if a.n+b.n >= 1<<26 {
-		vm.reserve(a.n + b.n)
+		vm.reserve(a.size() + b.size())
 	}
 	return concatStrings(a, b)
 }

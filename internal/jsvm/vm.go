@@ -145,6 +145,7 @@ const memCheckEvery = 16 << 20
 
 func (vm *VM) checkMemory() {
 	vm.nextCheck = vm.tracked + memCheckEvery
+	clear(vm.stack[vm.sp:])
 	if vm.memLimit <= 0 {
 		return
 	}
@@ -183,9 +184,9 @@ func (vm *VM) ownKeys(o *object, enumOnly bool) []propKey {
 }
 
 func (vm *VM) flat(s *jstr) string {
-	if s.rope != nil {
-		vm.reserve(s.n)
-		vm.track(s.n)
+	if s.isRope() {
+		vm.reserve(s.size())
+		vm.track(s.size())
 	}
 	return s.flat()
 }
