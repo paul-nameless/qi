@@ -453,61 +453,100 @@ func (m *machine) backref(in *inst, pos int) (int, bool) {
 	if a < 0 || b < 0 {
 		return pos, true
 	}
-	s := m.s
-	sub := s[a:b]
-	if len(sub) > 32 && m.chargeRun(len(sub)) {
+	var p, cost int
+	var ok bool
+	switch {
+	case !in.fold && !in.back:
+		p, cost, ok = m.backrefFwd(a, b, pos)
+	case !in.fold:
+		p, cost, ok = m.backrefBack(a, b, pos)
+	case !in.back:
+		p, cost, ok = m.backrefFold(a, b, pos)
+	default:
+		p, cost, ok = m.backrefFoldBack(a, b, pos)
+	}
+	if cost > 32 && m.chargeRun(cost) {
 		return 0, false
 	}
-	if !in.fold {
-		if !in.back {
-			if strings.HasPrefix(s[pos:], sub) {
-				return pos + len(sub), true
-			}
-			return 0, false
-		}
-		if strings.HasSuffix(s[:pos], sub) {
-			return pos - len(sub), true
-		}
-		return 0, false
-	}
-	if !in.back {
-		return m.backrefFold(a, b, pos)
-	}
-	return m.backrefFoldBack(a, b, pos)
+	return p, ok
 }
 
-func (m *machine) backrefFold(a, b, pos int) (int, bool) {
+func commonPrefix(x, y string) int {
+	n := min(len(x), len(y))
+	i := 0
+	for i+64 <= n && x[i:i+64] == y[i:i+64] {
+		i += 64
+	}
+	for i < n && x[i] == y[i] {
+		i++
+	}
+	return i
+}
+
+func commonSuffix(x, y string) int {
+	n := min(len(x), len(y))
+	i := 0
+	for i+64 <= n && x[len(x)-i-64:len(x)-i] == y[len(y)-i-64:len(y)-i] {
+		i += 64
+	}
+	for i < n && x[len(x)-1-i] == y[len(y)-1-i] {
+		i++
+	}
+	return i
+}
+
+func (m *machine) backrefFwd(a, b, pos int) (int, int, bool) {
+	sub := m.s[a:b]
+	if len(m.s)-pos < len(sub) {
+		return 0, 0, false
+	}
+	k := commonPrefix(m.s[pos:], sub)
+	return pos + len(sub), k, k == len(sub)
+}
+
+func (m *machine) backrefBack(a, b, pos int) (int, int, bool) {
+	sub := m.s[a:b]
+	if pos < len(sub) {
+		return 0, 0, false
+	}
+	k := commonSuffix(m.s[:pos], sub)
+	return pos - len(sub), k, k == len(sub)
+}
+
+func (m *machine) backrefFold(a, b, pos int) (int, int, bool) {
 	s := m.s
+	start := a
 	for a < b {
 		if pos >= len(s) {
-			return 0, false
+			return 0, a - start, false
 		}
 		r1, w1 := decode(s, a)
 		r2, w2 := decode(s, pos)
 		if !m.sameFold(r1, r2) {
-			return 0, false
+			return 0, a - start, false
 		}
 		a += w1
 		pos += w2
 	}
-	return pos, true
+	return pos, a - start, true
 }
 
-func (m *machine) backrefFoldBack(a, b, pos int) (int, bool) {
+func (m *machine) backrefFoldBack(a, b, pos int) (int, int, bool) {
 	s := m.s
+	end := b
 	for b > a {
 		if pos <= 0 {
-			return 0, false
+			return 0, end - b, false
 		}
 		r1, w1 := decodeLast(s, b)
 		r2, w2 := decodeLast(s, pos)
 		if !m.sameFold(r1, r2) {
-			return 0, false
+			return 0, end - b, false
 		}
 		b -= w1
 		pos -= w2
 	}
-	return pos, true
+	return pos, end - b, true
 }
 
 func (m *machine) sameFold(a, b rune) bool {

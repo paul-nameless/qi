@@ -24,8 +24,20 @@ type subject struct {
 	mu      sync.Mutex
 	cesu    string
 	hasCesu bool
-	anchor  [2][3]int
+	tracks  [2]track
 }
+
+type track struct {
+	anchors [4][3]int
+	next    int
+	last    int
+	checks  [][3]int
+}
+
+const (
+	checkEvery = 1024
+	backSteps  = 32
+)
 
 func (sj *subject) reset(s string) {
 	sj.s = s
@@ -33,7 +45,7 @@ func (sj *subject) reset(s string) {
 	sj.astral = !sj.ascii && hasAstral(s)
 	sj.lt.Store(0)
 	sj.cesu, sj.hasCesu = "", false
-	sj.anchor = [2][3]int{}
+	sj.tracks = [2]track{}
 }
 
 var (
@@ -45,8 +57,8 @@ var (
 func sharedSubject(s string) *subject {
 	sharedMu.Lock()
 	defer sharedMu.Unlock()
-	for i, sj := range sharedSubj {
-		if sj != nil && len(sj.key) == len(s) && sampleEqual(sj.key, s) && sj.key == s {
+	for _, i := range [2]int{sharedLast, 1 - sharedLast} {
+		if sj := sharedSubj[i]; sj != nil && len(sj.key) == len(s) && sampleEqual(sj.key, s) && sj.key == s {
 			sj.key = s
 			sharedLast = i
 			return sj
@@ -170,11 +182,56 @@ func toCESU(s string) string {
 	return b.String()
 }
 
-func (c cursor) anchor() *[3]int {
+func (c cursor) track() *track {
 	if c.cesu {
-		return &c.sj.anchor[1]
+		return &c.sj.tracks[1]
 	}
-	return &c.sj.anchor[0]
+	return &c.sj.tracks[0]
+}
+
+func (t *track) checkpoint(target, by int) [3]int {
+	lo, hi := 0, len(t.checks)
+	for lo < hi {
+		m := int(uint(lo+hi) >> 1)
+		if t.checks[m][by] > target {
+			hi = m
+		} else {
+			lo = m + 1
+		}
+	}
+	if lo == 0 {
+		return [3]int{}
+	}
+	return t.checks[lo-1]
+}
+
+func (c cursor) back(p [3]int) ([3]int, bool) {
+	j := stepBack(c.w, p[cWork])
+	q := c.step([3]int{j, 0, 0})
+	if q[cWork] != p[cWork] {
+		return p, false
+	}
+	return [3]int{j, p[cU16] - q[cU16], p[cOrig] - q[cOrig]}, true
+}
+
+func (c cursor) start(t *track, target, by int) ([3]int, int) {
+	if a := t.anchors[t.last]; a[by] <= target && target-a[by] < checkEvery {
+		return a, t.last
+	}
+	best, slot := t.checkpoint(target, by), -1
+	for i, a := range t.anchors {
+		for k, ok := 0, true; ok && k < backSteps && a[by] > target && a[cWork] > 0; k++ {
+			a, ok = c.back(a)
+		}
+		if a[by] <= target && a[by] >= best[by] {
+			best, slot = a, i
+		}
+	}
+	if slot < 0 {
+		slot = t.next
+		t.next = (t.next + 1) % len(t.anchors)
+	}
+	return best, slot
 }
 
 func (c cursor) step(p [3]int) [3]int {
@@ -194,20 +251,22 @@ func (c cursor) step(p [3]int) [3]int {
 }
 
 func (c cursor) seek(target, by int) ([3]int, bool) {
-	a := c.anchor()
-	if target < a[by] {
-		*a = [3]int{}
-	}
-	p := c.backUp(*a, by)
+	t := c.track()
+	p, slot := c.start(t, target, by)
+	p = c.backUp(p, by)
 	for p[by] < target && p[cWork] < len(c.w) {
 		q := c.step(p)
 		if q[by] > target {
 			break
 		}
 		p = q
+		if p[cWork] >= (len(t.checks)+1)*checkEvery {
+			t.checks = append(t.checks, p)
+		}
 	}
 	p = c.backUp(p, by)
-	*a = p
+	t.anchors[slot] = p
+	t.last = slot
 	if p[by] < target && p[cWork] >= len(c.w) {
 		return p, false
 	}
@@ -249,12 +308,12 @@ func (c cursor) convert(res []int, to int) {
 	}
 	out = out[:len(idx)]
 	for k, i := range idx {
-		if k > 0 && res[i] == res[idx[k-1]] && i%2 == idx[k-1]%2 {
+		if k > 0 && res[i] == res[idx[k-1]] && i%2 == idx[k-1]%2 && (to != cOrig || i%2 == 0) {
 			out[k] = out[k-1]
 			continue
 		}
 		p, _ := c.seek(res[i], cWork)
-		if to == cOrig && i%2 == 1 && c.midPair(p) {
+		if to == cOrig && i%2 == 1 && res[i] != res[i-1] && c.midPair(p) {
 			p = c.step(p)
 		}
 		out[k] = p[to]

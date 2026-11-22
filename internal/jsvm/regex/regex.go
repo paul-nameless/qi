@@ -378,7 +378,7 @@ func (re *Regexp) execUnits(m *machine, dst []int, sj *subject, start int) []int
 
 func (re *Regexp) execBytesOn(m *machine, dst []int, sj *subject, start int) []int {
 	if !sj.needCesu(re.f.unicode) {
-		return re.exec(m, dst, sj.s, max(start, 0), false, sj)
+		return re.exec(m, dst, sj.s, charBoundary(sj.s, max(start, 0)), false, sj)
 	}
 	return re.execConverted(m, dst, sj, max(start, 0), cOrig)
 }
@@ -391,15 +391,25 @@ func (re *Regexp) ExecBytesTo(dst []int, s string, startByte int) []int {
 	m := re.acquire()
 	defer re.release(m)
 	if re.f.unicode {
-		return re.exec(m, dst, s, max(startByte, 0), false, nil)
+		return re.exec(m, dst, s, charBoundary(s, max(startByte, 0)), false, nil)
 	}
 	return re.execBytesOn(m, dst, m.subjectFor(s), startByte)
+}
+
+func charBoundary(s string, i int) int {
+	for k := 0; k < 3 && i > 0 && i < len(s) && s[i]&0xC0 == 0x80; k++ {
+		i++
+	}
+	return i
 }
 
 func (re *Regexp) execConverted(m *machine, dst []int, sj *subject, start, by int) []int {
 	sj.mu.Lock()
 	c := sj.cursor(re.f.unicode)
 	p, ok := c.seek(start, by)
+	for ok && by == cOrig && p[cOrig] < start && p[cWork] < len(c.w) {
+		p = c.step(p)
+	}
 	sj.mu.Unlock()
 	if !ok {
 		return nil
@@ -425,9 +435,10 @@ func (re *Regexp) exec(m *machine, dst []int, w string, start int, cesu bool, sj
 	}
 	m.s = w
 	m.steps = 0
-	m.limit = int(stepLimit.Load()) + 16*(len(w)-start)
+	full := int(stepLimit.Load()) + 16*(len(w)-start)
+	m.limit = full
 	if re.re2 != nil && re.engine == EngineAuto {
-		m.limit = min(m.limit, rescueSteps+8*(len(w)-start))
+		m.limit = min(full, rescueSteps+8*(len(w)-start))
 	}
 	if re.re2 != nil && re.engine == EngineAuto && re.preferRE2.Load() && re.re2.usable(m, w, cesu, sj) {
 		return re.re2.exec(dst, w, start, re.f.sticky)
@@ -439,7 +450,10 @@ func (re *Regexp) exec(m *machine, dst []int, w string, start int, cesu bool, sj
 			re.preferRE2.Store(true)
 			return re.re2.exec(dst, w, start, re.f.sticky)
 		}
-		m.limit = int(stepLimit.Load()) + 16*(len(w)-start)
+		if m.limit == full {
+			panic(&Error{errTooComplex})
+		}
+		m.limit, m.steps = full, 0
 		ok = m.search(start)
 		if m.abort {
 			m.recover()

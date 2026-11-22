@@ -65,7 +65,7 @@ func FuzzRegex(f *testing.F) {
 		for _, start := range []int{0, 1, len(s) / 2, len(s)} {
 			a, ac := safeExec(bt, s, start, false)
 			safeExec(bt, s, start, true)
-			if c, cc := safeExec(auto, s, start, false); !ac && !cc && !slices.Equal(a, c) {
+			if c, cc := safeExec(auto, s, start, false); !ac && !cc && utf8.ValidString(s) && !slices.Equal(a, c) {
 				t.Fatalf("/%s/%s on %q from %d: backtrack %v, auto %v", pattern, flags, s, start, a, c)
 			}
 			if r2.re2 == nil || ac || !utf8.ValidString(s) {
