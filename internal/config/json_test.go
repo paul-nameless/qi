@@ -111,6 +111,23 @@ func TestNullInProfileResetsToDefault(t *testing.T) {
 	}
 }
 
+func TestTerminalImagesProfileOverridesGlobal(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("QI_CONFIG_DIR", dir)
+	path := writeConfig(t, dir, "config.json", `{"terminal_images": false, "profiles": {"on": {"terminal_images": true}, "same": {"model": "m"}, "reset": {"terminal_images": null}}}`)
+	for profile, want := range map[string]bool{"": false, "on": true, "same": false, "reset": true} {
+		if c, err := Load(path, profile); err != nil || c.TerminalImagesOn() != want {
+			t.Errorf("profile %q: terminal images %v, want %v (%v)", profile, c.TerminalImagesOn(), want, err)
+		}
+	}
+	path = writeConfig(t, dir, "config.json", `{"profiles": {"off": {"terminal_images": false}}}`)
+	for profile, want := range map[string]bool{"": true, "off": false} {
+		if c, err := Load(path, profile); err != nil || c.TerminalImagesOn() != want {
+			t.Errorf("profile %q: terminal images %v, want %v (%v)", profile, c.TerminalImagesOn(), want, err)
+		}
+	}
+}
+
 func TestValidateMirrorsSchema(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("QI_CONFIG_DIR", dir)

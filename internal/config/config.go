@@ -57,6 +57,7 @@ type Config struct {
 	ContextWindow    Tokens    `json:"context_window"`
 	MaxRounds        int       `json:"max_rounds"`
 	ShowReasoning    *bool     `json:"show_reasoning"`
+	TerminalImages   *bool     `json:"terminal_images"`
 	ReadOnly         bool      `json:"read_only"`
 	ReadOnlyAllow    []string  `json:"read_only_allow"`
 	BashTimeout      int       `json:"bash_timeout"`
@@ -414,6 +415,10 @@ func pick(cond bool, a, b string) string {
 
 func (c Config) ShowReasoningOn() bool {
 	return c.ShowReasoning == nil || *c.ShowReasoning
+}
+
+func (c Config) TerminalImagesOn() bool {
+	return c.TerminalImages == nil || *c.TerminalImages
 }
 
 func (c Config) BuiltinSkillsOn() bool {

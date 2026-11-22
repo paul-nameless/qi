@@ -74,6 +74,10 @@
       "description": "Print the model's reasoning (dim). Default: true.",
       "type": "boolean"
     },
+    "terminal_images": {
+      "description": "Draw local image files named in a turn's final answer in the terminal (kitty graphics: Ghostty, kitty; never inside tmux or screen). Default: true.",
+      "type": "boolean"
+    },
     "read_only": {
       "description": "Start in read-only mode (no write or edit, bash limited to an allowlist). shift+tab toggles it. Default: false.",
       "type": "boolean"

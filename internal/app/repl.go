@@ -401,7 +401,7 @@ func (r *repl) turn(prepare func(context.Context) ([]llm.Block, error), draft st
 		return err
 	})
 	r.display.EndBlock()
-	if err == nil {
+	if err == nil && r.agent.Config().TerminalImagesOn() {
 		r.display.Images(final)
 	}
 	r.lastCancelled = errors.Is(err, context.Canceled)

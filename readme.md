@@ -97,7 +97,7 @@ git diff | qi -q "review this"
 
 Keys: shift+tab toggles read-only, ctrl+g opens `$EDITOR`, ctrl+r searches past prompts, `@` picks files, alt+enter adds a newline, esc or ctrl+c stops the agent. Text typed while it works is sent with the next tool results.
 
-Images: local PNG, JPEG and GIF files whose paths appear in the final answer of a turn are drawn after it (up to 4) in terminals with the kitty graphics protocol (Ghostty, kitty), not inside tmux or screen.
+Images: local PNG, JPEG and GIF files whose paths appear in the final answer of a turn are drawn after it (up to 4) in terminals with the kitty graphics protocol (Ghostty, kitty), not inside tmux or screen. `"terminal_images": false` turns this off, globally or in a profile.
 
 Commands: `/help`, `/keys`, `/status`, `/config`, `/clear`, `/context`, `/compact`, `/reload`, `/resume`, `/history`, `/copy`, `/model`, `/profile`, `/effort`, `/skills`, `/mcp`, `/exit`, plus `/<skill or command>`. `/` on an empty line opens the picker.
 
