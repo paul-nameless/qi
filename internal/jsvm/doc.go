@@ -23,7 +23,9 @@
 // NewPromise and settles it later from the embedder's goroutine, followed by
 // RunJobs. Interrupt may be called from any goroutine: the running cell fails
 // with ErrInterrupted, which JavaScript cannot catch, and the VM stays usable
-// after ClearInterrupt. Uncaught JavaScript errors are returned as *Exception
+// after ClearInterrupt. An interrupted RunCell or RunJobs also unwinds the
+// async functions of the most recent cell that are still suspended in await,
+// so they never resume; queued jobs stay queued. Uncaught JavaScript errors are returned as *Exception
 // with name, message, a V8-style stack ("    at fn (cell.js:LINE:COL)") and
 // the line and column of the innermost frame; syntax errors carry the line and
 // column of the offending token. Async functions run on coroutines

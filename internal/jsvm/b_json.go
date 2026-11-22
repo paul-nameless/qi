@@ -622,7 +622,7 @@ func (w *jsonWriter) array(a *object) {
 		}
 		var ok bool
 		if w.replacer != nil || isObjectNeedingPrepare(a.arr[i]) {
-			ok = w.value(a.arr[i], a, strKey(strconv.Itoa(i)))
+			ok = w.value(unhole(a.arr[i]), a, strKey(strconv.Itoa(i)))
 		} else {
 			ok = w.value(a.arr[i], nil, propKey(""))
 		}

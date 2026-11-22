@@ -477,7 +477,11 @@ func (vm *VM) setupArray() {
 			}
 			r := vm.call3(fn, arg(args, 1), a.arr[i], intV(i), this)
 			if o, ok := r.r.(*object); ok && o.class == classArray {
-				out = vm.appendV(out, o.arr...)
+				for _, x := range o.arr {
+					if !x.isHole() {
+						out = vm.appendV(out, x)
+					}
+				}
 			} else {
 				out = vm.appendV(out, r)
 			}

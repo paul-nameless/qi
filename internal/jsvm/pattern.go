@@ -67,12 +67,23 @@ func (c *compiler) arrayPatternWith(t *arrayPattern, ids identStore) func(f *fra
 			elems[i] = el{false, c.patternWith(x, ids)}
 		}
 	}
+	hasRest := false
+	for _, e := range elems {
+		hasRest = hasRest || e.rest
+	}
 	p := int32(t.pos)
 	return func(f *frame, v Value) {
 		vm := f.vm
 		var vals []Value
 		if o, ok := v.r.(*object); ok && o.class == classArray {
-			vals = dense(o)
+			n := len(o.arr)
+			if !hasRest && n > len(elems) {
+				n = len(elems)
+			}
+			vals = make([]Value, n)
+			for i := range vals {
+				vals[i] = unhole(o.arr[i])
+			}
 		} else {
 			f.pos = p
 			vals = vm.collect(v)

@@ -68,3 +68,70 @@ func TestParkedCoroutinesReleased(t *testing.T) {
 		t.Errorf("goroutines at end: %d, baseline %d", got, base)
 	}
 }
+
+func gcSettle() {
+	for i := 0; i < 3; i++ {
+		runtime.GC()
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func TestSettledAwaitSurvivesGC(t *testing.T) {
+	vm := New(Options{})
+	steps := []string{
+		"globalThis.done = 0; (async () => { await 1; await Promise.resolve(2); await new Promise(res => { globalThis.r = res }); done = 1 })(); 1",
+		"r(); r = null; 1",
+		"globalThis.q = Promise.resolve(3); (async () => { await q; done = 2 })(); q = null; 1",
+	}
+	want := []string{"0", "1", "2"}
+	for i, src := range steps {
+		if _, err := vm.RunCell("cell.js", src); err != nil {
+			t.Fatal(err)
+		}
+		gcSettle()
+		if err := vm.RunJobs(); err != nil {
+			t.Fatal(err)
+		}
+		gcSettle()
+		vm.RunJobs()
+		v, _ := vm.RunCell("cell.js", "done")
+		if ToString(v) != want[i] {
+			t.Fatalf("step %d: done = %s, want %s (coros %d)", i, ToString(v), want[i], len(vm.coros))
+		}
+	}
+}
+
+func TestInterruptedJobsCancelLatestCell(t *testing.T) {
+	vm := New(Options{})
+	if _, err := vm.RunCell("cell.js", "globalThis.out = 0; (async () => { await new Promise(res => { globalThis.r = res }); out = 1 })(); 1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := vm.RunCell("cell.js", "Promise.resolve().then(() => { while (true) {} }); 1"); err != nil {
+		t.Fatal(err)
+	}
+	timer := time.AfterFunc(20*time.Millisecond, vm.Interrupt)
+	err := vm.RunJobs()
+	timer.Stop()
+	vm.ClearInterrupt()
+	if err != ErrInterrupted {
+		t.Fatalf("want interrupt, got %v", err)
+	}
+	vm.RunCell("cell.js", "r()")
+	vm.RunJobs()
+	if v, _ := vm.RunCell("cell.js", "out"); ToString(v) != "1" {
+		t.Errorf("earlier cell's coroutine killed: out = %s", ToString(v))
+	}
+	vm.RunCell("cell.js", "globalThis.out = 0; (async () => { await new Promise(res => { globalThis.r = res }); out = 2 })(); Promise.resolve().then(() => { while (true) {} }); 1")
+	timer = time.AfterFunc(20*time.Millisecond, vm.Interrupt)
+	err = vm.RunJobs()
+	timer.Stop()
+	vm.ClearInterrupt()
+	if err != ErrInterrupted {
+		t.Fatalf("want interrupt, got %v", err)
+	}
+	vm.RunCell("cell.js", "r()")
+	vm.RunJobs()
+	if v, _ := vm.RunCell("cell.js", "out"); ToString(v) != "0" {
+		t.Errorf("latest cell's coroutine resumed after interrupt: out = %s", ToString(v))
+	}
+}

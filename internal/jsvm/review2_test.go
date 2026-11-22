@@ -187,3 +187,29 @@ func TestReviewRound6(t *testing.T) {
 		forceGC()
 	}
 }
+
+func TestRev4Round1(t *testing.T) {
+	v, err := New(Options{}).RunCell("c.js", "const m = new Map([[1, 2]]); Object.setPrototypeOf(m, null); const c = structuredClone(m); c instanceof Map && c.get(1) === 2")
+	if err != nil || ToString(v) != "true" {
+		t.Errorf("structuredClone of null-proto Map: %s %v", ToString(v), err)
+	}
+	cases := map[string]string{
+		"return JSON.stringify([1, 2].flatMap(x => x === 1 ? [, 5] : [x]))":                                                               "[5,2]",
+		"return [1].flatMap(() => [, ,]).length":                                                                                          "0",
+		"const seen = []; JSON.stringify([1, , 3], (k, v) => { seen.push(typeof v); return v }); return seen.join()":                      "object,number,undefined,number",
+		"return JSON.stringify([1, , 3], (k, v) => v)":                                                                                    "[1,null,3]",
+		"const a = [1, 2, 3]; const [x = a.pop(), y, z = 9] = [undefined, ...a].slice(0, 2).concat([undefined]); return [x, y, z].join()": "3,1,9",
+		"const a = [undefined, 2, 3]; const [x = (a[1] = 7), y] = a; return [x, y].join()":                                                "7,2",
+		"const a = [undefined, 2]; const [x = a.length = 0, y] = a; return String(y)":                                                     "2",
+		"const [p, , q, ...r] = [1, , 3, 4, , 6]; return [p, q, r.length, r[1]].join()":                                                   "1,3,3,",
+		"return parseInt('g0000000002v', 32) === 576460752303423616":                                                                      "true",
+		"return parseInt('1fffffffffffff1', 16) === 0x1fffffffffffff1":                                                                    "true",
+	}
+	for src, want := range cases {
+		s := newSession(t)
+		out, err := s.run(src, 20*time.Second)
+		if err != nil || out != want {
+			t.Errorf("%s\n  got %q %v want %q", src, out, err, want)
+		}
+	}
+}

@@ -4,7 +4,6 @@ import (
 	"runtime"
 	"runtime/metrics"
 	"strings"
-	"sync"
 	"sync/atomic"
 )
 
@@ -61,8 +60,7 @@ type VM struct {
 	promiseProto *object
 	regexpProto  *object
 	cellID       int
-	deadMu       sync.Mutex
-	dead         []*coro
+	dead         deadList
 	dateProto    *object
 	regexpRoot   *hclass
 	joining      map[*object]bool

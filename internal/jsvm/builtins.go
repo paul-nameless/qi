@@ -3,6 +3,7 @@ package jsvm
 import (
 	"math"
 	"math/big"
+	"math/bits"
 	"strconv"
 	"strings"
 )
@@ -165,7 +166,7 @@ func parseIntRadix(s string, radix int) float64 {
 		return parseIntDigits(s, 10, false)
 	}
 	if radix&(radix-1) == 0 {
-		if n <= 13 {
+		if n*bits.Len(uint(radix-1)) <= 53 {
 			return parseIntDigits(s, radix, false)
 		}
 		s = strings.TrimLeft(s, "0")
@@ -274,7 +275,11 @@ func (vm *VM) structuredClone(v Value, seen map[*object]*object) Value {
 		return objV(c)
 	case classMap, classSet:
 		md := newMapData()
-		c := &object{shape: o.shape.proto.rootShape(), class: o.class, inner: md}
+		proto := vm.mapProto
+		if o.class == classSet {
+			proto = vm.setProto
+		}
+		c := &object{shape: proto.rootShape(), class: o.class, inner: md}
 		seen[o] = c
 		o.inner.(*mapData).each(func(e *mapEntry) bool {
 			vm.track(96)

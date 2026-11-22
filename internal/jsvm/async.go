@@ -3,6 +3,7 @@ package jsvm
 import (
 	"iter"
 	"runtime"
+	"sync"
 )
 
 const maxCoroutines = 100000
@@ -17,6 +18,13 @@ type coro struct {
 	sp      int
 	cell    int
 	cleanup runtime.Cleanup
+	gen     int
+	parked  bool
+}
+
+type deadRef struct {
+	co  *coro
+	gen int
 }
 
 func (vm *VM) callAsync(fo *object, cl *closure, this Value, args []Value) Value {
@@ -105,7 +113,7 @@ func (vm *VM) await(f *frame, v Value) Value {
 	if !co.yield(struct{}{}) {
 		panic(killSignal{})
 	}
-	co.cleanup.Stop()
+	co.unpark()
 	vm.top = f
 	f.parent = nil
 	if co.inThrow {
@@ -115,36 +123,68 @@ func (vm *VM) await(f *frame, v Value) Value {
 }
 
 func (vm *VM) park(co *coro, p *object) {
-	vm.addReaction(p, &reaction{co: co})
 	clear(vm.stack[vm.sp:])
 	co.in = undefined
-	co.cleanup = runtime.AddCleanup(p, vm.markDead, co)
+	co.gen++
+	co.parked = true
+	pending := p.inner.(*promise).state == pending
+	vm.addReaction(p, &reaction{co: co})
+	if pending {
+		co.cleanup = runtime.AddCleanup(p, vm.dead.mark, deadRef{co, co.gen})
+	}
 }
 
-func (vm *VM) markDead(co *coro) {
-	vm.deadMu.Lock()
-	vm.dead = append(vm.dead, co)
-	vm.deadMu.Unlock()
+func (co *coro) unpark() {
+	co.parked = false
+	co.cleanup.Stop()
+}
+
+type deadList struct {
+	mu   sync.Mutex
+	refs []deadRef
+}
+
+func (d *deadList) mark(r deadRef) {
+	d.mu.Lock()
+	d.refs = append(d.refs, r)
+	d.mu.Unlock()
+}
+
+func (d *deadList) take() []deadRef {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	refs := d.refs
+	d.refs = nil
+	return refs
+}
+
+func (vm *VM) kill(co *coro) {
+	delete(vm.coros, co)
+	co.cleanup.Stop()
+	co.stop()
 }
 
 func (vm *VM) reapDead() {
-	vm.deadMu.Lock()
-	dead := vm.dead
-	vm.dead = nil
-	vm.deadMu.Unlock()
-	for _, co := range dead {
-		if _, ok := vm.coros[co]; ok {
-			delete(vm.coros, co)
-			co.stop()
+	for _, r := range vm.dead.take() {
+		if _, ok := vm.coros[r.co]; ok && r.co.parked && r.co.gen == r.gen && !vm.running(r.co) {
+			vm.kill(r.co)
 		}
 	}
 }
 
+func (vm *VM) running(co *coro) bool {
+	for f := vm.top; f != nil; f = f.parent {
+		if f.co == co {
+			return true
+		}
+	}
+	return false
+}
+
 func (vm *VM) killCell(cell int) {
 	for co := range vm.coros {
-		if co.cell == cell {
-			delete(vm.coros, co)
-			co.stop()
+		if co.cell == cell && co.parked {
+			vm.kill(co)
 		}
 	}
 }
@@ -152,8 +192,7 @@ func (vm *VM) killCell(cell int) {
 func (vm *VM) killCoroutines() {
 	for len(vm.coros) > 0 {
 		for co := range vm.coros {
-			delete(vm.coros, co)
-			co.stop()
+			vm.kill(co)
 		}
 	}
 }
@@ -200,6 +239,9 @@ func (vm *VM) settle(po *object, state uint8, v Value) {
 	rs := p.reactions
 	p.reactions = nil
 	for _, r := range rs {
+		if r.co != nil {
+			r.co.cleanup.Stop()
+		}
 		vm.enqueue(job{r: r, v: v, rej: state == rejected})
 	}
 }
