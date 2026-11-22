@@ -243,6 +243,8 @@ func (e *Editor) apply(st *lineState, k Key, histIdx *int, draft *string) {
 		w := wordLeft(st.buf, st.pos)
 		st.buf = append(st.buf[:w], st.buf[st.pos:]...)
 		st.pos = w
+	case KeyKillWordRight:
+		st.buf = append(st.buf[:st.pos], st.buf[wordRight(st.buf, st.pos):]...)
 	case KeyUp:
 		if !e.moveRow(st, -1) {
 			e.historyBack(st, histIdx, draft)

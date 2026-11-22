@@ -31,6 +31,7 @@ const (
 	KeyKillLine
 	KeyKillEnd
 	KeyKillWord
+	KeyKillWordRight
 	KeyEOF
 	KeyEsc
 	KeyModeToggle
@@ -422,6 +423,8 @@ func decodeEscape(b []byte) (Key, int) {
 		return Key{Kind: KeyWordRight}, 2
 	case 0x7f:
 		return Key{Kind: KeyKillWord}, 2
+	case 'd':
+		return Key{Kind: KeyKillWordRight}, 2
 	case 0x1b:
 		return Key{Kind: KeyEsc}, 1
 	}
@@ -447,6 +450,8 @@ func csiKey(seq string) Key {
 		return Key{Kind: KeyEnd}
 	case "3~":
 		return Key{Kind: KeyDelete}
+	case "3;3~", "3;5~":
+		return Key{Kind: KeyKillWordRight}
 	case "Z", "9;5u", "27;5;9~", "9;6u", "27;6;9~", "9;2u":
 		return Key{Kind: KeyModeToggle}
 	case "1;5D", "1;3D":

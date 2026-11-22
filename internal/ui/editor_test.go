@@ -112,6 +112,10 @@ func TestEditorApply(t *testing.T) {
 		{"word left across newline", "foo\nbar", 4, Key{Kind: KeyWordLeft}, "foo\nbar", 0},
 		{"word right across newline", "foo\nbar", 3, Key{Kind: KeyWordRight}, "foo\nbar", 7},
 		{"kill word across newline", "foo\nbar", 4, Key{Kind: KeyKillWord}, "bar", 0},
+		{"kill word right", "foo bar.baz", 3, Key{Kind: KeyKillWordRight}, "foo.baz", 3},
+		{"kill word right mid word", "foo bar", 1, Key{Kind: KeyKillWordRight}, "f bar", 1},
+		{"kill word right across newline", "foo\nbar baz", 3, Key{Kind: KeyKillWordRight}, "foo baz", 3},
+		{"kill word right at end", "foo", 3, Key{Kind: KeyKillWordRight}, "foo", 3},
 		{"unknown key ignored", "foo", 1, Key{Kind: KeyClear}, "foo", 1},
 	}
 	for _, c := range cases {
