@@ -26,6 +26,7 @@ const (
 	maxRecordInput     = 2048
 	maxTimerDelay      = 24 * time.Hour
 	formatTimeout      = 5 * time.Second
+	codeFinished       = "the code has finished"
 	newVMNote          = "Note: this is a new VM; variables and functions from earlier run calls are gone."
 )
 
@@ -43,6 +44,8 @@ type runner struct {
 	keys      jsvm.Value
 	object    jsvm.Value
 	global    jsvm.Value
+	console   jsvm.Value
+	log       jsvm.Value
 	note      bool
 	cur       *cell
 	pathMu    sync.Mutex
@@ -101,6 +104,7 @@ func (r *runner) run(ctx context.Context, env *Env, in json.RawMessage, progress
 			return errResult("start the JavaScript VM: %v", err)
 		}
 	}
+	r.bindFuncs()
 	c := newCell(ctx, r, env, progress, cellTimeout(a.Timeout))
 	if r.note {
 		c.note, r.note = newVMNote, false
@@ -112,14 +116,6 @@ func (r *runner) run(ctx context.Context, env *Env, in json.RawMessage, progress
 
 func (r *runner) newVM() error {
 	vm := jsvm.New(jsvm.Options{MemoryLimit: 512 << 20, MaxDepth: 2000, Stdout: r.stdout})
-	for _, t := range r.inner.tools {
-		if t.Code != nil {
-			vm.SetFunc(t.Code.Name, r.toolFunc(t.Def.Name))
-		}
-	}
-	vm.SetFunc("sleep", r.sleepFunc)
-	vm.SetFunc("setTimeout", r.setTimeoutFunc)
-	vm.SetFunc("clearTimeout", r.clearTimeoutFunc)
 	if err := r.bindHelpers(vm); err != nil {
 		vm.Close()
 		return err
@@ -137,16 +133,26 @@ func (r *runner) bindHelpers(vm *jsvm.VM) error {
 	if r.keys, err = vm.GetProp(r.object, "keys"); err != nil {
 		return err
 	}
-	console := vm.Get("console")
-	log, err := vm.GetProp(console, "log")
-	if err != nil {
-		return err
+	r.console = vm.Get("console")
+	r.log, err = vm.GetProp(r.console, "log")
+	return err
+}
+
+func (r *runner) bindFuncs() {
+	for _, t := range r.inner.tools {
+		if t.Code != nil {
+			r.vm.SetFunc(t.Code.Name, r.toolFunc(t.Def.Name))
+		}
 	}
-	vm.SetFunc("print", func(vm *jsvm.VM, args []jsvm.Value) (jsvm.Value, error) {
-		_, err := vm.CallValue(log, console, args...)
-		return jsvm.Undefined(), err
-	})
-	return nil
+	r.vm.SetFunc("sleep", r.sleepFunc)
+	r.vm.SetFunc("setTimeout", r.setTimeoutFunc)
+	r.vm.SetFunc("clearTimeout", r.clearTimeoutFunc)
+	r.vm.SetFunc("print", r.printFunc)
+}
+
+func (r *runner) printFunc(vm *jsvm.VM, args []jsvm.Value) (jsvm.Value, error) {
+	_, err := vm.CallValue(r.log, r.console, args...)
+	return jsvm.Undefined(), err
 }
 
 func (r *runner) stdout(_, text string) {
@@ -199,6 +205,9 @@ func (r *runner) sleepFunc(vm *jsvm.VM, args []jsvm.Value) (jsvm.Value, error) {
 	if c == nil {
 		return jsvm.Undefined(), throwToolError(vm, "sleep is not available", false, "")
 	}
+	if c.settled {
+		return jsvm.Undefined(), vm.Exception(vm.NewError("Error", "sleep: "+codeFinished))
+	}
 	p, resolve, _ := vm.NewPromise()
 	c.startTimer(&pendingCall{kind: sleepCall, resolve: resolve}, delayArg(args, 0))
 	return p, nil
@@ -208,6 +217,9 @@ func (r *runner) setTimeoutFunc(vm *jsvm.VM, args []jsvm.Value) (jsvm.Value, err
 	c := r.cur
 	if c == nil || len(args) == 0 || args[0].Kind() != jsvm.KindFunction {
 		return jsvm.Undefined(), vm.Exception(vm.NewError("TypeError", "setTimeout needs a function as its first argument"))
+	}
+	if c.settled {
+		return jsvm.Undefined(), vm.Exception(vm.NewError("Error", "setTimeout: "+codeFinished))
 	}
 	var rest []jsvm.Value
 	if len(args) > 2 {

@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/paul-nameless/qi/internal/llm"
 	"github.com/paul-nameless/qi/internal/strutil"
@@ -77,9 +78,9 @@ func Read() *Tool {
 				return errResult("file_path is required")
 			}
 			path := env.resolve(a.FilePath)
-			text := numberedText
+			text := numberedFile
 			if inCell(ctx) {
-				text = rawText
+				text = rawFile
 			}
 			res := readFile(path, a.Offset, a.Limit, a.Crop, text)
 			if !res.IsError {
@@ -91,10 +92,10 @@ func Read() *Tool {
 }
 
 func readPath(path string, offset, limit int, crop []int) Result {
-	return readFile(path, offset, limit, crop, numberedText)
+	return readFile(path, offset, limit, crop, numberedFile)
 }
 
-func readFile(path string, offset, limit int, crop []int, text func(data string, offset, limit int) Result) Result {
+func readFile(path string, offset, limit int, crop []int, text func(data []byte, offset, limit int) Result) Result {
 	st, err := os.Stat(path)
 	if err != nil {
 		return errResult("%v", err)
@@ -118,14 +119,32 @@ func readFile(path string, offset, limit int, crop []int, text func(data string,
 	if err != nil {
 		return errResult("%v", err)
 	}
+	return text(data, offset, limit)
+}
+
+func isBinary(data []byte) bool {
 	probe := data
 	if len(probe) > 8192 {
 		probe = probe[:8192]
 	}
-	if bytes.IndexByte(probe, 0) >= 0 {
+	return bytes.IndexByte(probe, 0) >= 0
+}
+
+func numberedFile(data []byte, offset, limit int) Result {
+	if isBinary(data) {
 		return Result{Text: fmt.Sprintf("binary file, %d bytes", len(data)), Summary: "binary"}
 	}
-	return text(string(data), offset, limit)
+	return numberedText(string(data), offset, limit)
+}
+
+func rawFile(data []byte, offset, limit int) Result {
+	switch {
+	case isBinary(data):
+		return errResult("binary file, %d bytes: read returns text only; use bash (file, xxd, strings) for it", len(data))
+	case !utf8.Valid(data):
+		return errResult("not valid UTF-8 text: read would alter its bytes; use bash (iconv, sed) for it")
+	}
+	return rawText(string(data), offset, limit)
 }
 
 func rawText(data string, offset, limit int) Result {

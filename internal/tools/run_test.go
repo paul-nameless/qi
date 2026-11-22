@@ -147,19 +147,21 @@ func TestCellEdit(t *testing.T) {
 
 func TestCellBashShape(t *testing.T) {
 	k := newCellKit(t)
-	k.want(`JSON.stringify(await bash("echo hi"))`, `{"output":"hi","exit_code":0,"timed_out":false}`)
-	k.want(`JSON.stringify(await bash("echo oops; exit 3"))`, `{"output":"oops","exit_code":3,"timed_out":false}`)
-	k.want(`JSON.stringify(await bash("echo start; sleep 5", {timeout: 1}))`, `{"output":"start","exit_code":-1,"timed_out":true}`)
-	k.want(`JSON.stringify(await bash({command: "printf 'a\\n\\nb\\n\\n'"}))`, `{"output":"a\n\nb","exit_code":0,"timed_out":false}`)
+	k.want(`JSON.stringify(await bash("echo hi"))`, `{"output":"hi","exit_code":0,"timed_out":false,"truncated":false}`)
+	k.want(`JSON.stringify(await bash("echo oops; exit 3"))`, `{"output":"oops","exit_code":3,"timed_out":false,"truncated":false}`)
+	k.want(`JSON.stringify(await bash("echo start; sleep 5", {timeout: 1}))`, `{"output":"start","exit_code":-1,"timed_out":true,"truncated":false}`)
+	k.want(`JSON.stringify(await bash({command: "printf 'a\\n\\nb\\n\\n'"}))`, `{"output":"a\n\nb","exit_code":0,"timed_out":false,"truncated":false}`)
 }
 
 func TestCellToolError(t *testing.T) {
 	k := newCellKit(t)
 	k.env.ReadOnly = func() bool { return true }
 	k.wantErr("\n\nawait write('x.txt', 'y')", "ToolError: read-only mode: write is not allowed\n    at cell.js:3:")
-	k.want(`try { await write("x.txt", "y") } catch (e) { return [e.name, e.denied, e.message].join("|") }`, "ToolError|true|read-only mode: write is not allowed")
-	k.want(`try { await bash("touch x.txt") } catch (e) { return e.denied }`, "true")
-	k.want(`try { await read("nope.txt") } catch (e) { return e.denied }`, "false")
+	k.want(`try { await write("x.txt", "y") } catch (e) { return [e.name, e.denied, e.message].join("|") }`, "ToolError|true|read-only mode: write is not allowed\nFailed calls:\n✗ write x.txt: read-only mode: write is not allowed")
+	k.want(`try { await bash("touch x.txt") } catch (e) { return e.denied }`, "true\nFailed calls:\n✗ bash touch x.txt: read-only mode: \"touch x.txt\" is not in the read-only allowlist")
+	if res := k.cell(`try { await read("nope.txt") } catch (e) { return e.denied }`); res.IsError || !strings.HasPrefix(res.Text, "false\nFailed calls:\n✗ read nope.txt: stat ") {
+		t.Errorf("caught read failure: %+v", res)
+	}
 	k.env.ReadOnly = nil
 	k.env.PreHook = func(ctx context.Context, c HookCall) (bool, string, json.RawMessage) {
 		if c.Tool == "Write" && strings.Contains(string(c.Input), "blocked") {
@@ -170,7 +172,7 @@ func TestCellToolError(t *testing.T) {
 		}
 		return false, "", nil
 	}
-	k.want(`try { await write("blocked.txt", "y") } catch (e) { return e.denied + " " + e.message }`, "true blocked by hook: no writes there")
+	k.want(`try { await write("blocked.txt", "y") } catch (e) { return e.denied + " " + e.message }`, "true blocked by hook: no writes there\nFailed calls:\n✗ write blocked.txt: blocked by hook: no writes there")
 	k.cell(`await write("orig.txt", "y")`)
 	if data, err := os.ReadFile(filepath.Join(k.dir, "rewritten.txt")); err != nil || string(data) != "hooked" {
 		t.Errorf("rewritten input not applied: %q %v", data, err)
@@ -426,8 +428,19 @@ func TestCellMCP(t *testing.T) {
 	k := newCellKit(t, MCPTools(m)...)
 	k.want(`await mcp("fake", "echo", {text: "hi"})`, "echo:hi")
 	k.want(`(await tool_search("echo", "fake")).includes("tool: echo")`, "true")
+	var hookArgs []string
+	k.env.PreHook = func(ctx context.Context, c HookCall) (bool, string, json.RawMessage) {
+		hookArgs = append(hookArgs, string(c.Input))
+		return false, "", nil
+	}
+	k.want(`[await mcp("fake", "echo"), await mcp("fake", "echo", undefined), await mcp("fake", "echo", null)].join(" ")`, "echo:<nil> echo:<nil> echo:<nil>")
+	if strings.Join(hookArgs, " ") != "{} {} {}" {
+		t.Errorf("missing args sent as %q, want {}", hookArgs)
+	}
+	k.env.PreHook = nil
+	k.wantErr(`await mcp("fake")`, "mcp: tool is undefined")
 	k.env.ReadOnly = func() bool { return true }
-	k.want(`try { await mcp({server: "fake", tool: "echo", arguments: {}}) } catch (e) { return e.denied }`, "true")
+	k.want(`try { await mcp({server: "fake", tool: "echo", arguments: {}}) } catch (e) { return e.denied }`, "true\nFailed calls:\n✗ mcp fake.echo: read-only mode: MCP tools may have side effects and are disabled")
 	for in, want := range map[string]string{`{"a": 1}`: `{"a": 1}`, ` [1] `: `[1]`, `{bad`: ``, `echo:{}`: ``, `"s"`: ``} {
 		if got := string(jsonValue(in)); got != want {
 			t.Errorf("jsonValue(%q) = %q, want %q", in, got, want)
@@ -558,4 +571,140 @@ func TestCellParallelLimit(t *testing.T) {
 	if peak.Load() != cellParallel {
 		t.Errorf("peak concurrency %d, want %d", peak.Load(), cellParallel)
 	}
+}
+
+func TestCellRequiredArgs(t *testing.T) {
+	k := newCellKit(t, Subagent("m", nil, nil))
+	k.env.Subagent = func(ctx context.Context, task SubagentTask, progress func(string)) (string, error) { return "ok", nil }
+	k.file("out.txt", "keep\n")
+	res := k.wantErr(`const obj = {}; await write("out.txt", obj.typo)`, "ToolError: write: content is undefined\n    at cell.js:1:")
+	if len(res.Calls) != 0 {
+		t.Errorf("a call with a missing argument ran: %+v", res.Calls)
+	}
+	k.wantErr(`await edit("out.txt", "keep", undefined)`, "edit: new (new_string) is undefined")
+	k.wantErr(`await edit("out.txt", "keep", null)`, "edit: new (new_string) is null")
+	k.wantErr(`await write({file_path: "out.txt"})`, "write: content is undefined")
+	k.wantErr(`await read()`, "read: path (file_path) is undefined")
+	k.wantErr(`await edit("out.txt", "keep", "x", {all: true, replace_all: false})`, "edit: both all and replace_all given")
+	if data, _ := os.ReadFile(filepath.Join(k.dir, "out.txt")); string(data) != "keep\n" {
+		t.Errorf("out.txt changed: %q", data)
+	}
+	k.want(`await write("empty.txt", ""); JSON.stringify(await read("empty.txt"))`, `""`)
+	k.want(`await subagent("quick")`, "ok")
+}
+
+func TestCellFailedCallsNote(t *testing.T) {
+	k := newCellKit(t)
+	k.file("a.go", "package a\n")
+	res := k.cell(`edit("a.go", "x", "y"); await bash("sleep 0.3"); "done"`)
+	if res.IsError || !strings.HasPrefix(res.Text, "done\nFailed calls:\n✗ edit a.go: old_string not found") || strings.Contains(res.Text, "still running") {
+		t.Errorf("unawaited failure: %+v", res)
+	}
+	res = k.cell(`for (let i = 0; i < 12; i++) { try { await read("missing" + i) } catch {} } "ok"`)
+	if !strings.HasSuffix(res.Text, "\nand 2 more") || strings.Count(res.Text, "✗ read missing") != 10 {
+		t.Errorf("failed list cap: %q", res.Text)
+	}
+	k.want(`(await bash("exit 3")).exit_code`, "3")
+	res = k.cell(`edit("missing.txt", "a", "b"); "r"`)
+	if strings.Count(res.Text, "edit missing.txt") != 1 || !strings.Contains(res.Text, "still running") {
+		t.Errorf("late failure listed twice or not at all: %q", res.Text)
+	}
+}
+
+func TestCellBashErrorResolves(t *testing.T) {
+	k := newCellKit(t)
+	var mu sync.Mutex
+	var hookErrs []bool
+	k.env.PostHook = func(ctx context.Context, c HookCall, r Result) string {
+		mu.Lock()
+		if c.Tool == "Bash" {
+			hookErrs = append(hookErrs, r.IsError)
+		}
+		mu.Unlock()
+		return ""
+	}
+	code := `const a = await bash("echo x; exit 3"); const b = await bash("sleep 5", {timeout: 1}); return [a.exit_code, b.timed_out].join(" ")`
+	b := k.reg.Execute(context.Background(), k.env, []llm.Block{{ID: "c1", Name: "run", Input: mustJSON(t, runArgs{Code: code})}}, nopUI{})[0]
+	if b.IsError || b.Text != "3 true" {
+		t.Errorf("bash errors did not resolve: %+v", b)
+	}
+	if len(b.Calls) != 2 || b.Calls[0].OK || b.Calls[1].OK {
+		t.Errorf("calls %+v", b.Calls)
+	}
+	if len(hookErrs) != 2 || !hookErrs[0] || !hookErrs[1] {
+		t.Errorf("post hook is_error %v", hookErrs)
+	}
+}
+
+func TestCellNoCallsAfterFinish(t *testing.T) {
+	k := newCellKit(t)
+	k.file("f.txt", "x\n")
+	for _, code := range []string{
+		`return {toJSON() { sleep(1); return 1 }}`,
+		`return {toJSON() { read("f.txt"); return 1 }}`,
+		`return {toJSON() { setTimeout(() => {}, 1); return 1 }}`,
+	} {
+		done := make(chan Result, 1)
+		go func() { done <- k.cell(code) }()
+		select {
+		case res := <-done:
+			if len(res.Calls) != 0 {
+				t.Errorf("%s: a call ran after the code finished: %+v", code, res.Calls)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("%s: hung", code)
+		}
+	}
+	k.want("1 + 1", "2")
+}
+
+func TestCellTimersCancelledAfterSettle(t *testing.T) {
+	k := newCellKit(t)
+	start := time.Now()
+	k.want(`return (await Promise.race([bash("echo hi"), new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 60000))])).output`, "hi")
+	if d := time.Since(start); d > 5*time.Second {
+		t.Errorf("a pending guard timer held the result for %v", d)
+	}
+	k.want(`sleep(300).then(() => write("late.txt", "x")); "ok"`, "ok")
+	time.Sleep(500 * time.Millisecond)
+	if _, err := os.Stat(filepath.Join(k.dir, "late.txt")); err == nil {
+		t.Error("a sleep fired after the code finished")
+	}
+	res := k.cellCtx(context.Background(), `bash("sleep 5"); "kept"`, 1)
+	if res.IsError || !strings.HasPrefix(res.Text, "kept\nNote: 1 call was still running when the code finished; await") || !strings.Contains(res.Text, "waiting for the calls still running stopped: timed out after 1s") {
+		t.Errorf("timeout while waiting for a late call: %+v", res)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(300*time.Millisecond, cancel)
+	res = k.cellCtx(ctx, `bash("sleep 5"); ({a: 1})`, 0)
+	if res.IsError || !strings.HasPrefix(res.Text, "{\n \"a\": 1\n}\n") || !strings.Contains(res.Text, "stopped: interrupted by user") {
+		t.Errorf("interrupt while waiting for a late call: %+v", res)
+	}
+}
+
+func TestCellReadRejectsNonText(t *testing.T) {
+	k := newCellKit(t)
+	bin := k.file("bin", "a\x00b")
+	latin := k.file("latin.txt", "caf\xe9\n")
+	k.wantErr(`await read("bin")`, "ToolError: binary file, 3 bytes", "use bash")
+	k.wantErr(`await read("latin.txt")`, "ToolError: not valid UTF-8", "use bash")
+	if res := readPath(bin, 0, 0, nil); res.IsError || res.Summary != "binary" {
+		t.Errorf("direct binary read: %+v", res)
+	}
+	if res := readPath(latin, 0, 0, nil); res.IsError {
+		t.Errorf("direct latin-1 read: %+v", res)
+	}
+}
+
+func TestCellBashTruncated(t *testing.T) {
+	k := newCellKit(t)
+	k.want(`const r = await bash("seq 1 300000"); [r.truncated, r.output.includes("bytes dropped")].join(" ")`, "true true")
+	k.want(`(await bash("seq 1 3")).truncated`, "false")
+}
+
+func TestCellRedeclaredFunctions(t *testing.T) {
+	k := newCellKit(t)
+	k.file("f.txt", "hi\n")
+	k.want(`const read = 1; const jobs = 2; var print = 3; let sleep = 4`, "(no output)")
+	k.want(`await sleep(1); print("p"); [await read("f.txt"), typeof jobs].join("")`, "p\nhi\nfunction")
 }

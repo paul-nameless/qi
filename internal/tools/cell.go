@@ -43,9 +43,10 @@ type outcome struct {
 }
 
 type cellEnd struct {
-	value   jsvm.Value
-	err     error
-	stopped bool
+	value    jsvm.Value
+	err      error
+	stopped  bool
+	lateStop bool
 }
 
 var errNeverSettles = errors.New("the code is waiting on a promise that can never settle")
@@ -80,7 +81,10 @@ type cell struct {
 	extras    []string
 	late      int
 	lateFails []string
+	fails     []string
 	timerErr  error
+	settled   bool
+	finished  bool
 }
 
 func newCell(ctx context.Context, r *runner, env *Env, progress func(string), timeout time.Duration) *cell {
@@ -112,10 +116,11 @@ func newCell(ctx context.Context, r *runner, env *Env, progress func(string), ti
 func (c *cell) execute(code string) Result {
 	stopWatch := c.watch(c.ctx.Done())
 	end := c.evaluate(code)
+	c.settled, c.finished = true, true
 	stopWatch()
 	c.clock.stop()
 	c.vm.ClearInterrupt()
-	if end.stopped {
+	if end.stopped || end.lateStop {
 		c.abandon()
 	}
 	value, hint := "", ""
@@ -124,15 +129,19 @@ func (c *cell) execute(code string) Result {
 	case end.err != nil:
 		hint = c.referenceHint(end.err)
 	default:
-		value = c.formatBounded(end.value)
+		value = c.formatBounded(end.value, end.lateStop)
 	}
 	c.cancel()
 	c.wg.Wait()
 	return c.result(end, value, hint)
 }
 
-func (c *cell) formatBounded(v jsvm.Value) string {
-	ctx, cancel := context.WithTimeout(c.parent, formatTimeout)
+func (c *cell) formatBounded(v jsvm.Value, lateStop bool) string {
+	base := c.parent
+	if lateStop {
+		base = context.WithoutCancel(c.parent)
+	}
+	ctx, cancel := context.WithTimeout(base, formatTimeout)
 	defer cancel()
 	stop := c.watch(ctx.Done())
 	defer c.vm.ClearInterrupt()
@@ -191,33 +200,53 @@ func (c *cell) finishWith(end cellEnd) cellEnd {
 	if end.err != nil && c.stoppedBy(end.err) {
 		return cellEnd{stopped: true}
 	}
-	if err := c.vm.RunJobs(); err != nil {
-		if c.stoppedBy(err) {
-			end.stopped = true
-			return end
-		}
-		c.noteTimerErr(err)
+	c.settled = true
+	c.cancelTimers()
+	if !c.drainJobs() {
+		return stopWaiting(end)
 	}
 	for _, p := range c.pending {
-		if p.kind != timerCall {
+		if p.kind == toolCall {
 			p.late = true
 			c.late++
 		}
 	}
 	for len(c.pending) > 0 {
-		if !c.next() || c.ctx.Err() != nil {
-			end.stopped = true
-			return end
-		}
-		if err := c.vm.RunJobs(); err != nil {
-			if c.stoppedBy(err) {
-				end.stopped = true
-				return end
-			}
-			c.noteTimerErr(err)
+		if !c.next() || c.ctx.Err() != nil || !c.drainJobs() {
+			return stopWaiting(end)
 		}
 	}
 	return end
+}
+
+func stopWaiting(end cellEnd) cellEnd {
+	if end.err == nil {
+		end.lateStop = true
+		return end
+	}
+	end.stopped = true
+	return end
+}
+
+func (c *cell) drainJobs() bool {
+	err := c.vm.RunJobs()
+	if err == nil {
+		return true
+	}
+	if c.stoppedBy(err) {
+		return false
+	}
+	c.noteTimerErr(err)
+	return true
+}
+
+func (c *cell) cancelTimers() {
+	for _, p := range c.pending {
+		if p.kind != toolCall && !p.cancelled {
+			p.cancelled = true
+			close(p.stop)
+		}
+	}
 }
 
 func (c *cell) next() bool {
@@ -251,6 +280,8 @@ func (c *cell) add(p *pendingCall) int {
 
 func (c *cell) admit(t *Tool) error {
 	switch {
+	case c.finished:
+		return errors.New(codeFinished)
 	case c.ctx.Err() != nil:
 		return errors.New("interrupted by user")
 	case c.toolCalls >= maxCellCalls:
@@ -343,7 +374,9 @@ func (c *cell) settle(o outcome) {
 	delete(c.pending, o.id)
 	switch p.kind {
 	case sleepCall:
-		p.resolve(jsvm.Undefined())
+		if !p.cancelled {
+			p.resolve(jsvm.Undefined())
+		}
 	case timerCall:
 		if !p.cancelled {
 			if _, err := c.vm.CallValue(p.fn, jsvm.Undefined(), p.args...); err != nil && !c.stoppedBy(err) {
@@ -353,7 +386,7 @@ func (c *cell) settle(o outcome) {
 	default:
 		c.record(o, p)
 		c.collect(o)
-		if o.res.IsError {
+		if rejects(o.res) {
 			p.reject(toolError(c.vm, o.res.Text, o.res.Denied, p.site))
 			return
 		}
@@ -382,9 +415,19 @@ func (c *cell) record(o outcome, p *pendingCall) {
 		mark = "✗ "
 	}
 	c.marks = append(c.marks, mark+o.label)
-	if p.late && o.res.IsError {
-		c.lateFails = append(c.lateFails, o.label+": "+OneLine(o.res.Text, 200))
+	if !rejects(o.res) {
+		return
 	}
+	line := o.label + ": " + OneLine(o.res.Text, 200)
+	if p.late {
+		c.lateFails = append(c.lateFails, line)
+		return
+	}
+	c.fails = append(c.fails, mark+line)
+}
+
+func rejects(res Result) bool {
+	return res.IsError && res.Value == nil
 }
 
 func (c *cell) collect(o outcome) {

@@ -217,13 +217,16 @@ func MCPTools(m *mcp.Manager) []*Tool {
 				out.Text = env.capOutput(text)
 				return out
 			}
-			out.Value = jsonValue(text)
+			if !out.IsError {
+				out.Value = jsonValue(text)
+			}
 			return out
 		},
 		Code: &CodeSpec{
-			Name:   "mcp",
-			Params: []string{"server", "tool", "arguments"},
-			Doc:    "mcp(server, tool, args) → value — call an MCP tool found with tool_search; a JSON result comes back parsed, anything else as a string.",
+			Name:     "mcp",
+			Params:   []string{"server", "tool", "arguments"},
+			Defaults: map[string]string{"arguments": "{}"},
+			Doc:      "mcp(server, tool, args) → value — call an MCP tool found with tool_search; a JSON result comes back parsed, anything else as a string.",
 		},
 	}
 	call.Unwrap, call.Rewrap = unwrapMCPCall, rewrapMCPCall

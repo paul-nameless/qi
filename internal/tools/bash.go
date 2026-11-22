@@ -40,7 +40,7 @@ func Bash() *Tool {
 		Code: &CodeSpec{
 			Name:   "bash",
 			Params: []string{"command"},
-			Doc:    "bash(command, {timeout, background, daemon}) → {output, exit_code, timed_out} — stdin is empty, output is stdout+stderr combined; never throws on a non-zero exit. timeout in seconds (default 120, max 600). {background: true} starts a job for long builds and test runs and returns at once with a string naming the job id and its output file; you get a message when it exits, so don't poll or sleep for it. {daemon: true} is for servers and watchers that are not meant to exit. Use rg/fd/ls/sed for search and inspection.",
+			Doc:    "bash(command, {timeout, background, daemon}) → {output, exit_code, timed_out, truncated} — stdin is empty, output is stdout+stderr combined; never throws on a non-zero exit. output keeps the first and last 512 KB; truncated is true when the middle was dropped (redirect to a file for more). timeout in seconds (default 120, max 600). {background: true} starts a job for long builds and test runs and returns at once with a string naming the job id and its output file; you get a message when it exits, so don't poll or sleep for it. {daemon: true} is for servers and watchers that are not meant to exit. Use rg/fd/ls/sed for search and inspection.",
 		},
 	}
 }
@@ -90,6 +90,12 @@ func (w *progressWriter) String() string {
 		return string(w.head) + string(w.tail)
 	}
 	return string(w.head) + fmt.Sprintf("\n… [%d bytes dropped] …\n", w.dropped) + string(w.tail)
+}
+
+func (w *progressWriter) truncated() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.dropped > 0
 }
 
 func bashTimeout(requested, configured int) int {
@@ -251,6 +257,7 @@ type bashRun struct {
 	timeout     int
 	timedOut    bool
 	interrupted bool
+	truncated   bool
 }
 
 func execBash(ctx context.Context, env *Env, a bashArgs, progress func(string)) (bashRun, error) {
@@ -263,7 +270,7 @@ func execBash(ctx context.Context, env *Env, a bashArgs, progress func(string)) 
 	cmd.Stdout = out
 	cmd.Stderr = out
 	runErr := cmd.Run()
-	run := bashRun{output: strings.TrimRight(out.String(), "\n"), timeout: timeout}
+	run := bashRun{output: strings.TrimRight(out.String(), "\n"), timeout: timeout, truncated: out.truncated()}
 	var exitErr *exec.ExitError
 	switch {
 	case runErr == nil:
@@ -328,13 +335,17 @@ func (r bashRun) value() Result {
 	if text == "" {
 		text = "(no output)"
 	}
+	if r.interrupted {
+		return Result{Text: text, IsError: true, Summary: r.summary()}
+	}
 	v, err := json.Marshal(struct {
-		Output   string `json:"output"`
-		ExitCode int    `json:"exit_code"`
-		TimedOut bool   `json:"timed_out"`
-	}{r.output, r.code, r.timedOut})
+		Output    string `json:"output"`
+		ExitCode  int    `json:"exit_code"`
+		TimedOut  bool   `json:"timed_out"`
+		Truncated bool   `json:"truncated"`
+	}{r.output, r.code, r.timedOut, r.truncated})
 	if err != nil {
 		return errResult("encode bash result: %v", err)
 	}
-	return Result{Text: text, Value: v, IsError: r.interrupted, Summary: r.summary()}
+	return Result{Text: text, Value: v, IsError: r.code != 0, Summary: r.summary()}
 }

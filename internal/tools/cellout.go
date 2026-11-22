@@ -11,7 +11,10 @@ import (
 	"github.com/paul-nameless/qi/internal/jsvm"
 )
 
-const maxCompletedList = 30
+const (
+	maxCompletedList = 30
+	maxFailedList    = 10
+)
 
 func (c *cell) result(end cellEnd, value, hint string) Result {
 	var parts []string
@@ -33,12 +36,14 @@ func (c *cell) result(end cellEnd, value, hint string) Result {
 		add(c.completed())
 	default:
 		add(value)
+		add(c.failedNote())
 	}
 	if c.timerErr != nil {
 		add("Uncaught error in a callback: " + errText(c.timerErr))
 	}
 	add(strings.Join(c.extras, "\n"))
-	add(c.lateNote())
+	add(c.lateNote(end.lateStop))
+	add(c.lateStopNote(end))
 	if c.lostImgs > 0 {
 		add(fmt.Sprintf("Note: only the first %d images are attached; %d more were dropped.", maxCellImages, c.lostImgs))
 	}
@@ -89,15 +94,37 @@ func (c *cell) completed() string {
 	return head + "\n" + strings.Join(marks, "\n")
 }
 
-func (c *cell) lateNote() string {
+func (c *cell) lateNote(stopped bool) string {
 	if c.late == 0 {
 		return ""
 	}
-	note := fmt.Sprintf("Note: %s %s still running when the code finished and %s waited for; await every call you start.", plural(c.late, "call"), pluralVerb(c.late), pluralVerb(c.late))
+	waited := " and " + pluralVerb(c.late) + " waited for"
+	if stopped {
+		waited = ""
+	}
+	note := fmt.Sprintf("Note: %s %s still running when the code finished%s; await every call you start.", plural(c.late, "call"), pluralVerb(c.late), waited)
 	if len(c.lateFails) == 0 {
 		return note
 	}
 	return note + " Failed:\n" + strings.Join(c.lateFails, "\n")
+}
+
+func (c *cell) failedNote() string {
+	if len(c.fails) == 0 {
+		return ""
+	}
+	list, more := c.fails, ""
+	if len(list) > maxFailedList {
+		list, more = list[:maxFailedList], fmt.Sprintf("\nand %d more", len(list)-maxFailedList)
+	}
+	return "Failed calls:\n" + strings.Join(list, "\n") + more
+}
+
+func (c *cell) lateStopNote(end cellEnd) string {
+	if !end.lateStop {
+		return ""
+	}
+	return "Note: the code finished and its result is kept, but waiting for the calls still running stopped: " + c.failure(cellEnd{stopped: true})
 }
 
 func pluralVerb(n int) string {

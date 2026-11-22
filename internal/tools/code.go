@@ -12,10 +12,11 @@ import (
 )
 
 type CodeSpec struct {
-	Name   string
-	Params []string
-	Alias  map[string]string
-	Doc    string
+	Name     string
+	Params   []string
+	Alias    map[string]string
+	Defaults map[string]string
+	Doc      string
 }
 
 type ctxKey int
@@ -83,7 +84,55 @@ func codeInput(vm *jsvm.VM, t *Tool, args []jsvm.Value) (json.RawMessage, error)
 	if err := checkFields(t, fields); err != nil {
 		return nil, err
 	}
+	applyDefaults(fields, spec)
+	if err := checkRequired(t, fields); err != nil {
+		return nil, err
+	}
 	return json.Marshal(fields)
+}
+
+func applyDefaults(fields map[string]json.RawMessage, spec *CodeSpec) {
+	for name, v := range spec.Defaults {
+		if cur, ok := fields[name]; !ok || string(cur) == "null" {
+			fields[name] = json.RawMessage(v)
+		}
+	}
+}
+
+var jsArgNames = map[string]string{"file_path": "path", "old_string": "old", "new_string": "new", "arguments": "args"}
+
+func checkRequired(t *Tool, fields map[string]json.RawMessage) error {
+	required := schemaRequired(t.Def.Schema)
+	for _, name := range t.Code.Params {
+		if !slices.Contains(required, name) {
+			continue
+		}
+		v, ok := fields[name]
+		switch {
+		case !ok:
+			return fmt.Errorf("%s: %s is undefined", t.Code.Name, jsArgName(name))
+		case string(v) == "null":
+			return fmt.Errorf("%s: %s is null", t.Code.Name, jsArgName(name))
+		}
+	}
+	return nil
+}
+
+func jsArgName(name string) string {
+	if js, ok := jsArgNames[name]; ok {
+		return js + " (" + name + ")"
+	}
+	return name
+}
+
+func schemaRequired(schema json.RawMessage) []string {
+	var s struct {
+		Required []string `json:"required"`
+	}
+	if json.Unmarshal(schema, &s) != nil {
+		return nil
+	}
+	return s.Required
 }
 
 func positional(fields map[string]json.RawMessage, spec *CodeSpec, args []string) error {
@@ -120,11 +169,30 @@ func mergeOptions(fields map[string]json.RawMessage, spec *CodeSpec, obj string)
 	if err := json.Unmarshal([]byte(obj), &opts); err != nil {
 		return fmt.Errorf("%s: bad options object: %v", spec.Name, err)
 	}
+	if err := aliasConflict(spec, opts); err != nil {
+		return err
+	}
 	for k, v := range opts {
 		if canon, ok := spec.Alias[k]; ok {
 			k = canon
 		}
 		fields[k] = v
+	}
+	return nil
+}
+
+func aliasConflict(spec *CodeSpec, opts map[string]json.RawMessage) error {
+	aliases := make([]string, 0, len(spec.Alias))
+	for alias := range spec.Alias {
+		aliases = append(aliases, alias)
+	}
+	sort.Strings(aliases)
+	for _, alias := range aliases {
+		_, a := opts[alias]
+		_, c := opts[spec.Alias[alias]]
+		if a && c {
+			return fmt.Errorf("%s: both %s and %s given", spec.Name, alias, spec.Alias[alias])
+		}
 	}
 	return nil
 }
