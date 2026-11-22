@@ -328,7 +328,8 @@ class Renderer:
         fail = f'<button class="failbtn" onclick="nextFail(this)">{errs} failed</button>' if errs else ""
         prompt = next((t["prompt"] for t in sess.turns if t["prompt"]), "") or "qi session"
         title = prompt.strip().split("\n")[0].rstrip(":")
-        bits = [meta.get("cwd"), meta.get("model"), meta.get("kind"), local_time(meta.get("time"))]
+        model = next((s["model"] for s in reversed(list(sess.walk())) if s["kind"] == "llm" and s["model"]), meta.get("model"))
+        bits = [meta.get("cwd"), model, meta.get("kind"), local_time(meta.get("time"))]
         return (
             f'<div class="bar"><div class="barin"><span class="brand">qi session</span><code class="sid">{esc(sid)}</code>'
             f'<span class="grow"></span>{fail}<button onclick="toggleAll(true)">Expand all</button><button onclick="toggleAll(false)">Collapse all</button></div></div>'
