@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/paul-nameless/qi/internal/agent"
@@ -240,14 +241,18 @@ func submitPrompt(ctx context.Context, a *agent.Agent, display notifier, hooks *
 
 func buildAgent(cfg config.Config, o options, cwd string, p llm.Provider, display agent.Display, headless, isSub bool, extra ...*tools.Tool) (*agent.Agent, *agent.SubagentRunner) {
 	opts := agent.Options{Config: cfg, Cwd: cwd, Provider: p, UI: display, Headless: headless, ReadOnly: o.readOnly || cfg.ReadOnly}
-	opts.Tools = []*tools.Tool{tools.Read(), tools.Write(), tools.Edit(), tools.Bash(), tools.JobsTool()}
+	inner := []*tools.Tool{tools.Read(), tools.Write(), tools.Edit(), tools.Bash(), tools.JobsTool()}
 	var runner *agent.SubagentRunner
 	if !isSub {
 		runner = &agent.SubagentRunner{ConfigPath: o.configPath, Profile: cfg.Profile, Provider: cfg.Provider, SystemPromptFile: o.systemPromptFile, Cwd: cwd, MCP: cfg.MCP}
 		opts.Subagent = runner.Run
-		opts.Tools = append(opts.Tools, tools.Subagent(cfg.Model, cfg.SubagentModels, cfg.SubagentEfforts))
+		inner = append(inner, tools.Subagent(cfg.Model, cfg.SubagentModels, cfg.SubagentEfforts))
 	}
-	opts.Tools = append(opts.Tools, extra...)
+	inner = append(inner, extra...)
+	opts.Tools = inner
+	if cfg.CodeModeOn() {
+		opts.Tools = []*tools.Tool{tools.Run(tools.NewRegistry(inner...))}
+	}
 	a := agent.New(opts)
 	if runner != nil {
 		runner.ReadOnly = a.ReadOnly
@@ -257,7 +262,7 @@ func buildAgent(cfg config.Config, o options, cwd string, p llm.Provider, displa
 			}
 			return ""
 		}
-		runner.Label = toolLabels(cwd, opts.Tools)
+		runner.Label = toolLabels(cwd, slices.Concat(opts.Tools, inner))
 	}
 	return a, runner
 }

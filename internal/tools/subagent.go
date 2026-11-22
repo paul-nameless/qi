@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -65,7 +66,7 @@ func Subagent(mainModel string, menu []config.SubagentModel, efforts []string) *
 		},
 		Label: func(env *Env, in json.RawMessage) string {
 			a, _ := decode[subagentArgs](in)
-			return fmt.Sprintf("subagent %s/%s %s", a.Model, a.Effort, OneLine(a.Prompt, 50))
+			return fmt.Sprintf("subagent %s/%s %s", cmp.Or(a.Model, names[0]), cmp.Or(a.Effort, "default"), OneLine(a.Prompt, 50))
 		},
 		Run: func(ctx context.Context, env *Env, in json.RawMessage, progress func(string)) Result {
 			a, err := decode[subagentArgs](in)

@@ -353,6 +353,9 @@ func TestBuildAgentSetsSubagentLabels(t *testing.T) {
 	if got := runner.Label(llm.Block{Type: llm.BlockToolUse, Name: "bash", Input: json.RawMessage(`{"command":"ls"}`)}); got != "bash ls" {
 		t.Errorf("label %q", got)
 	}
+	if got := runner.Label(llm.Block{Type: llm.BlockToolUse, Name: "run", Input: json.RawMessage(`{"code":"await read(\"a\")"}`)}); got != `run await read("a")` {
+		t.Errorf("run label %q", got)
+	}
 	if got := runner.Label(llm.Block{Type: llm.BlockToolUse, Name: "nope", Input: json.RawMessage(`{}`)}); got != "nope" {
 		t.Errorf("unknown tool label %q", got)
 	}

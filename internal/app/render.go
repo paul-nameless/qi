@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -79,12 +80,43 @@ func renderBlock(b *strings.Builder, p painter, role llm.Role, blk llm.Block, re
 	case blk.Type == llm.BlockText:
 		b.WriteString(p.markdown(text))
 	case blk.Type == llm.BlockToolUse:
-		b.WriteString(p.paint(ui.Dim, "· "+blk.Name+" "+ui.Sanitize(tools.OneLine(string(blk.Input), 200))) + "\n")
+		b.WriteString(p.paint(ui.Dim, toolUseText(blk, 200)) + "\n")
 	case blk.Type == llm.BlockToolResult:
-		b.WriteString(p.paint(ui.Dim, indentResult(ui.Sanitize(blk.Text), resultLines)))
+		b.WriteString(p.paint(ui.Dim, indentResult(ui.Sanitize(blk.Text), resultLines)+callLines(blk.Calls)))
 	case blk.Type == llm.BlockImage:
 		b.WriteString(p.paint(ui.Dim, "[image]") + "\n")
 	}
+}
+
+const codeLines = 12
+
+func toolUseText(blk llm.Block, width int) string {
+	var a struct {
+		Code string `json:"code"`
+	}
+	if blk.Name != "run" || json.Unmarshal(blk.Input, &a) != nil || strings.TrimSpace(a.Code) == "" {
+		return "· " + blk.Name + " " + ui.Sanitize(tools.OneLine(string(blk.Input), width))
+	}
+	code := firstLines(strings.Trim(ui.Sanitize(a.Code), "\n"), codeLines)
+	return "· run\n    " + strings.ReplaceAll(code, "\n", "\n    ")
+}
+
+func callLines(calls []llm.InnerCall) string {
+	var b strings.Builder
+	for _, c := range calls {
+		mark, line := "✓", c.Label
+		if !c.OK {
+			mark = "✗"
+		}
+		if line == "" {
+			line = c.Tool
+		}
+		if c.Summary != "" {
+			line += " · " + tools.OneLine(c.Summary, 80)
+		}
+		fmt.Fprintf(&b, "    %s %s\n", mark, ui.Sanitize(line))
+	}
+	return b.String()
 }
 
 func indentResult(text string, limit int) string {

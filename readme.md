@@ -14,7 +14,7 @@ A small coding agent for the terminal, built just because.
 ## What it does
 
 - Talks to any OpenAI-compatible API, and Anthropic's native API.
-- Tools: `read`, `write`, `edit`, `bash`, `jobs`, `subagent`. Several calls in one response run in parallel. Long builds and servers run as background bash jobs; the agent gets a message when one exits instead of polling.
+- Code mode (default): the model's one tool, `run`, executes JavaScript that calls `read`, `write`, `edit`, `bash`, `jobs` and `subagent`, so a whole step (search, read, edit, test) is one call. See [Code mode](#code-mode). Long builds and servers run as background bash jobs; the agent gets a message when one exits instead of polling.
 - Prompt caching, sessions saved as JSONL, automatic compaction when the context fills up and idle compaction.
 - MCP servers start on demand, with per-server limits on which tools the agent may use.
 - Two modes, toggled with shift+tab: yolo (default) and read-only (no edits, bash limited to an allowlist).
@@ -82,7 +82,13 @@ Every key is described in [`internal/config/schema.json`](internal/config/schema
 }
 ```
 
-The agent finds MCP tools with `tool_search` and calls them with `mcp_call`, so they never fill up the tool list. `tools` and `exclude_tools` are glob patterns; hidden tools don't show up in search and calls to them are refused. Top-level servers are available in every profile, and a profile can add servers, replace one, or drop one with `null`. `/mcp` shows what's running. This keeps the model away from the wrong tools; it's not a sandbox, since `bash` can still run anything.
+The agent finds MCP tools with `tool_search` and calls them with `mcp_call` (`mcp()` in code mode), so they never fill up the tool list. `tools` and `exclude_tools` are glob patterns; hidden tools don't show up in search and calls to them are refused. Top-level servers are available in every profile, and a profile can add servers, replace one, or drop one with `null`. `/mcp` shows what's running. This keeps the model away from the wrong tools; it's not a sandbox, since `bash` can still run anything.
+
+### Code mode
+
+On by default. The model gets a single tool, `run`, which executes JavaScript in an in-process VM. The functions `read`, `write`, `edit`, `bash`, `jobs`, `subagent`, `tool_search` and `mcp` are async JavaScript functions there; each call goes through hooks, read-only mode and the stale-file check like a direct tool call, and shows as its own line under the `run` line. Variables stay defined between `run` calls; this state lives in memory only and is dropped on `/clear`, on resume and at exit (not on compaction).
+
+`"code_mode": false`, globally or in a profile, gives the model those tools directly instead. It is read at startup: `/profile` and `/model` keep the startup value until you restart qi. Subagents read the same config.
 
 ## Use
 

@@ -216,7 +216,7 @@ func (jb *job) notice(status string, leftovers bool, timeout time.Duration) stri
 		if timeout > 0 {
 			until = fmt.Sprintf(" until the job's %s timeout", timeout)
 		}
-		fmt.Fprintf(&b, "processes it started are still running%s; stop them sooner with the jobs tool (kill %d)\n", until, jb.id)
+		fmt.Fprintf(&b, "processes it started are still running%s; stop them sooner with jobs (kill: %d)\n", until, jb.id)
 	}
 	b.WriteString("</background-job>")
 	return b.String()
@@ -346,7 +346,7 @@ func startJob(env *Env, a bashArgs) Result {
 	if a.Daemon {
 		wait = "It runs as a daemon: your turn won't wait for it, and you get a message only if it exits."
 	}
-	text := fmt.Sprintf("Started background job %d (pid %d), output in %s. %s Stop it with the jobs tool.", jb.id, cmd.Process.Pid, jb.path, wait)
+	text := fmt.Sprintf("Started background job %d (pid %d), output in %s. %s Stop it with jobs (kill: %d).", jb.id, cmd.Process.Pid, jb.path, wait, jb.id)
 	return Result{Text: text, Summary: fmt.Sprintf("job %d started", jb.id)}
 }
 

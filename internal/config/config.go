@@ -58,6 +58,7 @@ type Config struct {
 	MaxRounds        int       `json:"max_rounds"`
 	ShowReasoning    *bool     `json:"show_reasoning"`
 	TerminalImages   *bool     `json:"terminal_images"`
+	CodeMode         *bool     `json:"code_mode"`
 	ReadOnly         bool      `json:"read_only"`
 	ReadOnlyAllow    []string  `json:"read_only_allow"`
 	BashTimeout      int       `json:"bash_timeout"`
@@ -419,6 +420,10 @@ func (c Config) ShowReasoningOn() bool {
 
 func (c Config) TerminalImagesOn() bool {
 	return c.TerminalImages == nil || *c.TerminalImages
+}
+
+func (c Config) CodeModeOn() bool {
+	return c.CodeMode == nil || *c.CodeMode
 }
 
 func (c Config) BuiltinSkillsOn() bool {

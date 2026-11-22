@@ -18,7 +18,7 @@ qi is the agent you are running in. Its settings are JSON files.
 ## Format
 
 - Plain JSON: no comments, no trailing commas. Pretty-print with 2-space indentation and end the file with a newline.
-- Change only what the user asked for with the edit tool, keeping the existing key order. Write a whole file only when creating it.
+- Change only what the user asked for with edit, keeping the existing key order. Write a whole file only when creating it.
 - Unknown keys are errors, so use the exact names from the schema. An optional `"$schema"` key is allowed and ignored.
 - Token counts are numbers or strings: `150000`, `"150k"`, `"1.5m"`. `compact_at` and `compact_idle_at` also take a share of the window: `"80%"`.
 
@@ -36,7 +36,7 @@ Run `qi -check-config` (add `-config path.json` when relevant). It loads the con
 When a change takes effect in a running session:
 - Most keys, including `system_prompt_file`, `skill_dirs`, `instruction_files` and `builtin_skills`: after `/profile <name>`, which re-reads the file and rebuilds the system prompt.
 - Edits inside the system prompt file, skills, commands or CLAUDE.md files: `/reload`.
-- `mcp`, `hook_files`, `read_only`: only after restarting qi.
+- `mcp`, `hook_files`, `read_only`, `code_mode`: only after restarting qi.
 
 ## MCP servers
 

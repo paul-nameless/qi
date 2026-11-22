@@ -110,6 +110,8 @@ def tool_label(name, inp):
         return (inp.get("model", "") + " " + inp.get("effort", "")).strip()
     if name == "mcp_call":
         return f"{inp.get('server', '')}.{inp.get('tool', '')}"
+    if name == "run":
+        return next((l.strip() for l in (inp.get("code") or "").splitlines() if l.strip()), "")
     return json.dumps(inp, ensure_ascii=False)[:200]
 
 
@@ -146,10 +148,12 @@ class Session:
                         c["result"] = r.get("text", "")
                         c["error"] = r.get("is_error", False)
                         c["images"] = len(r.get("images") or [])
+                        c["calls"] = r.get("calls") or []
                         if c["name"] == "subagent":
-                            p, sub = find_subagent(self.sub_dir, os.path.basename(self.path)[:-6], c["input"].get("prompt"), step["start"], t, self.used)
-                            if sub:
-                                c["sub"] = Session(p, sub, self.depth + 1)
+                            self.link_subagent(c, c["input"].get("prompt"), step["start"], t)
+                        for ic in c["calls"]:
+                            if ic.get("tool") == "subagent" and isinstance(ic.get("input"), dict):
+                                self.link_subagent(ic, ic["input"].get("prompt"), step["start"], t)
                     turn["steps"].append(step)
             elif m and m["role"] == "user" and turn and m["blocks"] and all(b["type"] == "text" and b.get("text", "").startswith("<background-job") for b in m["blocks"]):
                 turn["steps"].append({"kind": "wait", "dur": t - prev_t, "text": "\n\n".join(b["text"] for b in m["blocks"])})
@@ -181,6 +185,11 @@ class Session:
             for c in s["calls"]:
                 c.update(result="(no result recorded: interrupted?)", error=True, images=0)
             turn["steps"].append(s)
+
+    def link_subagent(self, c, prompt, start, end):
+        p, sub = find_subagent(self.sub_dir, os.path.basename(self.path)[:-6], prompt, start, end, self.used)
+        if sub:
+            c["sub"] = Session(p, sub, self.depth + 1)
 
     def new_turn(self, prompt, t):
         turn = {"prompt": prompt, "start": t, "end": t, "steps": [], "idle": 0}
@@ -264,7 +273,7 @@ def local_time(s):
     return datetime.fromtimestamp(ts(s)).strftime("%d %b %Y, %H:%M") if s else ""
 
 
-KINDS = {"model", "bash", "read", "edit", "write", "subagent", "tool_search", "mcp_call", "compaction", "mixed"}
+KINDS = {"model", "bash", "read", "edit", "write", "subagent", "tool_search", "mcp_call", "run", "compaction", "mixed"}
 MAG = 40
 
 
@@ -284,10 +293,14 @@ def deep_counts(sess):
         for c in s["calls"]:
             calls += 1
             errs += bool(c.get("error"))
-            if c.get("sub"):
-                n, e = deep_counts(c["sub"])
-                calls += n
-                errs += e
+            for x in [c] + c.get("calls", []):
+                if x is not c:
+                    calls += 1
+                    errs += not x.get("ok")
+                if x.get("sub"):
+                    n, e = deep_counts(x["sub"])
+                    calls += n
+                    errs += e
     return calls, errs
 
 
@@ -498,6 +511,10 @@ class Renderer:
             meta = f'<span class="add">+{add}</span> <span class="del">−{rem}</span>'
         elif name == "write":
             meta = fmt_size(inp.get("content", "")) + " written"
+        elif name == "run":
+            inner = c.get("calls") or []
+            failed = sum(1 for x in inner if not x.get("ok"))
+            meta = f"{len(inner)} calls" + (f' · <b class="errc">{failed} failed</b>' if failed else "") + " · " + meta
         elif name == "subagent":
             task = (inp.get("prompt") or "").strip().split("\n")[0][:300]
             main = f'<span class="lbl task">{esc(task)}</span>'
@@ -523,6 +540,10 @@ class Renderer:
             body.append(self.section("change" + (" (all occurrences)" if inp.get("replace_all") else ""), self.diff(inp.get("old_string", ""), inp.get("new_string", ""))))
         elif name == "write":
             body.append(self.section("content", f'<pre>{esc(clip(inp.get("content", "")))}</pre>'))
+        elif name == "run":
+            body.append(self.section("code", f'<pre class="cmd">{esc(inp.get("code", ""))}</pre>'))
+            if c.get("calls"):
+                body.append(self.section("calls", self.inner_calls(c["calls"]), copy=False))
         elif name == "subagent" and not sub:
             body.append(self.section("task", f'<pre class="prose">{esc(inp.get("prompt", ""))}</pre>'))
         elif name != "subagent":
@@ -537,6 +558,20 @@ class Renderer:
         elif name == "subagent":
             body.append('<div class="empty">subagent session not found</div>')
         return f'<details class="call{" err" if err else ""}">{head}<div class="callbody">{"".join(body)}</div></details>'
+
+    def inner_calls(self, calls):
+        rows = []
+        for x in calls:
+            mark = "✓" if x.get("ok") else "✗"
+            line = x.get("label") or x.get("tool", "")
+            if x.get("summary"):
+                line += " · " + x["summary"]
+            rows.append(f'<span class="{"cl" if x.get("ok") else "dl"}">{mark} {esc(line)} · {x.get("ms", 0)}ms</span>')
+        out = f'<pre class="diff">{"".join(rows)}</pre>'
+        for x in calls:
+            if x.get("sub"):
+                out += f'<div class="sub"><div class="subhead">Subagent session <code>{esc(os.path.basename(x["sub"].path)[:-6])}</code></div>{self.session(x["sub"])}</div>'
+        return out
 
     def section(self, title, content, copy=True):
         btn = '<button class="copy" onclick="copyNext(this)">copy</button>' if copy else ""
@@ -580,11 +615,11 @@ document.addEventListener('click',e=>{const a=e.target.closest('a[href^="#"]');i
 
 CSS = """
 :root{color-scheme:light dark;--bg:#fafafa;--panel:#fff;--fg:#18181b;--dim:#6b6b76;--faint:#a1a1aa;--line:#e4e4e7;--soft:#f1f1f3;--accent:#2563eb;--err:#d92d20;--ok:#15803d;
---c-model:#6366f1;--c-bash:#0d9488;--c-read:#0ea5e9;--c-edit:#d97706;--c-write:#65a30d;--c-subagent:#c026d3;--c-tool_search:#a8a29e;--c-mcp_call:#475569;--c-compaction:#8b7355;--c-other:#9ca3af}
+--c-model:#6366f1;--c-bash:#0d9488;--c-read:#0ea5e9;--c-edit:#d97706;--c-write:#65a30d;--c-subagent:#c026d3;--c-tool_search:#a8a29e;--c-mcp_call:#475569;--c-run:#7c3aed;--c-compaction:#8b7355;--c-other:#9ca3af}
 @media (prefers-color-scheme:dark){:root{--bg:#0f0f11;--panel:#17171a;--fg:#e6e6ea;--dim:#9c9ca6;--faint:#63636d;--line:#2a2a30;--soft:#1f1f24;--accent:#7aa7ff;--err:#ff6b5e;--ok:#4ade80;
---c-model:#818cf8;--c-bash:#2dd4bf;--c-read:#38bdf8;--c-edit:#fbbf24;--c-write:#a3e635;--c-subagent:#e879f9;--c-tool_search:#a8a29e;--c-mcp_call:#94a3b8;--c-compaction:#c4a57b;--c-other:#71717a}}
+--c-model:#818cf8;--c-bash:#2dd4bf;--c-read:#38bdf8;--c-edit:#fbbf24;--c-write:#a3e635;--c-subagent:#e879f9;--c-tool_search:#a8a29e;--c-mcp_call:#94a3b8;--c-run:#a78bfa;--c-compaction:#c4a57b;--c-other:#71717a}}
 .k-model{--c:var(--c-model)}.k-bash{--c:var(--c-bash)}.k-read{--c:var(--c-read)}.k-edit{--c:var(--c-edit)}.k-write{--c:var(--c-write)}.k-subagent{--c:var(--c-subagent)}
-.k-tool_search{--c:var(--c-tool_search)}.k-mcp_call{--c:var(--c-mcp_call)}.k-compaction{--c:var(--c-compaction)}.k-other{--c:var(--c-other)}
+.k-tool_search{--c:var(--c-tool_search)}.k-mcp_call{--c:var(--c-mcp_call)}.k-run{--c:var(--c-run)}.k-compaction{--c:var(--c-compaction)}.k-other{--c:var(--c-other)}
 .k-mixed{--c:repeating-linear-gradient(135deg,var(--faint) 0 2px,var(--line) 2px 4px)}
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}

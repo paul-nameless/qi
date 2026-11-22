@@ -29,6 +29,8 @@ type toolState struct {
 	label    string
 	progress string
 	start    time.Time
+	parent   string
+	headed   bool
 }
 
 type Printer struct {
@@ -222,12 +224,12 @@ func (p *Printer) statusText() string {
 	var oldest time.Time
 	for _, id := range p.order {
 		st, ok := p.running[id]
-		if !ok {
+		if !ok || st.parent != "" {
 			continue
 		}
-		l := st.label
-		if st.progress != "" {
-			l += " " + p.Color(Dim, "· "+st.progress)
+		l := p.runningLabel(st)
+		if kids := p.childLabels(id); len(kids) > 0 {
+			l += p.Color(Dim, " › ") + strings.Join(kids, ", ")
 		}
 		labels = append(labels, l)
 		if oldest.IsZero() || st.start.Before(oldest) {
@@ -237,6 +239,34 @@ func (p *Printer) statusText() string {
 	secs := time.Since(oldest).Seconds()
 	head := fmt.Sprintf("%s %d running ", spinner[p.frame%len(spinner)], len(labels))
 	return p.Color(Yellow, head) + strings.Join(labels, ", ") + p.Color(Dim, fmt.Sprintf(" %.1fs", secs))
+}
+
+func (p *Printer) runningLabel(st *toolState) string {
+	if st.progress == "" {
+		return st.label
+	}
+	return st.label + " " + p.Color(Dim, "· "+st.progress)
+}
+
+func (p *Printer) childLabels(parent string) []string {
+	var out []string
+	for _, id := range p.order {
+		if st, ok := p.running[id]; ok && st.parent == parent {
+			out = append(out, p.runningLabel(st))
+		}
+	}
+	return out
+}
+
+func (p *Printer) parentOf(id string) string {
+	i := strings.LastIndexByte(id, '.')
+	if i <= 0 {
+		return ""
+	}
+	if _, ok := p.running[id[:i]]; ok {
+		return id[:i]
+	}
+	return ""
 }
 
 func (p *Printer) drawFooter() {
@@ -394,7 +424,7 @@ func (p *Printer) ToolStart(id, label string) {
 	if !p.atLineStart {
 		p.write("\n")
 	}
-	p.running[id] = &toolState{label: Sanitize(label), start: time.Now()}
+	p.running[id] = &toolState{label: Sanitize(label), start: time.Now(), parent: p.parentOf(id)}
 	p.order = append(p.order, id)
 	p.startTicker()
 	p.redraw()
@@ -423,17 +453,39 @@ func (p *Printer) ToolDone(id string, ok bool, line string) {
 	if !ok {
 		mark = p.Color(Red, "✗")
 	}
-	dur := ""
+	line, dur, indent := Sanitize(line), "", ""
 	if st != nil {
 		dur = " " + formatDuration(time.Since(st.start))
+		line, indent = p.nest(st, line)
 	}
 	if !p.atLineStart {
 		p.write("\n")
 	}
-	p.write(mark + " " + p.Color(Dim, Sanitize(line)+dur) + "\n")
+	p.write(indent + mark + " " + p.Color(Dim, line+dur) + "\n")
 	if len(p.running) == 0 {
 		p.stopTicker()
 	}
+}
+
+func (p *Printer) nest(st *toolState, line string) (string, string) {
+	if st.headed {
+		name, _, _ := strings.Cut(st.label, " ")
+		if rest, ok := strings.CutPrefix(line, st.label); ok && name != "" {
+			return name + rest, ""
+		}
+		return line, ""
+	}
+	if st.parent == "" {
+		return line, ""
+	}
+	if parent, ok := p.running[st.parent]; ok && !parent.headed {
+		parent.headed = true
+		if !p.atLineStart {
+			p.write("\n")
+		}
+		p.write(p.Color(Dim, "· "+parent.label) + "\n")
+	}
+	return line, "  "
 }
 
 func (p *Printer) SetDraft(s string) {

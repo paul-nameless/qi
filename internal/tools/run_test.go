@@ -258,6 +258,25 @@ func TestCellStopsCallingAfterCancel(t *testing.T) {
 	}
 }
 
+func TestCellTimeoutSparesFormatting(t *testing.T) {
+	k := newCellKit(t)
+	res := k.cellCtx(context.Background(), `return {toJSON() { const t = Date.now(); while (Date.now() - t < 1500) {} return "slow" }}`, 1)
+	if res.IsError || res.Text != `"slow"` {
+		t.Errorf("a value finished in time was cut by the cell timeout: %+v", res)
+	}
+	done := make(chan Result, 1)
+	go func() { done <- k.cellCtx(context.Background(), `return {toJSON() { while (true) {} }}`, 1) }()
+	select {
+	case res := <-done:
+		if !strings.Contains(res.Text, "the value could not be shown") {
+			t.Errorf("endless toJSON: %q", res.Text)
+		}
+	case <-time.After(formatTimeout + 5*time.Second):
+		t.Fatal("formatting an endless toJSON was not stopped")
+	}
+	k.want("1 + 1", "2")
+}
+
 func TestCellJobsDrainAfterThrow(t *testing.T) {
 	k := newCellKit(t)
 	k.wantErr(`Promise.resolve().then(() => console.log("leak")); null.x`, "leak\nTypeError")
@@ -444,7 +463,7 @@ func TestCellInnerUI(t *testing.T) {
 	k := newCellKit(t)
 	ui := &recordUI{}
 	k.reg.Execute(context.Background(), k.env, []llm.Block{{ID: "r9", Name: "run", Input: mustJSON(t, runArgs{Code: "await tick(); await tick()"})}}, ui)
-	want := []string{"start r9 run await tick(); await tick()", "start r9.1   tick", "done r9.1   tick", "start r9.2   tick", "done r9.2   tick", "done r9 run await tick(); await tick() · 2 calls · 3 lines"}
+	want := []string{"start r9 run await tick(); await tick()", "start r9.1 tick", "done r9.1 tick", "start r9.2 tick", "done r9.2 tick", "done r9 run await tick(); await tick() · 2 calls · 3 lines"}
 	if strings.Join(ui.events, "\n") != strings.Join(want, "\n") {
 		t.Errorf("ui events:\n%s", strings.Join(ui.events, "\n"))
 	}
@@ -508,6 +527,16 @@ func TestCellSubagents(t *testing.T) {
 		t.Errorf("tasks %+v", tasks)
 	}
 	k.want(`let n = 0; try { for (; n < 25; n++) await subagent("q" + n) } catch (e) { return n + " " + e.message }`, "20 too many subagent calls in one run call (limit 20)")
+}
+
+func TestSubagentLabelDefaults(t *testing.T) {
+	menu := []config.SubagentModel{{Name: "fast", Model: "m-fast"}}
+	sub := Subagent("main", menu, []string{"low"})
+	for in, want := range map[string]string{`{"prompt":"x"}`: "subagent fast/default x", `{"prompt":"x","model":"m","effort":"low"}`: "subagent m/low x"} {
+		if got := Label(sub, &Env{}, llm.Block{Name: "subagent", Input: json.RawMessage(in)}); got != want {
+			t.Errorf("%s: %q, want %q", in, got, want)
+		}
+	}
 }
 
 func TestCellParallelLimit(t *testing.T) {

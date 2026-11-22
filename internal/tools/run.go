@@ -25,6 +25,7 @@ const (
 	maxConsoleBytes    = 8 << 20
 	maxRecordInput     = 2048
 	maxTimerDelay      = 24 * time.Hour
+	formatTimeout      = 5 * time.Second
 	newVMNote          = "Note: this is a new VM; variables and functions from earlier run calls are gone."
 )
 

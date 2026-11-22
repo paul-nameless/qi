@@ -110,3 +110,24 @@ func TestScratchDirNamedAndCreated(t *testing.T) {
 		t.Errorf("ScratchDir: %s %s", a, b)
 	}
 }
+
+func TestStaticPromptPerMode(t *testing.T) {
+	isolateHome(t)
+	for _, on := range []bool{true, false} {
+		cfg := config.Config{SkillDirs: []string{".claude/skills"}, CodeMode: &on}
+		projA, projB := t.TempDir(), t.TempDir()
+		_, a := LoadPrompt(projA, cfg, "")
+		_, b := LoadPrompt(projB, cfg, "")
+		static := a.Text[:a.Static]
+		if static != b.Text[:b.Static] || strings.Contains(static, projA) {
+			t.Errorf("code mode %v: static part depends on the directory", on)
+		}
+		base, intro := modeTexts(on)
+		if !strings.HasPrefix(static, base) || !strings.Contains(static, intro) {
+			t.Errorf("code mode %v: wrong base prompt or skills intro:\n%s", on, static)
+		}
+		if strings.Contains(static, "Your only tool is run") != on || strings.Contains(static, "with read()") != on {
+			t.Errorf("code mode %v: prompt names the wrong tools:\n%s", on, static)
+		}
+	}
+}

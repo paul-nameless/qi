@@ -54,6 +54,7 @@ type cell struct {
 	r         *runner
 	vm        *jsvm.VM
 	env       *Env
+	parent    context.Context
 	ctx       context.Context
 	cancel    context.CancelFunc
 	timedOut  atomic.Bool
@@ -89,6 +90,7 @@ func newCell(ctx context.Context, r *runner, env *Env, progress func(string), ti
 	}
 	c := &cell{
 		r:        r,
+		parent:   ctx,
 		vm:       r.vm,
 		env:      env,
 		timeout:  timeout,
@@ -108,8 +110,11 @@ func newCell(ctx context.Context, r *runner, env *Env, progress func(string), ti
 }
 
 func (c *cell) execute(code string) Result {
-	stopWatch := c.watch()
+	stopWatch := c.watch(c.ctx.Done())
 	end := c.evaluate(code)
+	stopWatch()
+	c.clock.stop()
+	c.vm.ClearInterrupt()
 	if end.stopped {
 		c.abandon()
 	}
@@ -119,29 +124,35 @@ func (c *cell) execute(code string) Result {
 	case end.err != nil:
 		hint = c.referenceHint(end.err)
 	default:
-		value = c.format(end.value)
+		value = c.formatBounded(end.value)
 	}
-	stopWatch()
-	c.clock.stop()
 	c.cancel()
 	c.wg.Wait()
-	c.vm.ClearInterrupt()
 	return c.result(end, value, hint)
 }
 
-func (c *cell) watch() func() {
-	stop, done := make(chan struct{}), make(chan struct{})
+func (c *cell) formatBounded(v jsvm.Value) string {
+	ctx, cancel := context.WithTimeout(c.parent, formatTimeout)
+	defer cancel()
+	stop := c.watch(ctx.Done())
+	defer c.vm.ClearInterrupt()
+	defer stop()
+	return c.format(v)
+}
+
+func (c *cell) watch(done <-chan struct{}) func() {
+	stop, exited := make(chan struct{}), make(chan struct{})
 	go func() {
-		defer close(done)
+		defer close(exited)
 		select {
-		case <-c.ctx.Done():
+		case <-done:
 			c.vm.Interrupt()
 		case <-stop:
 		}
 	}()
 	return func() {
 		close(stop)
-		<-done
+		<-exited
 	}
 }
 
@@ -291,10 +302,10 @@ func (c *cell) runTool(id int, t *Tool, input json.RawMessage) outcome {
 		return o
 	}
 	defer func() { <-c.sem }()
-	c.ui.ToolStart(innerID, "  "+label)
+	c.ui.ToolStart(innerID, label)
 	start := time.Now()
 	o.res, o.extra = c.r.inner.invokeSplit(c.ctx, c.env, t, call, c.ui)
-	c.ui.ToolDone(innerID, !o.res.IsError, "  "+doneLine(label, o.res.Summary))
+	c.ui.ToolDone(innerID, !o.res.IsError, doneLine(label, o.res.Summary))
 	o.record = llm.InnerCall{Tool: t.Def.Name, Label: label, OK: !o.res.IsError, Summary: o.res.Summary, Ms: time.Since(start).Milliseconds(), Input: recordInput(input)}
 	return o
 }

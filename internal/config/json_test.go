@@ -111,19 +111,22 @@ func TestNullInProfileResetsToDefault(t *testing.T) {
 	}
 }
 
-func TestTerminalImagesProfileOverridesGlobal(t *testing.T) {
+func TestBoolKeysProfileOverridesGlobal(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("QI_CONFIG_DIR", dir)
-	path := writeConfig(t, dir, "config.json", `{"terminal_images": false, "profiles": {"on": {"terminal_images": true}, "same": {"model": "m"}, "reset": {"terminal_images": null}}}`)
-	for profile, want := range map[string]bool{"": false, "on": true, "same": false, "reset": true} {
-		if c, err := Load(path, profile); err != nil || c.TerminalImagesOn() != want {
-			t.Errorf("profile %q: terminal images %v, want %v (%v)", profile, c.TerminalImagesOn(), want, err)
+	keys := map[string]func(Config) bool{"terminal_images": Config.TerminalImagesOn, "code_mode": Config.CodeModeOn}
+	for key, on := range keys {
+		path := writeConfig(t, dir, "config.json", strings.ReplaceAll(`{"KEY": false, "profiles": {"on": {"KEY": true}, "same": {"model": "m"}, "reset": {"KEY": null}}}`, "KEY", key))
+		for profile, want := range map[string]bool{"": false, "on": true, "same": false, "reset": true} {
+			if c, err := Load(path, profile); err != nil || on(c) != want {
+				t.Errorf("%s profile %q: %v, want %v (%v)", key, profile, on(c), want, err)
+			}
 		}
-	}
-	path = writeConfig(t, dir, "config.json", `{"profiles": {"off": {"terminal_images": false}}}`)
-	for profile, want := range map[string]bool{"": true, "off": false} {
-		if c, err := Load(path, profile); err != nil || c.TerminalImagesOn() != want {
-			t.Errorf("profile %q: terminal images %v, want %v (%v)", profile, c.TerminalImagesOn(), want, err)
+		path = writeConfig(t, dir, "config.json", strings.ReplaceAll(`{"profiles": {"off": {"KEY": false}}}`, "KEY", key))
+		for profile, want := range map[string]bool{"": true, "off": false} {
+			if c, err := Load(path, profile); err != nil || on(c) != want {
+				t.Errorf("%s profile %q: %v, want %v (%v)", key, profile, on(c), want, err)
+			}
 		}
 	}
 }

@@ -612,12 +612,21 @@ func (r *repl) apply(cfg config.Config, baseProvider string) error {
 	if err != nil {
 		return err
 	}
+	r.keepCodeMode(&cfg)
 	r.agent.Reconfigure(cfg, newProvider(cfg, key))
 	if r.runner != nil {
 		r.runner.Profile, r.runner.Provider = cfg.Profile, baseProvider
 		r.agent.ReplaceTool(tools.Subagent(cfg.Model, withProvider(cfg.SubagentModels, baseProvider), cfg.SubagentEfforts))
 	}
 	return nil
+}
+
+func (r *repl) keepCodeMode(cfg *config.Config) {
+	on := r.agent.Config().CodeModeOn()
+	if cfg.CodeModeOn() != on {
+		r.display.Info(fmt.Sprintf("code_mode is %v in the new settings; it applies after restarting qi", cfg.CodeModeOn()))
+	}
+	cfg.CodeMode = &on
 }
 
 func (r *repl) modelList() string {
@@ -660,7 +669,7 @@ func (r *repl) printHistory() {
 				r.display.Text(strings.TrimSpace(b.Text))
 				r.display.EndBlock()
 			case b.Type == llm.BlockToolUse:
-				r.display.Info("· " + b.Name + " " + tools.OneLine(string(b.Input), 90))
+				r.display.Info(toolUseText(b, 90))
 			case b.Type == llm.BlockImage:
 				r.display.Info("[image]")
 			}

@@ -45,6 +45,8 @@ func (p *scriptProvider) request(n int) llm.Request {
 	return p.requests[n]
 }
 
+func boolPtr(v bool) *bool { return &v }
+
 func textReply(s string) llm.Message {
 	return llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: s}}}
 }
@@ -169,7 +171,7 @@ func TestTurnRunsToolsAndPrintsStats(t *testing.T) {
 		}
 		return textReply("all done"), nil
 	}}
-	r, out := testRepl(t, config.Config{Model: "m"}, p)
+	r, out := testRepl(t, config.Config{Model: "m", CodeMode: boolPtr(false)}, p)
 	draft := r.turn(func(context.Context) ([]llm.Block, error) {
 		return []llm.Block{{Type: llm.BlockText, Text: "go"}}, nil
 	}, "kept draft")
@@ -210,7 +212,7 @@ func TestTurnQueuesTypedMessages(t *testing.T) {
 		}
 		return textReply("ok"), nil
 	}}
-	r, out = testRepl(t, config.Config{Model: "m"}, p)
+	r, out = testRepl(t, config.Config{Model: "m", CodeMode: boolPtr(false)}, p)
 	r.turn(func(context.Context) ([]llm.Block, error) {
 		return []llm.Block{{Type: llm.BlockText, Text: "go"}}, nil
 	}, "")

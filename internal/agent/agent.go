@@ -138,6 +138,7 @@ func (a *Agent) Reset(s *session.Session) {
 	a.busy.Lock()
 	defer a.busy.Unlock()
 	a.env.Jobs.KillAll()
+	a.conv.registry.Reset(false)
 	a.setSession(s)
 	a.resetConversation(nil)
 	a.SetContextTokens(0)
@@ -147,6 +148,7 @@ func (a *Agent) Load(s *session.Session, ld session.Loaded) {
 	a.busy.Lock()
 	defer a.busy.Unlock()
 	a.env.Jobs.KillAll()
+	a.conv.registry.Reset(hasCells(ld.Messages))
 	a.setSession(s)
 	a.resetConversation(ld.Messages)
 	a.restoreMode()
@@ -154,6 +156,17 @@ func (a *Agent) Load(s *session.Session, ld session.Loaded) {
 		ld.CtxTokens = a.estimateTokens()
 	}
 	a.SetContextTokens(ld.CtxTokens)
+}
+
+func hasCells(msgs []llm.Message) bool {
+	for _, m := range msgs {
+		for _, b := range m.Blocks {
+			if b.Type == llm.BlockToolUse && b.Name == "run" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (a *Agent) Reconfigure(cfg config.Config, p llm.Provider) {

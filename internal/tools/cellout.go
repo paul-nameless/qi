@@ -125,14 +125,18 @@ func (c *cell) format(v jsvm.Value) string {
 	case jsvm.KindString:
 		return jsvm.ToString(v)
 	}
-	if s, err := c.vm.CallValue(c.r.stringify, c.r.json, v, jsvm.Null(), jsvm.Number(1)); err == nil && s.Kind() == jsvm.KindString {
+	s, err := c.vm.CallValue(c.r.stringify, c.r.json, v, jsvm.Null(), jsvm.Number(1))
+	switch {
+	case errors.Is(err, jsvm.ErrInterrupted):
+		return fmt.Sprintf("[the value could not be shown: converting it took longer than %ds or was interrupted]", int(formatTimeout/time.Second))
+	case err == nil && s.Kind() == jsvm.KindString:
 		return jsvm.ToString(s)
 	}
-	s, err := c.vm.ToString(v)
+	str, err := c.vm.ToString(v)
 	if err != nil {
 		return "[the value could not be shown: " + errText(err) + "]"
 	}
-	return s
+	return str
 }
 
 func (c *cell) referenceHint(err error) string {
