@@ -1,0 +1,842 @@
+[
+ {
+  "code": "return 1 + 2 * 3 - 4 / 2",
+  "out": "5"
+ },
+ {
+  "code": "return [7 % 3, -7 % 3, 7.5 % 2, 2 ** 10, 2 ** -1, (-8) % 3]",
+  "out": "[\n 1,\n -1,\n 1.5,\n 1024,\n 0.5,\n -2\n]"
+ },
+ {
+  "code": "return [1/0, -1/0, 0/0, -0 === 0, Object.is(-0, 0)]",
+  "out": "[\n null,\n null,\n null,\n true,\n false\n]"
+ },
+ {
+  "code": "return [0.1 + 0.2, 1e21, 1e-7, 123456789012345680000, 5e-324, 1.5e300 * 1e10]",
+  "out": "[\n 0.30000000000000004,\n 1e+21,\n 1e-7,\n 123456789012345680000,\n 5e-324,\n null\n]"
+ },
+ {
+  "code": "return [(0.000001234).toString(), (1e100).toString(), (-1.5e-9).toString(), 100 .toString(), (255).toString(16), (0.5).toString(2)]",
+  "out": "[\n \"0.000001234\",\n \"1e+100\",\n \"-1.5e-9\",\n \"100\",\n \"ff\",\n \"0.1\"\n]"
+ },
+ {
+  "code": "return ['5' * '2', '5' + 2, 5 + '2', '10' / '4', '3' - 1, +'', +' 42 ', +'0x1f', +'1e3', +'abc', +[], +[5], +{}]",
+  "out": "[\n 10,\n \"52\",\n \"52\",\n 2.5,\n 2,\n 0,\n 42,\n 31,\n 1000,\n null,\n 0,\n 5,\n null\n]"
+ },
+ {
+  "code": "return [null + 1, undefined + 1, true + true, [] + [], [] + {}, [1,2] + [3]]",
+  "out": "[\n 1,\n null,\n 2,\n \"\",\n \"[object Object]\",\n \"1,23\"\n]"
+ },
+ {
+  "code": "return [1 < 2, '10' < '9', 10 < 9, '10' < 9, null >= 0, undefined == null, NaN == NaN, '1' == 1, 0 == '', false == '0']",
+  "out": "[\n true,\n true,\n false,\n false,\n true,\n true,\n false,\n true,\n true,\n true\n]"
+ },
+ {
+  "code": "return [5 & 3, 5 | 3, 5 ^ 3, ~5, 1 << 31, -1 >>> 0, -16 >> 2, 2**32 | 0, 1.9 | 0, -1.9 | 0]",
+  "out": "[\n 1,\n 7,\n 6,\n -6,\n -2147483648,\n 4294967295,\n -4,\n 0,\n 1,\n -1\n]"
+ },
+ {
+  "code": "return [typeof 1, typeof 'a', typeof true, typeof undefined, typeof null, typeof {}, typeof [], typeof (() => 1), typeof Math.max]",
+  "out": "[\n \"number\",\n \"string\",\n \"boolean\",\n \"undefined\",\n \"object\",\n \"object\",\n \"object\",\n \"function\",\n \"function\"\n]"
+ },
+ {
+  "code": "let a = 1; a += 2; a *= 3; a -= 1; a /= 2; a **= 2; a %= 5; return a",
+  "out": "1"
+ },
+ {
+  "code": "let x = null; x ??= 5; let y = 0; y ||= 7; let z = 1; z &&= 9; return [x, y, z]",
+  "out": "[\n 5,\n 7,\n 9\n]"
+ },
+ {
+  "code": "const o = {a: {b: {c: 1}}}; return [o?.a?.b?.c, o?.x?.y, o.a?.['b']?.c, o.f?.(), o.a.b.c?.toString()]",
+  "out": "[\n 1,\n null,\n 1,\n null,\n \"1\"\n]"
+ },
+ {
+  "code": "const arr = null; return [arr?.[0], arr?.length, (arr ?? [1])[0]]",
+  "out": "[\n null,\n null,\n 1\n]"
+ },
+ {
+  "code": "let i = 0; const r = []; while (i < 5) { if (i === 3) { i++; continue } r.push(i++) } return r",
+  "out": "[\n 0,\n 1,\n 2,\n 4\n]"
+ },
+ {
+  "code": "let s = ''; for (let i = 0; i < 10; i++) { if (i % 2) continue; if (i > 6) break; s += i } return s",
+  "out": "0246"
+ },
+ {
+  "code": "let n = 0; do { n++ } while (n < 5); return n",
+  "out": "5"
+ },
+ {
+  "code": "const r = []; for (const k in {a: 1, b: 2, 10: 3, 2: 4}) r.push(k); return r",
+  "out": "[\n \"2\",\n \"10\",\n \"a\",\n \"b\"\n]"
+ },
+ {
+  "code": "const r = []; for (const x of 'h\u00e9llo') r.push(x); return r.join('|')",
+  "out": "h|\u00e9|l|l|o"
+ },
+ {
+  "code": "const r = []; for (const [k, v] of new Map([['a', 1], ['b', 2]])) r.push(k + v); return r",
+  "out": "[\n \"a1\",\n \"b2\"\n]"
+ },
+ {
+  "code": "const r = []; for (const v of new Set([1, 2, 2, 3])) r.push(v); return r",
+  "out": "[\n 1,\n 2,\n 3\n]"
+ },
+ {
+  "code": "function sw(x) { switch (x) { case 1: return 'one'; case 2: case 3: return 'two-three'; default: return 'other' } } return [sw(1), sw(2), sw(3), sw(9)]",
+  "out": "[\n \"one\",\n \"two-three\",\n \"two-three\",\n \"other\"\n]"
+ },
+ {
+  "code": "let r = ''; switch (2) { case 1: r += 'a'; case 2: r += 'b'; case 3: r += 'c'; break; case 4: r += 'd' } return r",
+  "out": "bc"
+ },
+ {
+  "code": "function f(a, b = a * 2, ...rest) { return [a, b, rest] } return [f(1), f(1, 5, 6, 7)]",
+  "out": "[\n [\n  1,\n  2,\n  []\n ],\n [\n  1,\n  5,\n  [\n   6,\n   7\n  ]\n ]\n]"
+ },
+ {
+  "code": "const f = ({a, b: {c} = {c: 3}}, [d, , e = 9] = []) => [a, c, d, e]; return f({a: 1}, [4, 5])",
+  "out": "[\n 1,\n 3,\n 4,\n 9\n]"
+ },
+ {
+  "code": "const {a, ...rest} = {a: 1, b: 2, c: 3}; const [x, ...ys] = [1, 2, 3]; return [a, rest, x, ys]",
+  "out": "[\n 1,\n {\n  \"b\": 2,\n  \"c\": 3\n },\n 1,\n [\n  2,\n  3\n ]\n]"
+ },
+ {
+  "code": "let a = 1, b = 2; [a, b] = [b, a]; let o = {}; ({x: o.p, y: o['q']} = {x: 5, y: 6}); return [a, b, o]",
+  "out": "[\n 2,\n 1,\n {\n  \"p\": 5,\n  \"q\": 6\n }\n]"
+ },
+ {
+  "code": "const fs = []; for (let i = 0; i < 3; i++) fs.push(() => i); return fs.map(f => f())",
+  "out": "[\n 0,\n 1,\n 2\n]"
+ },
+ {
+  "code": "const fs = []; for (var i = 0; i < 3; i++) fs.push(() => i); return fs.map(f => f())",
+  "out": "[\n 3,\n 3,\n 3\n]"
+ },
+ {
+  "code": "const fs = []; for (const x of [1, 2, 3]) fs.push(() => x * 10); return fs.map(f => f())",
+  "out": "[\n 10,\n 20,\n 30\n]"
+ },
+ {
+  "code": "function counter() { let c = 0; return { inc: () => ++c, get: () => c } } const k = counter(); k.inc(); k.inc(); return k.get()",
+  "out": "2"
+ },
+ {
+  "code": "function fact(n) { return n <= 1 ? 1 : n * fact(n - 1) } return fact(20)",
+  "out": "2432902008176640000"
+ },
+ {
+  "code": "const fib = n => n < 2 ? n : fib(n - 1) + fib(n - 2); return fib(20)",
+  "out": "6765"
+ },
+ {
+  "code": "return h(); function h() { return 'hoisted' }",
+  "out": "hoisted"
+ },
+ {
+  "code": "const o = { name: 'x', greet() { return 'hi ' + this.name } }; return o.greet()",
+  "out": "hi x"
+ },
+ {
+  "code": "const o = { v: 1, f: function() { return this.v } }; const g = o.f; return [o.f(), (() => { try { return g() } catch (e) { return e.constructor.name } })()]",
+  "skip": "strict mode: oracles run sloppy scripts"
+ },
+ {
+  "code": "function F(x) { this.x = x } F.prototype.get = function() { return this.x }; const f = new F(3); return [f.get(), f instanceof F, Object.getPrototypeOf(f) === F.prototype]",
+  "out": "[\n 3,\n true,\n true\n]"
+ },
+ {
+  "code": "const add = (a, b) => a + b; return [add.call(null, 1, 2), add.apply(null, [3, 4]), add.bind(null, 10)(5), add.length, add.name]",
+  "out": "[\n 3,\n 7,\n 15,\n 2,\n \"add\"\n]"
+ },
+ {
+  "code": "function f() { return this } return [f.call(5) === 5, typeof f.call(undefined)]",
+  "skip": "strict mode: oracles run sloppy scripts"
+ },
+ {
+  "code": "const k = 'dyn'; const o = {[k + 1]: 1, [`t${2}`]: 2, 'quoted key': 3, 42: 4}; return o",
+  "out": "{\n \"42\": 4,\n \"dyn1\": 1,\n \"t2\": 2,\n \"quoted key\": 3\n}"
+ },
+ {
+  "code": "const a = [1, 2]; const o = {x: 1}; return [[...a, ...'ab', ...new Set([9])], {...o, y: 2, ...null, ...{x: 5}}, Math.max(...a, 0)]",
+  "out": "[\n [\n  1,\n  2,\n  \"a\",\n  \"b\",\n  9\n ],\n {\n  \"x\": 5,\n  \"y\": 2\n },\n 2\n]"
+ },
+ {
+  "code": "const n = 5; return `a${n}b${n * 2}c${[1, 2]}d${{}}e${null}${undefined}`",
+  "out": "a5b10c1,2d[object Object]enullundefined"
+ },
+ {
+  "code": "return String.raw`a\\nb${1}\\t` + '|' + `line1",
+  "err": "SyntaxError"
+ },
+ {
+  "code": "line2`",
+  "err": "SyntaxError"
+ },
+ {
+  "code": "try { null.x } catch (e) { return [e instanceof TypeError, e.name, e.constructor === TypeError] }",
+  "out": "[\n true,\n \"TypeError\",\n true\n]"
+ },
+ {
+  "code": "try { undefinedVar } catch (e) { return [e.name, e.message] }",
+  "skip": "goja {'calls': 0, 'ms': 0, 'out': '[\\n \"ReferenceError\",\\n \"undefinedVar is not defined\"\\n]'} / qjs {'calls': 0, 'ms': 0, 'out': '[\\n \"ReferenceError\",\\n \"\\'undefinedVar\\' is not defined\"\\n]'}"
+ },
+ {
+  "code": "try { throw new RangeError('bad', {cause: 'c'}) } catch (e) { return [e.name, e.message, e.cause, String(e)] }",
+  "out": "[\n \"RangeError\",\n \"bad\",\n \"c\",\n \"RangeError: bad\"\n]"
+ },
+ {
+  "code": "try { throw {custom: 1} } catch (e) { return e.custom }",
+  "out": "1"
+ },
+ {
+  "code": "let log = []; function f() { try { log.push('t'); return 'r' } finally { log.push('f') } } return [f(), log]",
+  "out": "[\n \"r\",\n [\n  \"t\",\n  \"f\"\n ]\n]"
+ },
+ {
+  "code": "function f() { try { throw new Error('x') } catch { return 'caught' } finally { } } return f()",
+  "out": "caught"
+ },
+ {
+  "code": "function f() { try { return 1 } finally { return 2 } } return f()",
+  "out": "2"
+ },
+ {
+  "code": "let r = []; for (let i = 0; i < 3; i++) { try { if (i === 1) continue; r.push(i) } finally { r.push('f' + i) } } return r",
+  "out": "[\n 0,\n \"f0\",\n \"f1\",\n 2,\n \"f2\"\n]"
+ },
+ {
+  "code": "const e = new Error('m'); return [e.message, e.name, typeof e.stack, 'stack' in e, Object.keys(e), JSON.stringify(e)]",
+  "out": "[\n \"m\",\n \"Error\",\n \"string\",\n true,\n [],\n \"{}\"\n]"
+ },
+ {
+  "code": "return [new TypeError('t') instanceof Error, Object.prototype.toString.call(new Error()), String(new SyntaxError('s'))]",
+  "out": "[\n true,\n \"[object Error]\",\n \"SyntaxError: s\"\n]"
+ },
+ {
+  "code": "const e = new AggregateError([new Error('a')], 'agg'); return [e.name, e.message, e.errors.length]",
+  "out": "[\n \"AggregateError\",\n \"agg\",\n 1\n]"
+ },
+ {
+  "code": "return [Object.keys({b: 1, a: 2, 1: 3, 0: 4}), Object.values({x: 1, y: [2]}), Object.entries({p: 1})]",
+  "out": "[\n [\n  \"0\",\n  \"1\",\n  \"b\",\n  \"a\"\n ],\n [\n  1,\n  [\n   2\n  ]\n ],\n [\n  [\n   \"p\",\n   1\n  ]\n ]\n]"
+ },
+ {
+  "code": "const o = Object.assign({}, {a: 1}, null, {b: 2}); return [o, Object.fromEntries([['x', 1], ['y', 2]])]",
+  "out": "[\n {\n  \"a\": 1,\n  \"b\": 2\n },\n {\n  \"x\": 1,\n  \"y\": 2\n }\n]"
+ },
+ {
+  "code": "const o = Object.freeze({a: 1}); try { o.a = 2 } catch (e) { return [e.name, o.a, Object.isFrozen(o)] } return 'no throw'",
+  "skip": "strict mode: oracles run sloppy scripts"
+ },
+ {
+  "code": "const o = Object.create({inherited: 1}); o.own = 2; const r = []; for (const k in o) r.push(k); return [r, Object.keys(o), o.hasOwnProperty('inherited'), 'inherited' in o]",
+  "out": "[\n [\n  \"own\",\n  \"inherited\"\n ],\n [\n  \"own\"\n ],\n false,\n true\n]"
+ },
+ {
+  "code": "const o = {}; Object.defineProperty(o, 'h', {value: 1, enumerable: false}); return [o.h, Object.keys(o), JSON.stringify(o)]",
+  "out": "[\n 1,\n [],\n \"{}\"\n]"
+ },
+ {
+  "code": "return [Object.is(NaN, NaN), Object.hasOwn({a: 1}, 'a'), Object.getOwnPropertyNames({a: 1, b: 2})]",
+  "out": "[\n true,\n true,\n [\n  \"a\",\n  \"b\"\n ]\n]"
+ },
+ {
+  "code": "const g = Object.groupBy([1, 2, 3, 4, 5], x => x % 2 ? 'odd' : 'even'); return [g.odd, g.even]",
+  "out": "[\n [\n  1,\n  3,\n  5\n ],\n [\n  2,\n  4\n ]\n]"
+ },
+ {
+  "code": "const o = {a: 1}; delete o.a; return [o, 'a' in o, delete o.zzz]",
+  "out": "[\n {},\n false,\n true\n]"
+ },
+ {
+  "code": "const a = [3, 1, 10, 2]; return [a.sort(), [3, 1, 10, 2].sort((x, y) => x - y), ['b', 'a', 'C'].sort()]",
+  "out": "[\n [\n  1,\n  10,\n  2,\n  3\n ],\n [\n  1,\n  2,\n  3,\n  10\n ],\n [\n  \"C\",\n  \"a\",\n  \"b\"\n ]\n]"
+ },
+ {
+  "code": "return [[1, 2, 3].map(x => x * 2), [1, 2, 3, 4].filter(x => x % 2), [1, 2, 3].reduce((a, b) => a + b, 0), [[1], [2]].reduce((a, b) => a.concat(b))]",
+  "out": "[\n [\n  2,\n  4,\n  6\n ],\n [\n  1,\n  3\n ],\n 6,\n [\n  1,\n  2\n ]\n]"
+ },
+ {
+  "code": "return [[1, 2, 3].find(x => x > 1), [1, 2, 3].findIndex(x => x > 5), [1, 2, 3].some(x => x > 2), [1, 2, 3].every(x => x > 0), [1, 2, 3].includes(2), [1, 2, 3].indexOf(3)]",
+  "out": "[\n 2,\n -1,\n true,\n true,\n true,\n 2\n]"
+ },
+ {
+  "code": "return [[1, [2, [3, [4]]]].flat(), [1, [2, [3, [4]]]].flat(Infinity), [1, 2].flatMap(x => [x, x])]",
+  "out": "[\n [\n  1,\n  2,\n  [\n   3,\n   [\n    4\n   ]\n  ]\n ],\n [\n  1,\n  2,\n  3,\n  4\n ],\n [\n  1,\n  1,\n  2,\n  2\n ]\n]"
+ },
+ {
+  "code": "const a = [1, 2, 3, 4, 5]; return [a.slice(1, 3), a.slice(-2), a.at(-1), a.join('-'), a.toReversed(), a]",
+  "out": "[\n [\n  2,\n  3\n ],\n [\n  4,\n  5\n ],\n 5,\n \"1-2-3-4-5\",\n [\n  5,\n  4,\n  3,\n  2,\n  1\n ],\n [\n  1,\n  2,\n  3,\n  4,\n  5\n ]\n]"
+ },
+ {
+  "code": "const a = [1, 2, 3, 4, 5]; const r = a.splice(1, 2, 'x', 'y', 'z'); return [r, a]",
+  "out": "[\n [\n  2,\n  3\n ],\n [\n  1,\n  \"x\",\n  \"y\",\n  \"z\",\n  4,\n  5\n ]\n]"
+ },
+ {
+  "code": "const a = [1, 2]; a.push(3, 4); a.unshift(0); const p = a.pop(); const s = a.shift(); return [a, p, s, a.length]",
+  "out": "[\n [\n  1,\n  2,\n  3\n ],\n 4,\n 0,\n 3\n]"
+ },
+ {
+  "code": "const a = []; a[5] = 1; return [a.length, a[3], a.includes(undefined)]",
+  "out": "[\n 6,\n null,\n true\n]"
+ },
+ {
+  "code": "const a = [1, 2, 3]; a.length = 1; return [a, a.length]",
+  "out": "[\n [\n  1\n ],\n 1\n]"
+ },
+ {
+  "code": "return [Array.from({length: 3}, (_, i) => i * i), Array.from('abc'), Array.from(new Map([[1, 2]])), Array.of(1, 2), Array.isArray([]), new Array(3).fill(0)]",
+  "out": "[\n [\n  0,\n  1,\n  4\n ],\n [\n  \"a\",\n  \"b\",\n  \"c\"\n ],\n [\n  [\n   1,\n   2\n  ]\n ],\n [\n  1,\n  2\n ],\n true,\n [\n  0,\n  0,\n  0\n ]\n]"
+ },
+ {
+  "code": "return [[3, 1, 2].toSorted(), [1, 2, 3].with(1, 9), [1, 2, 3].toSpliced(0, 1), [1, 2, 3, 4].findLast(x => x % 2), [1, 2, 3].findLastIndex(x => x < 0)]",
+  "out": "[\n [\n  1,\n  2,\n  3\n ],\n [\n  1,\n  9,\n  3\n ],\n [\n  2,\n  3\n ],\n 3,\n -1\n]"
+ },
+ {
+  "code": "const a = [{n: 'b', v: 2}, {n: 'a', v: 2}, {n: 'c', v: 1}]; return a.sort((x, y) => x.v - y.v).map(x => x.n).join()",
+  "out": "c,b,a"
+ },
+ {
+  "code": "return [[1, 2, 3].keys().next(), [...[7, 8].entries()], [...['x'].values()]]",
+  "out": "[\n {\n  \"value\": 0,\n  \"done\": false\n },\n [\n  [\n   0,\n   7\n  ],\n  [\n   1,\n   8\n  ]\n ],\n [\n  \"x\"\n ]\n]"
+ },
+ {
+  "code": "return [String([1, [2, 3]]), String({}), [null, undefined, 1].join(), [1, 2].toString()]",
+  "out": "[\n \"1,2,3\",\n \"[object Object]\",\n \",,1\",\n \"1,2\"\n]"
+ },
+ {
+  "code": "return ['abc'.length, 'abc'[1], 'abc'.at(-1), 'abc'.charAt(5), 'abc'.charCodeAt(1), 'abc'.codePointAt(0)]",
+  "out": "[\n 3,\n \"b\",\n \"c\",\n \"\",\n 98,\n 97\n]"
+ },
+ {
+  "code": "return ['Hello World'.toUpperCase(), 'ABC'.toLowerCase(), '  x  '.trim() + '|', '  x'.trimStart(), 'x  '.trimEnd() + '|']",
+  "out": "[\n \"HELLO WORLD\",\n \"abc\",\n \"x|\",\n \"x\",\n \"x|\"\n]"
+ },
+ {
+  "code": "return ['abcdef'.slice(1, 3), 'abcdef'.slice(-2), 'abcdef'.substring(4, 1), 'abcdef'.substr(2, 2), 'abc'.slice(5)]",
+  "out": "[\n \"bc\",\n \"ef\",\n \"bcd\",\n \"cd\",\n \"\"\n]"
+ },
+ {
+  "code": "return ['a,b,,c'.split(','), 'abc'.split(''), 'a b  c'.split(' ', 2), ''.split(','), 'abc'.split()]",
+  "out": "[\n [\n  \"a\",\n  \"b\",\n  \"\",\n  \"c\"\n ],\n [\n  \"a\",\n  \"b\",\n  \"c\"\n ],\n [\n  \"a\",\n  \"b\"\n ],\n [\n  \"\"\n ],\n [\n  \"abc\"\n ]\n]"
+ },
+ {
+  "code": "return ['abcabc'.indexOf('c'), 'abcabc'.lastIndexOf('c'), 'abc'.includes('bc'), 'abc'.startsWith('ab'), 'abc'.endsWith('bc'), 'abc'.indexOf('')]",
+  "out": "[\n 2,\n 5,\n true,\n true,\n true,\n 0\n]"
+ },
+ {
+  "code": "return ['5'.padStart(3, '0'), 'ab'.padEnd(5, 'xy'), 'ab'.repeat(3), 'a-b-c'.replaceAll('-', '+'), 'a-b-c'.replace('-', '+')]",
+  "out": "[\n \"005\",\n \"abxyx\",\n \"ababab\",\n \"a+b+c\",\n \"a+b-c\"\n]"
+ },
+ {
+  "code": "return ['x'.localeCompare('y'), 'b'.localeCompare('a'), 'a'.localeCompare('a'), ['b', 'a', 'c'].sort((p, q) => p.localeCompare(q))]",
+  "out": "[\n -1,\n 1,\n 0,\n [\n  \"a\",\n  \"b\",\n  \"c\"\n ]\n]"
+ },
+ {
+  "code": "return ['h\u00e9llo'.length, '\ud83d\ude00'.length, [...'\ud83d\ude00a'].length, 'h\u00e9llo'.toUpperCase(), 'a\u00f1b'.indexOf('b'), 'a\u00f1b'.slice(1, 2)]",
+  "out": "[\n 5,\n 2,\n 2,\n \"H\u00c9LLO\",\n 2,\n \"\u00f1\"\n]"
+ },
+ {
+  "code": "return [String.fromCharCode(72, 105), String.fromCodePoint(128512), 'abc'.concat('d', 1)]",
+  "out": "[\n \"Hi\",\n \"\ud83d\ude00\",\n \"abcd1\"\n]"
+ },
+ {
+  "code": "return ['a1b2c3'.replace(/\\d/g, d => d * 2), 'John Smith'.replace(/(\\w+)\\s(\\w+)/, '$2, $1'), 'aaa'.replace(/a/, 'b')]",
+  "out": "[\n \"a2b4c6\",\n \"Smith, John\",\n \"baa\"\n]"
+ },
+ {
+  "code": "const m = 'x=1, y=22'.match(/(\\w)=(\\d+)/); return [m[0], m[1], m[2], m.index, m.input, m.length]",
+  "out": "[\n \"x=1\",\n \"x\",\n \"1\",\n 0,\n \"x=1, y=22\",\n 3\n]"
+ },
+ {
+  "code": "return ['a1b22c333'.match(/\\d+/g), 'abc'.match(/z/g), 'abc'.search(/c/), /^\\d+$/.test('123'), /^\\d+$/.test('12a')]",
+  "out": "[\n [\n  \"1\",\n  \"22\",\n  \"333\"\n ],\n null,\n 2,\n true,\n false\n]"
+ },
+ {
+  "code": "return ['a, b,c'.split(/\\s*,\\s*/), 'one1two2three'.split(/\\d/), 'a1b'.split(/(\\d)/)]",
+  "out": "[\n [\n  \"a\",\n  \"b\",\n  \"c\"\n ],\n [\n  \"one\",\n  \"two\",\n  \"three\"\n ],\n [\n  \"a\",\n  \"1\",\n  \"b\"\n ]\n]"
+ },
+ {
+  "code": "const re = /(\\d+)/g; const r = []; let m; while ((m = re.exec('a1b22c333')) !== null) r.push(m[1] + '@' + m.index + ':' + re.lastIndex); return r",
+  "out": "[\n \"1@1:2\",\n \"22@3:5\",\n \"333@6:9\"\n]"
+ },
+ {
+  "code": "const m = [...'a1b22'.matchAll(/[a-z](\\d+)/g)]; return m.map(x => [x[0], x[1], x.index])",
+  "out": "[\n [\n  \"a1\",\n  \"1\",\n  0\n ],\n [\n  \"b22\",\n  \"22\",\n  2\n ]\n]"
+ },
+ {
+  "code": "const re = /a/gi; return [re.source, re.flags, re.global, re.ignoreCase, String(re), re instanceof RegExp]",
+  "out": "[\n \"a\",\n \"gi\",\n true,\n true,\n \"/a/gi\",\n true\n]"
+ },
+ {
+  "code": "const m = /(?<year>\\d{4})-(?<mon>\\d\\d)/.exec('on 2026-11!'); return [m.groups.year, m.groups.mon, '2026-11'.replace(/(?<y>\\d+)-(?<m>\\d+)/, '$<m>/$<y>')]",
+  "out": "[\n \"2026\",\n \"11\",\n \"11/2026\"\n]"
+ },
+ {
+  "code": "return [new RegExp('a+', 'g').test('caaat'), new RegExp('\\\\d').source, RegExp('x').flags]",
+  "out": "[\n true,\n \"\\\\d\",\n \"\"\n]"
+ },
+ {
+  "code": "return ['TODO: x\\n// TODO(auth): y'.match(/TODO\\((\\w+)\\)/)[1], 'a\\nb'.match(/^b$/m) !== null, 'a.b*c'.replace(/[.*]/g, '\\\\$&')]",
+  "out": "[\n \"auth\",\n true,\n \"a\\\\.b\\\\*c\"\n]"
+ },
+ {
+  "code": "return [parseInt('42px'), parseInt('0x1F'), parseInt('101', 2), parseInt(''), parseInt('-12.9'), parseFloat('3.14abc'), parseFloat('.5'), parseFloat('-.5e2x')]",
+  "out": "[\n 42,\n 31,\n 5,\n null,\n -12,\n 3.14,\n 0.5,\n -50\n]"
+ },
+ {
+  "code": "return [Number('42'), Number(''), Number('12px'), Number(null), Number(undefined), Number([]), Number(true), Number('  1.5  ')]",
+  "out": "[\n 42,\n 0,\n null,\n 0,\n null,\n 0,\n 1,\n 1.5\n]"
+ },
+ {
+  "code": "return [Number.isInteger(5.0), Number.isInteger(5.5), Number.isSafeInteger(2 ** 53), Number.isNaN('x'), isNaN('x'), Number.MAX_SAFE_INTEGER, Number.EPSILON > 0]",
+  "out": "[\n true,\n false,\n false,\n false,\n true,\n 9007199254740991,\n true\n]"
+ },
+ {
+  "code": "return [(1234.5678).toFixed(2), (0.5).toFixed(0), (1.5).toFixed(0), (2.5).toFixed(0), (1.005).toFixed(2), (-1.5).toFixed(0), (123.456).toFixed(10), (0).toFixed(2)]",
+  "out": "[\n \"1234.57\",\n \"1\",\n \"2\",\n \"3\",\n \"1.00\",\n \"-2\",\n \"123.4560000000\",\n \"0.00\"\n]"
+ },
+ {
+  "code": "return [(1234.5678).toPrecision(6), (0.00012345).toPrecision(2), (123456).toPrecision(2), (1.5).toExponential(3), (12345).toExponential(), (0).toPrecision(3)]",
+  "out": "[\n \"1234.57\",\n \"0.00012\",\n \"1.2e+5\",\n \"1.500e+0\",\n \"1.2345e+4\",\n \"0.00\"\n]"
+ },
+ {
+  "code": "return [(1234567.891).toLocaleString(), (1234.5).toLocaleString('en-US'), (0.1234).toLocaleString(), (-9876543).toLocaleString(), (1e21).toLocaleString === undefined]",
+  "skip": "goja {'calls': 0, 'err': 'RangeError: toString() radix argument must be between 2 and 36\\nRangeError: toString() radix argument must be between 2 and 36\\n\\ / qjs {'calls': 0, 'ms': 0, 'out': '[\\n \"1234567.891\",\\n \"1234.5\",\\n \"0.1234\",\\n \"-9876543\",\\n false\\n]'}"
+ },
+ {
+  "code": "return [Math.max(1, 5, 3), Math.min(), Math.max(), Math.round(2.5), Math.round(-2.5), Math.round(-0.4), Math.trunc(-1.7), Math.sign(-3), Math.abs(-2)]",
+  "out": "[\n 5,\n null,\n null,\n 3,\n -2,\n 0,\n -1,\n -1,\n 2\n]"
+ },
+ {
+  "code": "return [Math.floor(-1.5), Math.ceil(1.2), Math.sqrt(16), Math.cbrt(27), Math.hypot(3, 4), Math.log2(8), Math.log10(1000), Math.pow(2, 0.5).toFixed(4), Math.PI.toFixed(5)]",
+  "out": "[\n -2,\n 2,\n 4,\n 3,\n 5,\n 3,\n 3,\n \"1.4142\",\n \"3.14159\"\n]"
+ },
+ {
+  "code": "return [Boolean(''), Boolean('0'), !!NaN, !![], !!{}]",
+  "out": "[\n false,\n true,\n false,\n true,\n true\n]"
+ },
+ {
+  "code": "const m = new Map(); m.set('a', 1).set('b', 2); m.set(NaN, 'nan'); return [m.size, m.get('a'), m.has('b'), m.get(NaN), m.delete('a'), m.size, [...m.keys()]]",
+  "out": "[\n 3,\n 1,\n true,\n \"nan\",\n true,\n 2,\n [\n  \"b\",\n  null\n ]\n]"
+ },
+ {
+  "code": "const m = new Map([[1, 'one']]); const k = {}; m.set(k, 'obj'); return [m.get(1), m.get('1'), m.get(k), m.get({})]",
+  "out": "[\n \"one\",\n null,\n \"obj\",\n null\n]"
+ },
+ {
+  "code": "const s = new Set([1, 2, 3]); s.add(2); s.delete(1); return [s.size, s.has(2), [...s], [...new Set('hello')].join('')]",
+  "out": "[\n 2,\n true,\n [\n  2,\n  3\n ],\n \"helo\"\n]"
+ },
+ {
+  "code": "const m = new Map([['x', 1], ['y', 2]]); const r = []; m.forEach((v, k) => r.push(k + '=' + v)); return [r, [...m.values()], [...m.entries()], Object.fromEntries(m)]",
+  "out": "[\n [\n  \"x=1\",\n  \"y=2\"\n ],\n [\n  1,\n  2\n ],\n [\n  [\n   \"x\",\n   1\n  ],\n  [\n   \"y\",\n   2\n  ]\n ],\n {\n  \"x\": 1,\n  \"y\": 2\n }\n]"
+ },
+ {
+  "code": "const m = new Map([[1, 1], [2, 2], [3, 3]]); const r = []; for (const [k] of m) { r.push(k); if (k === 1) { m.delete(2); m.set(4, 4) } } return r",
+  "out": "[\n 1,\n 3,\n 4\n]"
+ },
+ {
+  "code": "const a = new Set([1, 2, 3]), b = new Set([2, 3, 4]); return [[...a.union(b)], [...a.intersection(b)], [...a.difference(b)], a.isSubsetOf(b)]",
+  "out": "[\n [\n  1,\n  2,\n  3,\n  4\n ],\n [\n  2,\n  3\n ],\n [\n  1\n ],\n false\n]"
+ },
+ {
+  "code": "return JSON.stringify({a: [1, 'x', null, true], b: {c: undefined, d: () => 1}, e: NaN, f: -0, g: 1e21})",
+  "out": "{\"a\":[1,\"x\",null,true],\"b\":{},\"e\":null,\"f\":0,\"g\":1e+21}"
+ },
+ {
+  "code": "return JSON.stringify([undefined, function() {}, Infinity])",
+  "out": "[null,null,null]"
+ },
+ {
+  "code": "return JSON.stringify({b: 1, a: [1, {c: 2}]}, null, 2)",
+  "out": "{\n  \"b\": 1,\n  \"a\": [\n    1,\n    {\n      \"c\": 2\n    }\n  ]\n}"
+ },
+ {
+  "code": "return JSON.stringify({a: 1, b: 2, c: 3}, ['a', 'c']) + JSON.stringify({a: 1, b: 'x'}, (k, v) => typeof v === 'number' ? v * 10 : v)",
+  "out": "{\"a\":1,\"c\":3}{\"a\":10,\"b\":\"x\"}"
+ },
+ {
+  "code": "return JSON.stringify('he said \"hi\"\\n\\t\\u0001') + JSON.stringify({toJSON() { return 'custom' }})",
+  "out": "\"he said \\\"hi\\\"\\n\\t\\u0001\"\"custom\""
+ },
+ {
+  "code": "return JSON.stringify({x: 1}, null, '--') + JSON.stringify([], null, 2) + JSON.stringify({}, null, 2) + JSON.stringify([[]], null, 1)",
+  "out": "{\n--\"x\": 1\n}[]{}[\n []\n]"
+ },
+ {
+  "code": "const o = JSON.parse('{\"a\":[1,2,{\"b\":null}],\"c\":\"\\\\u0041\\\\n\",\"d\":1.5e3,\"e\":-0.25,\"a\":9}'); return [o.a, o.c, o.d, o.e, Object.keys(o)]",
+  "out": "[\n 9,\n \"A\\n\",\n 1500,\n -0.25,\n [\n  \"a\",\n  \"c\",\n  \"d\",\n  \"e\"\n ]\n]"
+ },
+ {
+  "code": "return JSON.parse('[1,2,3]', (k, v) => typeof v === 'number' ? v + 1 : v)",
+  "out": "[\n 2,\n 3,\n 4\n]"
+ },
+ {
+  "code": "try { JSON.parse('{bad') } catch (e) { return e.name }",
+  "out": "SyntaxError"
+ },
+ {
+  "code": "try { JSON.parse('') } catch (e) { return e.name }",
+  "out": "SyntaxError"
+ },
+ {
+  "code": "const o = {}; o.self = o; try { JSON.stringify(o) } catch (e) { return e.name }",
+  "out": "TypeError"
+ },
+ {
+  "code": "return JSON.parse('{\"2\":1,\"1\":2,\"b\":3,\"a\":4}')",
+  "out": "{\n \"1\": 2,\n \"2\": 1,\n \"b\": 3,\n \"a\": 4\n}"
+ },
+ {
+  "code": "return JSON.stringify({1: 'a', b: 'c', 0: 'd'})",
+  "out": "{\"0\":\"d\",\"1\":\"a\",\"b\":\"c\"}"
+ },
+ {
+  "code": "const p = await new Promise(r => r(5)); return p",
+  "out": "5"
+ },
+ {
+  "code": "const r = await Promise.all([1, Promise.resolve(2), new Promise(r => r(3))]); return r",
+  "out": "[\n 1,\n 2,\n 3\n]"
+ },
+ {
+  "code": "const r = await Promise.allSettled([Promise.resolve(1), Promise.reject(new Error('no'))]); return r.map(x => x.status + ':' + (x.value || x.reason.message))",
+  "out": "[\n \"fulfilled:1\",\n \"rejected:no\"\n]"
+ },
+ {
+  "code": "const r = await Promise.race([new Promise(r => setTimeout(() => r('slow'), 50)), Promise.resolve('fast')]); return r",
+  "out": "fast"
+ },
+ {
+  "code": "const r = await Promise.any([Promise.reject(1), Promise.resolve(2)]); return r",
+  "out": "2"
+ },
+ {
+  "code": "try { await Promise.any([Promise.reject(1)]) } catch (e) { return [e.name, e.errors] }",
+  "out": "[\n \"AggregateError\",\n [\n  1\n ]\n]"
+ },
+ {
+  "code": "const log = []; Promise.resolve().then(() => log.push(1)); queueMicrotask(() => log.push(2)); log.push(0); await null; await null; return log",
+  "out": "[\n 0,\n 1,\n 2\n]"
+ },
+ {
+  "code": "const log = []; const p = Promise.resolve(1); p.then(v => log.push('a' + v)); p.then(v => log.push('b' + v)); await p; log.push('c'); return log",
+  "out": "[\n \"a1\",\n \"b1\",\n \"c\"\n]"
+ },
+ {
+  "code": "const r = await Promise.reject(new Error('e')).catch(e => e.message + '!').finally(() => 0); return r",
+  "out": "e!"
+ },
+ {
+  "code": "const log = []; (async () => { log.push(1); await null; log.push(3) })(); log.push(2); await null; await null; return log",
+  "out": "[\n 1,\n 2,\n 3\n]"
+ },
+ {
+  "code": "async function f(x) { if (x) throw new Error('boom'); return 'ok' } const a = await f(0); let b; try { await f(1) } catch (e) { b = e.message } return [a, b]",
+  "out": "[\n \"ok\",\n \"boom\"\n]"
+ },
+ {
+  "code": "const f = async () => { await null; return 7 }; const p = f(); return [p instanceof Promise, await p]",
+  "out": "[\n true,\n 7\n]"
+ },
+ {
+  "code": "const results = []; await Promise.all([1, 2, 3].map(async x => { await sleep(10 * (4 - x)); results.push(x) })); return results",
+  "out": "[\n 3,\n 2,\n 1\n]"
+ },
+ {
+  "code": "const {promise, resolve} = Promise.withResolvers(); setTimeout(() => resolve('later'), 10); return await promise",
+  "out": "later"
+ },
+ {
+  "code": "let order = []; const p = new Promise(r => { order.push('exec'); r() }); order.push('after'); await p; return order",
+  "out": "[\n \"exec\",\n \"after\"\n]"
+ },
+ {
+  "code": "const p = Promise.resolve(1); const q = p.then(x => { throw new Error('t' + x) }); try { await q } catch (e) { return e.message }",
+  "out": "t1"
+ },
+ {
+  "code": "const t = new Promise(res => res(Promise.resolve('nested'))); return await t",
+  "out": "nested"
+ },
+ {
+  "code": "const log = []; const a = Promise.resolve().then(() => log.push('a1')).then(() => log.push('a2')); const b = Promise.resolve().then(() => log.push('b1')).then(() => log.push('b2')); await Promise.all([a, b]); return log",
+  "out": "[\n \"a1\",\n \"b1\",\n \"a2\",\n \"b2\"\n]"
+ },
+ {
+  "code": "const log = []; async function f() { log.push('f1'); await g(); log.push('f2') } async function g() { log.push('g') } f(); log.push('main'); await null; return log",
+  "out": "[\n \"f1\",\n \"g\",\n \"main\",\n \"f2\"\n]"
+ },
+ {
+  "code": "const log = []; const p = (async () => 'v')(); p.then(() => log.push('then')); log.push('sync'); await null; log.push('after1'); await null; return log",
+  "out": "[\n \"sync\",\n \"then\",\n \"after1\"\n]"
+ },
+ {
+  "code": "return await (async () => { try { return await Promise.reject('x') } catch (e) { return 'caught ' + e } })()",
+  "out": "caught x"
+ },
+ {
+  "code": "globalThis.zz = 3; return [zz, typeof globalThis, globalThis.Math === Math, 'zz' in globalThis]",
+  "out": "[\n 3,\n \"object\",\n true,\n true\n]"
+ },
+ {
+  "code": "var vv = 1; let ll = 2; return [globalThis.vv, globalThis.ll]",
+  "skip": "goja {'calls': 0, 'ms': 0, 'out': '[\\n 1,\\n 2\\n]'} / qjs {'calls': 0, 'ms': 0, 'out': '[\\n null,\\n null\\n]'}"
+ },
+ {
+  "code": "return [typeof structuredClone, structuredClone({a: [1, {b: 2}]}), typeof queueMicrotask]",
+  "out": "[\n \"function\",\n {\n  \"a\": [\n   1,\n   {\n    \"b\": 2\n   }\n  ]\n },\n \"function\"\n]"
+ },
+ {
+  "code": "const s = structuredClone(new Map([[1, {a: 1}]])); return [s instanceof Map, s.get(1).a]",
+  "err": "TypeError"
+ },
+ {
+  "code": "return [1, 'two', [3], {f: 4}].map(x => typeof x)",
+  "out": "[\n \"number\",\n \"string\",\n \"object\",\n \"object\"\n]"
+ },
+ {
+  "code": "let s = 0; const a = [1, 2, 3]; for (const v of a) { if (v === 2) a.push(4); s += v } return s",
+  "out": "10"
+ },
+ {
+  "code": "const o = {a: 1, b: 2}; for (const k in o) { if (k === 'a') delete o.b } return Object.keys(o)",
+  "out": "[\n \"a\"\n]"
+ },
+ {
+  "code": "return [void 0, (1, 2, 3), 'a' in {a: 1}, [] instanceof Object, delete [].length === false]",
+  "skip": "strict mode: oracles run sloppy scripts"
+ },
+ {
+  "code": "const x = 10; { const x = 20; } return x",
+  "out": "10"
+ },
+ {
+  "code": "let r = []; { let a = 1; r.push(a) } { let a = 2; r.push(a) } return r",
+  "out": "[\n 1,\n 2\n]"
+ },
+ {
+  "code": "function outer() { const v = 'o'; function inner() { return v } return inner } return outer()()",
+  "out": "o"
+ },
+ {
+  "code": "const make = n => () => () => n; return make(42)()()",
+  "out": "42"
+ },
+ {
+  "code": "let c = 0; const inc = () => c++; inc(); inc(); return c",
+  "out": "2"
+ },
+ {
+  "code": "const a = [5, 1, 4]; const sorted = [...a].sort((x, y) => y - x); return [a, sorted]",
+  "out": "[\n [\n  5,\n  1,\n  4\n ],\n [\n  5,\n  4,\n  1\n ]\n]"
+ },
+ {
+  "code": "const words = 'the quick brown the lazy the'.split(' '); const cnt = {}; for (const w of words) cnt[w] = (cnt[w] || 0) + 1; return Object.entries(cnt).sort((a, b) => b[1] - a[1])",
+  "out": "[\n [\n  \"the\",\n  3\n ],\n [\n  \"quick\",\n  1\n ],\n [\n  \"brown\",\n  1\n ],\n [\n  \"lazy\",\n  1\n ]\n]"
+ },
+ {
+  "code": "const data = [{s: 'a', n: 1}, {s: 'b', n: 2}, {s: 'a', n: 3}]; const by = {}; for (const d of data) (by[d.s] ??= []).push(d.n); return by",
+  "out": "{\n \"a\": [\n  1,\n  3\n ],\n \"b\": [\n  2\n ]\n}"
+ },
+ {
+  "code": "const x = 5; const r = x > 3 ? x > 4 ? 'big' : 'mid' : 'small'; return r",
+  "out": "big"
+ },
+ {
+  "code": "return [1, 2, 3].map((x, i, arr) => x + i + arr.length)",
+  "out": "[\n 4,\n 6,\n 8\n]"
+ },
+ {
+  "code": "return ['10', '10', '10'].map(parseInt)",
+  "out": "[\n 10,\n null,\n 2\n]"
+ },
+ {
+  "code": "return [[1, 2], [3, 4]].map(([a, b]) => a * b)",
+  "out": "[\n 2,\n 12\n]"
+ },
+ {
+  "code": "const o = {f() { return [typeof this, this === o] }}; return o.f()",
+  "out": "[\n \"object\",\n true\n]"
+ },
+ {
+  "code": "let n = 0; const o = {get: () => ++n}; o.get(); o.get(); return n",
+  "out": "2"
+ },
+ {
+  "code": "return",
+  "out": ""
+ },
+ {
+  "code": "return undefined",
+  "out": ""
+ },
+ {
+  "code": "return null",
+  "out": "null"
+ },
+ {
+  "code": "return 'plain string'",
+  "out": "plain string"
+ },
+ {
+  "code": "return {nested: {deep: [1, 2, {x: 'y'}]}}",
+  "out": "{\n \"nested\": {\n  \"deep\": [\n   1,\n   2,\n   {\n    \"x\": \"y\"\n   }\n  ]\n }\n}"
+ },
+ {
+  "code": "'last expression value'",
+  "out": "last expression value"
+ },
+ {
+  "code": "1 + 1; 2 + 2",
+  "out": "4"
+ },
+ {
+  "code": "const q = 1; q",
+  "out": "1"
+ },
+ {
+  "code": "const fn = function named() { return typeof named }; return fn()",
+  "out": "function"
+ },
+ {
+  "code": "const r = (function () { return 'iife' })(); return r",
+  "out": "iife"
+ },
+ {
+  "code": "const o = {'a-b': 1}; return o['a-b']",
+  "out": "1"
+ },
+ {
+  "code": "return 0.1 * 3",
+  "out": "0.30000000000000004"
+ },
+ {
+  "code": "return [1e21 + 1, 2 ** 53 + 1, -(2 ** 31), 0xff, 0o17, 0b101, 1_000_000]",
+  "out": "[\n 1e+21,\n 9007199254740992,\n -2147483648,\n 255,\n 15,\n 5,\n 1000000\n]"
+ },
+ {
+  "code": "return ['\\x41B\\u{43}', 'a\\",
+  "err": "SyntaxError"
+ },
+ {
+  "code": "b', '\\'\"']",
+  "err": "SyntaxError"
+ },
+ {
+  "code": "return \"\u00e9,\u00fc;\u00f6\".split(/([,;])/)",
+  "out": "[\n \"\u00e9\",\n \",\",\n \"\u00fc\",\n \";\",\n \"\u00f6\"\n]"
+ },
+ {
+  "code": "return \"\u00e9,\u00fc;\u00f6,\u00e4\".split(/[,;]/, 2)",
+  "out": "[\n \"\u00e9\",\n \"\u00fc\"\n]"
+ },
+ {
+  "code": "return \"a\ud83d\ude00b\ud83d\ude00c\".split(/\ud83d\ude00/)",
+  "out": "[\n \"a\",\n \"b\",\n \"c\"\n]"
+ },
+ {
+  "code": "return \"\u017elu\u0165 k\u016f\u0148\".replaceAll(/(?<w>\\p{L}+)/gu, (m, p1, off, s, g) => g.w.length + \"@\" + off)",
+  "out": "4@0 3@5"
+ },
+ {
+  "code": "return \"\u017elu\u0165 k\u016f\u0148\".replace(/(?<a>\\S+) (?<b>\\S+)/u, \"$<b> $<a>\")",
+  "out": "k\u016f\u0148 \u017elu\u0165"
+ },
+ {
+  "code": "return \"caf\u00e9 au lait\".replace(/au/, \"[$`|$&|$']\")",
+  "out": "caf\u00e9 [caf\u00e9 |au| lait] lait"
+ },
+ {
+  "code": "const r = /\u00e9/y; r.lastIndex = 1; return [r.test(\"a\u00e9\"), r.lastIndex, r.test(\"a\u00e9\"), r.lastIndex]",
+  "out": "[\n true,\n 2,\n false,\n 0\n]"
+ },
+ {
+  "code": "const r = /\u00e9/y; r.lastIndex = 1; return [\"a\u00e9\u00e9\".replace(r, \"E\"), r.lastIndex]",
+  "out": "[\n \"aE\u00e9\",\n 2\n]"
+ },
+ {
+  "code": "return [\"\u00e9\ud83d\ude00\".match(/(?:)/g).length, \"\u00e9\ud83d\ude00\".match(/(?:)/gu).length]",
+  "out": "[\n 4,\n 3\n]"
+ },
+ {
+  "code": "return [...\"\u00e9\ud83d\ude00\".matchAll(/(?:)/g)].map(m => m.index)",
+  "out": "[\n 0,\n 1,\n 2,\n 3\n]"
+ },
+ {
+  "code": "return [...\"\u00e9\ud83d\ude00\".matchAll(/(?:)/gu)].map(m => m.index)",
+  "out": "[\n 0,\n 1,\n 3\n]"
+ },
+ {
+  "code": "return [\"\u00e9\ud83d\ude00\".replace(/(?:)/g, \"-\"), \"\u00e9\ud83d\ude00\".replace(/(?:)/gu, \"-\")]",
+  "skip": "lone surrogates become U+FFFD (documented deviation)"
+ },
+ {
+  "code": "return [\"\u00e9\ud83d\ude00x\".split(/(?:)/), \"\u00e9\ud83d\ude00x\".split(/(?:)/u)].map(a => a.length)",
+  "out": "[\n 4,\n 3\n]"
+ },
+ {
+  "code": "const r = /x/g; r.lastIndex = 99; return [r.exec(\"\u00e9x\"), r.lastIndex]",
+  "out": "[\n null,\n 0\n]"
+ },
+ {
+  "code": "const m = /(\u00e9)(\ud83d\ude00)?(x)/d.exec(\"a\u00e9x\"); return [m.indices[0], m.indices[1], m.indices[2], m.indices[3]]",
+  "skip": "goja {'calls': 0, 'err': \"SyntaxError: SyntaxError: Invalid flags supplied to RegExp constructor 'd' at cell.js:2:6\", 'ms': 0, 'out': ''} / qjs {'calls': 0, 'ms': 0, 'out': '[\\n [\\n  1,\\n  3\\n ],\\n [\\n  1,\\n  2\\n ],\\n null,\\n [\\n  2,\\n  3\\n ]\\n]'}"
+ },
+ {
+  "code": "const m = /(?<k>\u00fc+)/d.exec(\"\u00f0\u00fc\u00fc\"); return [m.index, m.indices.groups.k]",
+  "skip": "goja {'calls': 0, 'err': \"SyntaxError: SyntaxError: Invalid flags supplied to RegExp constructor 'd' at cell.js:2:6\", 'ms': 0, 'out': ''} / qjs {'calls': 0, 'ms': 0, 'out': '[\\n 1,\\n [\\n  1,\\n  3\\n ]\\n]'}"
+ },
+ {
+  "code": "return \"\u00dcn\u00efc\u00f6d\u00e9\".match(/\\w+/g)",
+  "out": "[\n \"n\",\n \"c\",\n \"d\"\n]"
+ },
+ {
+  "code": "return \"\u00dcn\u00efc\u00f6d\u00e9\".match(/[\\p{L}]+/gu)",
+  "out": "[\n \"\u00dcn\u00efc\u00f6d\u00e9\"\n]"
+ },
+ {
+  "code": "return \"\u00c0B\".toLowerCase().match(/\u00e0/i) !== null",
+  "out": "true"
+ },
+ {
+  "code": "return \"na\u00efve caf\u00e9\".search(/caf\u00e9/)",
+  "out": "6"
+ },
+ {
+  "code": "const r = /(\\d+)/g; const s = \"\u00fc1\u00fc22\u00fc333\"; const out = []; let m; while ((m = r.exec(s))) out.push(m.index + \":\" + r.lastIndex); return out",
+  "out": "[\n \"1:2\",\n \"3:5\",\n \"6:9\"\n]"
+ },
+ {
+  "code": "return \"\ud83d\ude00\ud83d\ude00\".replace(/./g, c => c.charCodeAt(0).toString(16))",
+  "skip": "lone surrogates become U+FFFD (documented deviation)"
+ },
+ {
+  "code": "return \"\ud83d\ude00a\".replace(/./gu, c => c.length)",
+  "out": "21"
+ },
+ {
+  "code": "return \"\u00df stra\u00dfe\".replace(/s+/gi, \"S\")",
+  "out": "\u00df Stra\u00dfe"
+ },
+ {
+  "code": "return \"\u65e5\u672c\u8a9e\u30c6\u30ad\u30b9\u30c8\".replace(/\u672c|\u30c6/g, m => \"[\" + m + \"]\")",
+  "out": "\u65e5[\u672c]\u8a9e[\u30c6]\u30ad\u30b9\u30c8"
+ },
+ {
+  "code": "return [\"\u03b1\u03b2\u03b3\".at(-1), \"\u03b1\u03b2\u03b3\".slice(1).match(/./g)]",
+  "out": "[\n \"\u03b3\",\n [\n  \"\u03b2\",\n  \"\u03b3\"\n ]\n]"
+ },
+ {
+  "code": "return \"a\u00e9\u0301\".match(/./g).length",
+  "out": "3"
+ },
+ {
+  "code": "return \"x\ud83d\ude00y\".replace(/(?<=\ud83d\ude00)y/u, \"Y\")",
+  "out": "x\ud83d\ude00Y"
+ }
+]

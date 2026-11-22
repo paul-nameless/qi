@@ -1,0 +1,82 @@
+[
+ {
+  "code": "const d = new Date(Date.UTC(2024, 2, 4, 10, 5, 6, 7)); return [d.toString(), d.toDateString(), d.toTimeString(), d.toUTCString(), d.toISOString(), JSON.stringify(d), String(d)]",
+  "skip": "goja {'calls': 0, 'ms': 1, 'out': '[\\n \"Mon Mar 04 2024 11:05:06 GMT+0100 (CET)\",\\n \"Mon Mar 04 2024\",\\n \"11:05:06 GMT+0100 (CET)\",\\n \"Mon, 04 Mar 2024 10: / qjs {'calls': 0, 'ms': 0, 'out': '[\\n \"Mon Mar 04 2024 11:05:06 GMT+0100\",\\n \"Mon Mar 04 2024\",\\n \"11:05:06 GMT+0100\",\\n \"Mon, 04 Mar 2024 10:05:06 GMT\",\\"
+ },
+ {
+  "code": "const d = new Date(Date.UTC(2024, 2, 4, 10, 5, 6, 7)); return [d.toLocaleDateString(), d.toLocaleTimeString(), d.toLocaleString()]",
+  "skip": "goja {'calls': 0, 'ms': 0, 'out': '[\\n \"03/04/2024\",\\n \"11:05:06\",\\n \"03/04/2024, 11:05:06\"\\n]'} / qjs {'calls': 0, 'ms': 0, 'out': '[\\n \"03/04/2024\",\\n \"11:05:06 AM\",\\n \"03/04/2024, 11:05:06 AM\"\\n]'}"
+ },
+ {
+  "code": "const d = new Date(Date.UTC(2024, 2, 4, 10, 5, 6, 7)); return [d.toLocaleDateString('en-US'), d.toLocaleString('en-US'), d.toLocaleDateString('en-US', {timeZone: 'UTC'})]",
+  "skip": "goja {'calls': 0, 'ms': 0, 'out': '[\\n \"03/04/2024\",\\n \"03/04/2024, 11:05:06\",\\n \"03/04/2024\"\\n]'} / qjs {'calls': 0, 'ms': 0, 'out': '[\\n \"03/04/2024\",\\n \"03/04/2024, 11:05:06 AM\",\\n \"03/04/2024\"\\n]'}"
+ },
+ {
+  "code": "return [\"2024-03-04\", \"2024-03-04T10:00\", \"2024-03-04T10:00:00Z\", \"2024-03-04T10:00:00.123+02:00\", \"2024-03\", \"2024\", \"+002024-03-04T00:00:00Z\", \"2024-03-04 10:00:00\", \"2024-03-04t10:00:00z\"].map(s => Date.parse(s))",
+  "out": "[\n 1709510400000,\n 1709542800000,\n 1709546400000,\n 1709539200123,\n 1709251200000,\n 1704067200000,\n 1709510400000,\n 1709542800000,\n null\n]"
+ },
+ {
+  "code": "return [\"Mon, 04 Mar 2024 10:00:00 GMT\", \"Mar 4, 2024\", \"March 4, 2024 10:00:00\", \"2024/03/04\", \"4 March 2024\", \"Mon Mar 04 2024 10:00:00 GMT+0000\", \"Mon Mar 04 2024\", \"03/04/2024\", \"2024-3-4\", \"Tue, 5 Mar 2024 01:02:03 +0100\"].map(s => Date.parse(s))",
+  "out": "[\n 1709546400000,\n 1709506800000,\n 1709542800000,\n 1709506800000,\n 1709506800000,\n 1709546400000,\n 1709506800000,\n 1709506800000,\n 1709506800000,\n 1709596923000\n]"
+ },
+ {
+  "code": "return [\"\", \"garbage\", \"2024-13-01\", \"2024-02-30\", \"2024-03-04T25:00\", \"2024-03-04T24:00:00Z\", \"1970-01-01T00:00:00.000Z\"].map(s => Date.parse(s))",
+  "out": "[\n null,\n null,\n null,\n 1709251200000,\n null,\n 1709596800000,\n 0\n]"
+ },
+ {
+  "code": "const d = new Date(NaN); return [String(d), d.getTime(), d.getUTCFullYear(), JSON.stringify({d}), (() => { try { return d.toISOString() } catch (e) { return e.name + ':' + e.message } })()]",
+  "skip": "goja {'calls': 0, 'ms': 3, 'out': '[\\n \"Invalid Date\",\\n null,\\n null,\\n \"{\\\\\"d\\\\\":null}\",\\n \"RangeError:Invalid time value\"\\n]'} / qjs {'calls': 0, 'ms': 0, 'out': '[\\n \"Invalid Date\",\\n null,\\n null,\\n \"{\\\\\"d\\\\\":null}\",\\n \"RangeError:Date value is NaN\"\\n]'}"
+ },
+ {
+  "code": "const d = new Date(2024, 0, 31, 12); return [d.getFullYear(), d.getMonth(), d.getDate(), d.getDay(), d.getHours(), d.getTimezoneOffset(), d.getTime()]",
+  "out": "[\n 2024,\n 0,\n 31,\n 3,\n 12,\n -60,\n 1706698800000\n]"
+ },
+ {
+  "code": "const d = new Date(2024, 0, 31); d.setMonth(1); return [d.getMonth(), d.getDate(), d.toISOString()]",
+  "out": "[\n 2,\n 2,\n \"2024-03-01T23:00:00.000Z\"\n]"
+ },
+ {
+  "code": "const d = new Date(Date.UTC(2024, 0, 31)); d.setUTCDate(d.getUTCDate() + 40); d.setUTCHours(25, 61, 61, 1001); return d.toISOString()",
+  "out": "2024-03-12T02:02:02.001Z"
+ },
+ {
+  "code": "return [typeof Date(), Date().length > 10, typeof new Date(), new Date(0) - new Date(1000), new Date(5) < new Date(6), +new Date(42), new Date(new Date(7)).getTime()]",
+  "out": "[\n \"string\",\n true,\n \"object\",\n -1000,\n true,\n 42,\n 7\n]"
+ },
+ {
+  "code": "return [new Date(99, 0).getFullYear(), new Date(Date.UTC(99, 0)).getUTCFullYear(), Date.UTC(2024), Date.UTC(), new Date(8.64e15).getTime(), new Date(8.64e15 + 1).getTime()]",
+  "out": "[\n 1999,\n 1999,\n 1704067200000,\n null,\n 8640000000000000,\n null\n]"
+ },
+ {
+  "code": "const d = new Date('2024-03-04T10:00:00Z'); return [d.getUTCDay(), d.valueOf(), new Date(d) === d, Object.prototype.toString.call(d), d instanceof Date, `${d}`.length > 0]",
+  "out": "[\n 1,\n 1709546400000,\n false,\n \"[object Date]\",\n true,\n true\n]"
+ },
+ {
+  "code": "return [new Date(-1).toISOString(), new Date(-62198755200000).toISOString(), new Date(253402300800000).toISOString(), new Date(-8.64e15).toISOString()]",
+  "out": "[\n \"1969-12-31T23:59:59.999Z\",\n \"-000001-01-01T00:00:00.000Z\",\n \"+010000-01-01T00:00:00.000Z\",\n \"-271821-04-20T00:00:00.000Z\"\n]"
+ },
+ {
+  "code": "const d = new Date('2024-03-04T10:00:00Z'); d.setFullYear(2025); d.setUTCMonth(11, 31); d.setUTCMinutes(90); d.setUTCSeconds(-1); d.setUTCMilliseconds(5000); return [d.toISOString(), d.setTime(0), d.setUTCFullYear(2000, 1, 29)]",
+  "out": "[\n \"2025-12-31T11:30:04.000Z\",\n 0,\n 951782400000\n]"
+ },
+ {
+  "code": "return [new Date('2024-03-04T10:00:00Z').getTime() === Date.parse('2024-03-04T10:00:00.000Z'), Math.round((new Date('2024-03-10') - new Date('2024-03-04')) / 864e5)]",
+  "out": "[\n true,\n 6\n]"
+ },
+ {
+  "code": "const d = new Date(2024, 2, 4, 10, 5); return [d.getHours(), d.getMinutes(), d.toISOString()]",
+  "out": "[\n 10,\n 5,\n \"2024-03-04T09:05:00.000Z\"\n]"
+ },
+ {
+  "code": "return [new Date(2024, 0, 1, 0, 0, 0, 0).getTime(), new Date('2024-01-01T00:00:00').getTime(), new Date('2024-01-01').getTime()]",
+  "out": "[\n 1704063600000,\n 1704063600000,\n 1704067200000\n]"
+ },
+ {
+  "code": "return new Date(Date.UTC(2024, 2, 4)).toString()",
+  "skip": "goja {'calls': 0, 'ms': 0, 'out': 'Mon Mar 04 2024 01:00:00 GMT+0100 (CET)'} / qjs {'calls': 0, 'ms': 0, 'out': 'Mon Mar 04 2024 01:00:00 GMT+0100'}"
+ },
+ {
+  "code": "return [structuredClone({d: new Date(5)}).d.getTime(), new Date(0).toJSON(), new Date(NaN).toJSON()]",
+  "err": "TypeError"
+ }
+]
