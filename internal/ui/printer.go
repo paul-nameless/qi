@@ -50,6 +50,7 @@ type Printer struct {
 	promptFinal func(width int) string
 	shown       shownFrame
 	md          markdown
+	rmd         markdown
 	images      bool
 	runCode     bool
 }
@@ -61,7 +62,7 @@ type shownFrame struct {
 }
 
 func NewPrinter(out *os.File) *Printer {
-	p := &Printer{out: out, TTY: IsTerminal(out), atLineStart: true, running: map[string]*toolState{}, runCode: true}
+	p := &Printer{out: out, TTY: IsTerminal(out), atLineStart: true, running: map[string]*toolState{}, runCode: true, rmd: markdown{base: Dim + Italic}}
 	p.images = p.TTY && KittyGraphics(os.Getenv)
 	return p
 }
@@ -301,6 +302,7 @@ func (p *Printer) endReasoning() {
 	if p.inReasoning {
 		p.inReasoning = false
 		if p.TTY {
+			p.write(p.rmd.flush())
 			p.clearFooter()
 			_, _ = p.out.WriteString(Reset)
 		}
@@ -384,8 +386,8 @@ func (p *Printer) Reasoning(s string) {
 	}
 	s = Sanitize(s)
 	if p.TTY {
-		p.write(Dim + Italic + s + Reset)
-		p.atLineStart = strings.HasSuffix(s, "\n")
+		p.rmd.width = p.width()
+		p.write(p.rmd.feed(s))
 		return
 	}
 	p.write(s)

@@ -25,6 +25,7 @@ type markdown struct {
 	prev    byte
 	cur     string
 	width   int
+	base    string
 	row     strings.Builder
 	table   []string
 }
@@ -345,12 +346,12 @@ func (m *markdown) text(s string) {
 }
 
 func (m *markdown) style() {
-	var codes string
+	codes := m.base
 	switch {
 	case m.line == lineFence:
-		codes = Dim
+		codes += Dim
 	case m.line == lineCode || m.code:
-		codes = Cyan
+		codes += Cyan
 	}
 	if m.bold || m.line == lineHeading {
 		codes += Bold
@@ -391,7 +392,11 @@ func (m *markdown) endRow() {
 
 func (m *markdown) endTable() {
 	if len(m.table) > 0 {
-		m.out.WriteString(renderTable(m.table, m.width))
+		t := renderTable(m.table, m.width)
+		if m.base != "" {
+			t = m.base + strings.ReplaceAll(t, Reset, Reset+m.base) + Reset
+		}
+		m.out.WriteString(t)
 		m.table = nil
 	}
 }

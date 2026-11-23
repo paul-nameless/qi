@@ -283,3 +283,30 @@ func TestMarkdownLongInlineSpans(t *testing.T) {
 		t.Errorf("a code span past the look-ahead shifted the later spans:\n%q", got[len(got)-60:])
 	}
 }
+
+func TestPrinterReasoningMarkdownStaysDim(t *testing.T) {
+	p, out := testPrinter(t, true)
+	p.Reasoning("**Confirming Matches**\n\nI've confirmed 142 of `152` na")
+	p.Reasoning("mes.\n")
+	p.Text("done")
+	p.EndBlock()
+	got := out()
+	base := Dim + Italic
+	for _, want := range []string{base + Bold + "Confirming Matches", base + Cyan + "152", base + "I've confirmed 142 of ", "mes."} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in %q", want, got)
+		}
+	}
+	if strings.Contains(got, "**") || strings.Contains(got, "`") {
+		t.Errorf("markers left in %q", got)
+	}
+	if i := strings.Index(got, "done"); i < 0 || strings.Contains(got[strings.LastIndex(got[:i], Reset):i], Dim) {
+		t.Errorf("answer printed dim: %q", got)
+	}
+	p, out = testPrinter(t, false)
+	p.Reasoning("**a** `b`\n")
+	p.EndBlock()
+	if got := out(); got != "**a** `b`\n\n" && got != "**a** `b`\n" {
+		t.Errorf("non-tty reasoning changed: %q", got)
+	}
+}
