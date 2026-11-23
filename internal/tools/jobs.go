@@ -451,7 +451,7 @@ func JobsTool() *Tool {
 		ParallelSafe: true,
 		Code: &CodeSpec{
 			Name: "jobs",
-			Doc:  "jobs({kill}) → string — list this session's background jobs, or stop one by id.",
+			Doc:  "jobs({kill}) → string — list this session's background jobs, or stop one by its number: jobs({kill: 2}).",
 		},
 	}
 }
