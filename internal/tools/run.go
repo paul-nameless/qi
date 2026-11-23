@@ -48,12 +48,10 @@ type runner struct {
 	log       jsvm.Value
 	note      bool
 	cur       *cell
-	pathMu    sync.Mutex
-	paths     map[string]*sync.Mutex
 }
 
 func Run(inner *Registry) *Tool {
-	r := &runner{inner: inner, paths: map[string]*sync.Mutex{}}
+	r := &runner{inner: inner}
 	return &Tool{
 		Def: llm.ToolDef{
 			Name:        "run",
@@ -163,25 +161,6 @@ func (r *runner) stdout(_, text string) {
 	if c := r.cur; c != nil {
 		c.print(text)
 	}
-}
-
-func (r *runner) lockPath(t *Tool, env *Env, input json.RawMessage) func() {
-	if t.Path == nil {
-		return func() {}
-	}
-	p := t.Path(env, input)
-	if p == "" {
-		return func() {}
-	}
-	r.pathMu.Lock()
-	m := r.paths[p]
-	if m == nil {
-		m = &sync.Mutex{}
-		r.paths[p] = m
-	}
-	r.pathMu.Unlock()
-	m.Lock()
-	return m.Unlock
 }
 
 func (r *runner) toolFunc(name string) jsvm.HostFunc {

@@ -57,6 +57,8 @@ type cellEnd struct {
 var errNeverSettles = errors.New("the code is waiting on a promise that can never settle")
 
 type cell struct {
+	pathMu    sync.Mutex
+	paths     map[string]*sync.Mutex
 	r         *runner
 	vm        *jsvm.VM
 	env       *Env
@@ -337,7 +339,7 @@ func (c *cell) runTool(id int, t *Tool, input json.RawMessage) outcome {
 	call := llm.Block{ID: innerID, Name: t.Def.Name, Input: input}
 	label := Label(t, c.env, call)
 	o := outcome{id: id, label: label}
-	unlock := c.r.lockPath(t, c.env, input)
+	unlock := c.lockPath(t, input)
 	defer unlock()
 	select {
 	case c.sem <- struct{}{}:
@@ -352,6 +354,28 @@ func (c *cell) runTool(id int, t *Tool, input json.RawMessage) outcome {
 	c.ui.ToolDone(innerID, !o.res.IsError, doneLine(label, o.res.Summary))
 	o.record = llm.InnerCall{Tool: t.Def.Name, Label: label, OK: !o.res.IsError, Summary: o.res.Summary, Ms: time.Since(start).Milliseconds(), Input: recordInput(input)}
 	return o
+}
+
+func (c *cell) lockPath(t *Tool, input json.RawMessage) func() {
+	if t.Path == nil {
+		return func() {}
+	}
+	p := t.Path(c.env, input)
+	if p == "" {
+		return func() {}
+	}
+	c.pathMu.Lock()
+	if c.paths == nil {
+		c.paths = map[string]*sync.Mutex{}
+	}
+	m := c.paths[p]
+	if m == nil {
+		m = &sync.Mutex{}
+		c.paths[p] = m
+	}
+	c.pathMu.Unlock()
+	m.Lock()
+	return m.Unlock
 }
 
 func (c *cell) startTimer(p *pendingCall, d time.Duration) int {
