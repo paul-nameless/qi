@@ -28,7 +28,7 @@ func TestBuiltinSkillInStaticPrompt(t *testing.T) {
 		t.Fatalf("skills %+v", skills)
 	}
 	static := a.Text[:a.Static]
-	if !strings.Contains(static, "- qi-config: Read and change qi's own settings") || !strings.Contains(static, skills[0].Path) {
+	if !strings.Contains(static, "- [qi-config]("+skills[0].Path+") - Read and change qi's own settings") || !strings.Contains(static, skills[0].Path) {
 		t.Errorf("built-in skill missing from the static part: %q", static)
 	}
 	if static != b.Text[:b.Static] || strings.Contains(static, projA) {
@@ -61,7 +61,7 @@ func TestUserSkillOverridesBuiltin(t *testing.T) {
 	os.MkdirAll(filepath.Dir(own), 0o755)
 	os.WriteFile(own, []byte("---\nname: qi-config\ndescription: mine\n---\n"), 0o600)
 	skills, sys := LoadPrompt(t.TempDir(), config.Config{SkillDirs: []string{filepath.Join(home, "skills")}}, "")
-	if len(skills) != 1 || skills[0].Path != own || !strings.Contains(sys.Text, "- qi-config: mine") {
+	if len(skills) != 1 || skills[0].Path != own || !strings.Contains(sys.Text, "- [qi-config]("+own+") - mine") {
 		t.Errorf("user skill should win: %+v", skills)
 	}
 }
@@ -70,7 +70,7 @@ func TestBuiltinSkillStaysGlobalInsideHome(t *testing.T) {
 	home := isolateHome(t)
 	os.MkdirAll(filepath.Join(home, ".git"), 0o755)
 	skills, sys := LoadPrompt(home, config.Config{}, "")
-	if len(skills) != 1 || !strings.Contains(sys.Text[:sys.Static], "- qi-config:") {
+	if len(skills) != 1 || !strings.Contains(sys.Text[:sys.Static], "- [qi-config](") {
 		t.Errorf("built-in skill moved out of the static part when cwd contains the cache dir")
 	}
 }

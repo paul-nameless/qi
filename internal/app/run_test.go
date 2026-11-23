@@ -131,7 +131,7 @@ func TestReloadRereadsInstructionsAndSkills(t *testing.T) {
 	os.MkdirAll(dir+"/.claude/skills/s", 0o755)
 	os.WriteFile(dir+"/.claude/skills/s/SKILL.md", []byte("---\nname: s\ndescription: does s\n---\nbody"), 0o600)
 	r.reload()
-	if sys := a.System(); !strings.Contains(sys, "rule two") || strings.Contains(sys, "rule one") || len(r.skills) != 1 || !strings.Contains(sys, "- s: does s") {
+	if sys := a.System(); !strings.Contains(sys, "rule two") || strings.Contains(sys, "rule one") || len(r.skills) != 1 || !strings.Contains(sys, "/SKILL.md) - does s") {
 		t.Errorf("second reload: skills %d, prompt %q", len(r.skills), sys)
 	}
 }

@@ -331,8 +331,15 @@ func BuildSystemPrompt(cwd, scratch, base string, codeMode bool, instructionFile
 
 func writeSkills(b *strings.Builder, skills []Skill) {
 	for _, s := range skills {
-		fmt.Fprintf(b, "- %s: %s (%s)\n", s.Name, tools.OneLine(s.Description, 300), s.Path)
+		fmt.Fprintf(b, "- [%s](%s) - %s\n", s.Name, linkTarget(s.Path), tools.OneLine(s.Description, 300))
 	}
+}
+
+func linkTarget(path string) string {
+	if strings.ContainsAny(path, " ()<>") {
+		return "<" + path + ">"
+	}
+	return path
 }
 
 func inProject(path string, roots []string) bool {

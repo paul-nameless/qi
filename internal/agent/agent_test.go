@@ -297,10 +297,10 @@ func TestSystemPromptStaticPartIsDirectoryFree(t *testing.T) {
 	if total != len(built.Text) || len(names) != 6 || names[0] != "base prompt" || names[2] != "skills (1 global)" || names[4] != "skills (1 in project)" || names[5] != "environment" {
 		t.Errorf("sections %v cover %d of %d chars", names, total, len(built.Text))
 	}
-	if strings.Contains(static, proj) || !strings.Contains(static, "global rules") || !strings.Contains(static, "- g: global") {
+	if strings.Contains(static, proj) || !strings.Contains(static, "global rules") || !strings.Contains(static, "- [g](") || !strings.Contains(static, ") - global") {
 		t.Errorf("static part: %q", static)
 	}
-	if !strings.Contains(rest, proj) || !strings.Contains(rest, "project rules") || !strings.Contains(rest, "- p: proj") {
+	if !strings.Contains(rest, proj) || !strings.Contains(rest, "project rules") || !strings.Contains(rest, "- [p](") || !strings.Contains(rest, ") - proj") {
 		t.Errorf("directory part: %q", rest)
 	}
 	if env := built.Text[built.Session:]; !strings.HasPrefix(env, "\n\n<env>") || strings.Contains(env, "project rules") {
@@ -454,5 +454,17 @@ func TestSystemPromptReplacesBase(t *testing.T) {
 	sys := BuildSystemPrompt(t.TempDir(), "", "custom base", false, nil, nil)
 	if !strings.HasPrefix(sys.Text, "custom base\n\n<env>") || strings.Contains(sys.Text, "You are qi") || sys.Sections[0].Name != "base prompt (system_prompt_file)" {
 		t.Fatalf("got %q %+v", sys.Text, sys.Sections)
+	}
+}
+
+func TestSkillLinkTarget(t *testing.T) {
+	for in, want := range map[string]string{
+		"/a/b/SKILL.md":         "/a/b/SKILL.md",
+		"/My Skills/x/SKILL.md": "</My Skills/x/SKILL.md>",
+		"/a/(old)/SKILL.md":     "</a/(old)/SKILL.md>",
+	} {
+		if got := linkTarget(in); got != want {
+			t.Errorf("linkTarget(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
