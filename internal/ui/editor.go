@@ -235,10 +235,18 @@ func (e *Editor) apply(st *lineState, k Key, histIdx *int, draft *string) {
 	case KeyWordRight:
 		st.pos = wordRight(st.buf, st.pos)
 	case KeyKillLine:
-		st.buf = append([]rune{}, st.buf[st.pos:]...)
-		st.pos = 0
+		from := lineStart(st.buf, st.pos)
+		if from == st.pos {
+			from = max(st.pos-1, 0)
+		}
+		st.buf = append(st.buf[:from], st.buf[st.pos:]...)
+		st.pos = from
 	case KeyKillEnd:
-		st.buf = st.buf[:st.pos]
+		to := lineEnd(st.buf, st.pos)
+		if to == st.pos {
+			to = min(st.pos+1, len(st.buf))
+		}
+		st.buf = append(st.buf[:st.pos], st.buf[to:]...)
 	case KeyKillWord:
 		w := wordLeft(st.buf, st.pos)
 		st.buf = append(st.buf[:w], st.buf[st.pos:]...)
