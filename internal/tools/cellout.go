@@ -9,12 +9,27 @@ import (
 	"time"
 
 	"github.com/paul-nameless/qi/internal/jsvm"
+	"github.com/paul-nameless/qi/internal/llm"
 )
 
 const (
 	maxCompletedList = 30
 	maxFailedList    = 10
 )
+
+type cellReport struct {
+	out       strings.Builder
+	dropped   int
+	records   []llm.InnerCall
+	marks     []string
+	answers   []answer
+	images    []llm.Block
+	lostImgs  int
+	extras    []string
+	late      int
+	lateFails []string
+	fails     []string
+}
 
 func (c *cell) result(end cellEnd, value, hint string) Result {
 	var parts []string

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -72,8 +71,6 @@ type cell struct {
 	ui        UI
 	progress  func(string)
 	note      string
-	out       strings.Builder
-	dropped   int
 	outcomes  chan outcome
 	pending   map[int]*pendingCall
 	wg        sync.WaitGroup
@@ -81,18 +78,10 @@ type cell struct {
 	seq       int
 	toolCalls int
 	subagents int
-	records   []llm.InnerCall
-	marks     []string
-	answers   []answer
-	images    []llm.Block
-	lostImgs  int
-	extras    []string
-	late      int
-	lateFails []string
-	fails     []string
-	timerErr  error
-	settled   bool
-	finished  bool
+	cellReport
+	timerErr error
+	settled  bool
+	finished bool
 }
 
 func newCell(ctx context.Context, r *runner, env *Env, progress func(string), timeout time.Duration) *cell {
