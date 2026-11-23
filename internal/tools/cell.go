@@ -340,7 +340,7 @@ func (c *cell) runTool(id int, t *Tool, input json.RawMessage) outcome {
 	c.ui.ToolStart(innerID, label)
 	start := time.Now()
 	o.res, o.extra = c.r.inner.invokeSplit(c.ctx, c.env, t, call, c.ui)
-	c.ui.ToolDone(innerID, !o.res.IsError, doneLine(label, o.res.Summary))
+	c.ui.ToolDone(innerID, !o.res.IsError, DoneLine(label, o.res.Summary))
 	o.record = llm.InnerCall{Tool: t.Def.Name, Label: label, OK: !o.res.IsError, Summary: o.res.Summary, Ms: time.Since(start).Milliseconds(), Input: recordInput(input)}
 	return o
 }

@@ -271,11 +271,11 @@ func (r *Registry) runOne(ctx context.Context, env *Env, call llm.Block, ui UI) 
 	label := Label(t, env, call)
 	startCall(ui, t, call, label)
 	res := r.invoke(withCall(ctx, call.ID, ui), env, t, call, ui)
-	ui.ToolDone(call.ID, !res.IsError, doneLine(label, res.Summary))
+	ui.ToolDone(call.ID, !res.IsError, DoneLine(label, res.Summary))
 	return llm.Block{Type: llm.BlockToolResult, ToolUseID: call.ID, Text: res.Text, IsError: res.IsError, Images: res.Images, Calls: res.Calls}
 }
 
-func doneLine(label, summary string) string {
+func DoneLine(label, summary string) string {
 	if summary == "" {
 		return label
 	}

@@ -103,17 +103,14 @@ func toolUseText(blk llm.Block, width int) string {
 func callLines(calls []llm.InnerCall) string {
 	var b strings.Builder
 	for _, c := range calls {
-		mark, line := "✓", c.Label
+		mark, label := "✓", c.Label
 		if !c.OK {
 			mark = "✗"
 		}
-		if line == "" {
-			line = c.Tool
+		if label == "" {
+			label = c.Tool
 		}
-		if c.Summary != "" {
-			line += " · " + tools.OneLine(c.Summary, 80)
-		}
-		fmt.Fprintf(&b, "    %s %s\n", mark, ui.Sanitize(line))
+		fmt.Fprintf(&b, "    %s %s\n", mark, ui.Sanitize(tools.DoneLine(label, c.Summary)))
 	}
 	return b.String()
 }
