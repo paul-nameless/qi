@@ -45,7 +45,6 @@ func (p *scriptProvider) request(n int) llm.Request {
 	return p.requests[n]
 }
 
-
 func textReply(s string) llm.Message {
 	return llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: s}}}
 }

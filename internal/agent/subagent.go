@@ -84,7 +84,7 @@ func (r *SubagentRunner) args(task tools.SubagentTask) []string {
 }
 
 func (r *SubagentRunner) Run(parent context.Context, task tools.SubagentTask, progress func(string)) (string, error) {
-	ctx, cancel := context.WithTimeout(parent, 30*time.Minute)
+	ctx, cancel := context.WithTimeout(parent, tools.SubagentTimeout)
 	defer cancel()
 	cmd, err := r.command(ctx, task)
 	if err != nil {

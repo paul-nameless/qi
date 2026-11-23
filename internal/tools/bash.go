@@ -40,12 +40,16 @@ func Bash() *Tool {
 		Code: &CodeSpec{
 			Name:   "bash",
 			Params: []string{"command"},
-			Doc:    "bash(command, {timeout, background, daemon}) → {output, exit_code, timed_out, truncated} — stdin is empty, output is stdout+stderr combined; never throws on a non-zero exit. output keeps the first and last 512 KB; truncated is true when the middle was dropped (redirect to a file for more). timeout in seconds (default 120, max 600). {background: true} starts a job for long builds and test runs and returns at once with a string naming the job id and its output file; you get a message when it exits, so don't poll or sleep for it. {daemon: true} is for servers and watchers that are not meant to exit. Use rg/fd/ls/sed for search and inspection.",
+			Doc:    fmt.Sprintf("bash(command, {timeout, background, daemon}) → {output, exit_code, timed_out, truncated} — stdin is empty, output is stdout+stderr combined; never throws on a non-zero exit. output keeps the first and last %d KB; truncated is true when the middle was dropped (redirect to a file for more). timeout in seconds (default %d, max %d). {background: true} starts a job for long builds and test runs and returns at once with a string naming the job id and its output file; you get a message when it exits, so don't poll or sleep for it. {daemon: true} is for servers and watchers that are not meant to exit.", keepBytes>>10, defaultBashTimeout, maxBashTimeout),
 		},
 	}
 }
 
-const keepBytes = 512 << 10
+const (
+	keepBytes          = 512 << 10
+	defaultBashTimeout = 120
+	maxBashTimeout     = 600
+)
 
 type progressWriter struct {
 	mu       sync.Mutex
@@ -106,9 +110,9 @@ func bashTimeout(requested, configured int) int {
 		requested = configured
 	}
 	if requested <= 0 {
-		requested = 120
+		requested = defaultBashTimeout
 	}
-	return min(requested, 600)
+	return min(requested, maxBashTimeout)
 }
 
 const sandboxProfile = `(version 1)(allow default)(deny file-write*)(allow file-write* (literal "/dev/null") (literal "/dev/zero") (literal "/dev/tty") (literal "/dev/dtracehelper") (regex #"^/dev/fd/") (subpath (param "TMP")))(deny network*)(deny process-exec (literal "/usr/bin/osascript") (literal "/usr/bin/open") (literal "/bin/launchctl") (literal "/usr/bin/defaults") (literal "/usr/bin/security") (literal "/usr/bin/sudo") (literal "/usr/bin/shortcuts") (subpath (param "TMP")))`

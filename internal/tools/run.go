@@ -58,7 +58,7 @@ func Run(inner *Registry) *Tool {
 		Def: llm.ToolDef{
 			Name:        "run",
 			Description: runDescription(inner),
-			Schema:      json.RawMessage(`{"type":"object","properties":{"code":{"type":"string","description":"JavaScript to run"},"timeout":{"type":"integer","description":"Seconds before the code is stopped (default 300, max 1800)"}},"required":["code"]}`),
+			Schema:      json.RawMessage(fmt.Sprintf(`{"type":"object","properties":{"code":{"type":"string","description":"JavaScript to run"},"timeout":{"type":"integer","description":"Seconds before the code is stopped (default %d, max %d)"}},"required":["code"]}`, defaultCellTimeout, maxCellTimeout)),
 		},
 		Mutates:  true,
 		Inner:    inner,
