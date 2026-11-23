@@ -60,11 +60,11 @@ func (b *idleBody) Close() error {
 type APIError struct {
 	Status     int
 	Body       string
-	retryAfter time.Duration
+	RetryAfter time.Duration
 }
 
-func (e *APIError) throttled() bool {
-	return e.Status == http.StatusTooManyRequests || (e.Status == http.StatusPaymentRequired && e.retryAfter > 0)
+func (e *APIError) Throttled() bool {
+	return e.Status == http.StatusTooManyRequests || (e.Status == http.StatusPaymentRequired && e.RetryAfter > 0)
 }
 
 func (e *APIError) Error() string {
@@ -114,7 +114,7 @@ func postStreamCtx(ctx context.Context, url string, headers map[string]string, b
 		lastErr, wait = err, 0
 		var apiErr *APIError
 		if errors.As(err, &apiErr) {
-			wait = apiErr.retryAfter
+			wait = apiErr.RetryAfter
 		}
 		if ctx.Err() != nil || !Retryable(err) {
 			return nil, err
@@ -141,7 +141,7 @@ func sendRequest(ctx context.Context, url string, headers map[string]string, pay
 	}
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 	resp.Body.Close()
-	return nil, &APIError{Status: resp.StatusCode, Body: string(data), retryAfter: retryAfter(resp.Header)}
+	return nil, &APIError{Status: resp.StatusCode, Body: string(data), RetryAfter: retryAfter(resp.Header)}
 }
 
 type sseEvent struct {

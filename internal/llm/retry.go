@@ -84,7 +84,7 @@ func Retryable(err error) bool {
 		errors.As(err, &exhausted), errors.Is(err, ErrInvalidURL), certError(err):
 		return false
 	case errors.As(err, &apiErr):
-		return apiErr.throttled() || apiErr.Status >= 500
+		return apiErr.Throttled() || apiErr.Status >= 500
 	case errors.As(err, &streamErr):
 		return streamErr.retryable()
 	case errors.As(err, &dnsErr):

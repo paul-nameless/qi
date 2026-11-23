@@ -261,6 +261,29 @@ func TestRejectedPromptIsRolledBack(t *testing.T) {
 	}
 }
 
+func TestThrottledPromptIsKept(t *testing.T) {
+	old := llm.Sleep
+	llm.Sleep = func(ctx context.Context, d time.Duration) error { return ctx.Err() }
+	defer func() { llm.Sleep = old }()
+	for _, e := range []*llm.APIError{{Status: 429}, {Status: 402, RetryAfter: time.Second}} {
+		a := newAgent(t, &fakeProvider{})
+		a.live.provider = &errProvider{err: e}
+		a.conv.messages = []llm.Message{llm.UserText("earlier")}
+		if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "again"}}); err == nil {
+			t.Fatal("expected error")
+		}
+		if len(a.conv.messages) != 2 {
+			t.Errorf("status %d: throttled prompt dropped: %+v", e.Status, a.conv.messages)
+		}
+	}
+}
+
+type errProvider struct{ err error }
+
+func (p *errProvider) Stream(context.Context, llm.Request, func(llm.Delta)) (llm.Message, llm.Usage, error) {
+	return llm.Message{}, llm.Usage{}, p.err
+}
+
 func TestMaxRounds(t *testing.T) {
 	p := &fakeProvider{replies: []llm.Message{toolCall("1", "true"), toolCall("2", "true"), toolCall("3", "true")}}
 	a := newAgent(t, p)

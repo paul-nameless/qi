@@ -586,7 +586,7 @@ func blockChars(blocks []llm.Block) int {
 
 func rejected(err error) bool {
 	var apiErr *llm.APIError
-	return errors.As(err, &apiErr) && apiErr.Status >= 400 && apiErr.Status < 500 && apiErr.Status != 429
+	return errors.As(err, &apiErr) && apiErr.Status >= 400 && apiErr.Status < 500 && !apiErr.Throttled()
 }
 
 func (a *Agent) dropLast() {

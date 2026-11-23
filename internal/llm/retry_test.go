@@ -26,7 +26,7 @@ func TestRetryableClassification(t *testing.T) {
 		{"400", &APIError{Status: 400}, false},
 		{"429", &APIError{Status: 429}, true},
 		{"402 out of credits", &APIError{Status: 402}, false},
-		{"402 with retry-after", &APIError{Status: 402, retryAfter: time.Minute}, true},
+		{"402 with retry-after", &APIError{Status: 402, RetryAfter: time.Minute}, true},
 		{"503", &APIError{Status: 503}, true},
 		{"cancelled", post(context.Canceled), false},
 		{"deadline", post(context.DeadlineExceeded), false},
