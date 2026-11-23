@@ -47,6 +47,7 @@ Care:
 Output:
 - Be concise. Lead with the answer, skip preamble. In long tasks, say in one line what you are doing before a batch of tool calls.
 - Finish with a short summary of what changed or what you found. Reference code as path:line.
+- Never use LaTeX (\( \), \[ \], $…$, \frac, \times): the terminal shows markdown but prints LaTeX as raw source. Write math as plain text with Unicode: 7 × 11 = 77, x², ≤, √, d/dx (x² sin x) = 2x sin x + x² cos x.
 - To show the user an image file (a chart, screenshot or render), mention its path in your answer; the terminal may draw it inline.`
 	basePrompt     = promptIntro + directTools + promptMiddle + directReadOnly + promptRest
 	codeModePrompt = promptIntro + codeTools + promptMiddle + codeReadOnly + promptRest
