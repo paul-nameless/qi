@@ -129,7 +129,7 @@
       "items": { "type": "string" }
     },
     "mcp": {
-      "description": "MCP servers over stdio, by name. They start on first use; the agent finds their tools with tool_search and calls them with mcp_call. Top-level servers are global: every profile gets them. Unlike other keys, a profile's mcp is merged by server name: a new name adds a server for that profile, an existing name replaces that server's whole entry, and null (only in a profile) removes a global server. \"mcp\": null in a profile removes all servers. A replacing entry inherits nothing from the global one. MCP servers come from the profile qi started with; /profile doesn't change them, restart instead. /mcp shows the servers in use.",
+      "description": "MCP servers over stdio, by name. They start on first use; the agent finds their tools with tool_search() and calls them with mcp(). Top-level servers are global: every profile gets them. Unlike other keys, a profile's mcp is merged by server name: a new name adds a server for that profile, an existing name replaces that server's whole entry, and null (only in a profile) removes a global server. \"mcp\": null in a profile removes all servers. A replacing entry inherits nothing from the global one. MCP servers come from the profile qi started with; /profile doesn't change them, restart instead. /mcp shows the servers in use.",
       "type": ["object", "null"],
       "additionalProperties": { "anyOf": [{ "$ref": "#/$defs/mcp_server" }, { "type": "null" }] }
     },
@@ -283,7 +283,7 @@
           "items": { "type": "string", "minLength": 1 }
         },
         "exclude_tools": {
-          "description": "Tools to hide even when tools matches them, as glob patterns like tools. Hidden tools never show in tool_search and mcp_call refuses them. Subagents get the parent's MCP setup, so editing the config mid-session does not widen it for them.",
+          "description": "Tools to hide even when tools matches them, as glob patterns like tools. Hidden tools never show in tool_search() and mcp() refuses them. Subagents get the parent's MCP setup, so editing the config mid-session does not widen it for them.",
           "type": "array",
           "items": { "type": "string", "minLength": 1 }
         }
