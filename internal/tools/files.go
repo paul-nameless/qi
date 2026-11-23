@@ -82,6 +82,8 @@ type fileChange struct {
 	notice string
 }
 
+const noDiffNotice = "Changed, no diff shown (binary or large file); read it again if you need the content: "
+
 func (f *fileTimes) changes(rel func(string) string) []fileChange {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -108,14 +110,14 @@ func (f *fileTimes) changes(rel func(string) string) []fileChange {
 			out = append(out, fileChange{rel(p), rel(p) + " is no longer a regular file."})
 			continue
 		}
-		f.seen[p] = cur
 		switch {
 		case old.hasText && cur.hasText && old.text == cur.text:
 		case old.hasText && cur.hasText:
 			out = append(out, fileChange{rel(p), rel(p) + ":\n" + capNotice(unifiedDiff(old.text, cur.text))})
 		default:
-			out = append(out, fileChange{rel(p), rel(p) + " changed; read it again if you need its content."})
+			out = append(out, fileChange{path: rel(p)})
 		}
+		f.seen[p] = cur
 	}
 	return out
 }
@@ -126,9 +128,17 @@ func (e *Env) FileChanges() (string, []string) {
 		return "", nil
 	}
 	paths := make([]string, len(changes))
-	notices := make([]string, len(changes))
+	var notices, noDiff []string
 	for i, c := range changes {
-		paths[i], notices[i] = c.path, c.notice
+		paths[i] = c.path
+		if c.notice == "" {
+			noDiff = append(noDiff, c.path)
+			continue
+		}
+		notices = append(notices, c.notice)
+	}
+	if len(noDiff) > 0 {
+		notices = append(notices, noDiffNotice+strings.Join(noDiff, ", "))
 	}
 	return "Files you read or wrote earlier changed on disk since then (by the user, a formatter or a command). Diffs are against your last read or write; line numbers are current:\n\n" + strings.Join(notices, "\n\n"), paths
 }

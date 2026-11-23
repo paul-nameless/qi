@@ -98,3 +98,25 @@ func TestFileChanges(t *testing.T) {
 	}
 	env.ForgetFiles()
 }
+
+func TestNoDiffChangesOnOneLine(t *testing.T) {
+	dir := t.TempDir()
+	env := &Env{Cwd: dir}
+	a, b := filepath.Join(dir, "a.png"), filepath.Join(dir, "b.bin")
+	for _, p := range []string{a, b} {
+		if err := os.WriteFile(p, []byte("x\x00y"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		env.files.remember(p)
+	}
+	touchLater(t, a, "x\x00z")
+	touchLater(t, b, "x\x00z")
+	text, paths := env.FileChanges()
+	if len(paths) != 2 || !strings.Contains(text, noDiffNotice+"a.png, b.bin") || strings.Count(text, "a.png") != 1 {
+		t.Fatalf("got paths %v text:\n%s", paths, text)
+	}
+	touchLater(t, a, "x\x00w")
+	if text, _ := env.FileChanges(); !strings.Contains(text, noDiffNotice+"a.png") {
+		t.Fatalf("second change not reported: %q", text)
+	}
+}
