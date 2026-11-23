@@ -526,15 +526,7 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 		}
 		stats.Requests++
 		stats.Usage.Add(usage)
-		a.appendMsg(msg, &usage)
-		if usage.Input > 0 {
-			a.SetContextTokens(usage.Input + usage.Output)
-			a.pauseIfOver(usage.Input)
-			a.conv.thrashAt = 0
-		} else {
-			a.SetContextTokens(a.estimateTokens())
-		}
-
+		a.recordReply(msg, usage)
 		calls := msg.ToolUses()
 		if a.headless && len(calls) > 0 && strings.TrimSpace(msg.Text()) != "" {
 			a.ui.Info(strings.TrimSpace(msg.Text()))
@@ -553,31 +545,53 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 			if ctx.Err() != nil {
 				return "", stats, context.Canceled
 			}
-			if a.conv.onStop != nil {
-				if cont, reason := a.conv.onStop(ctx, msg.Text(), stopActive); cont {
-					stopActive = true
-					if strings.TrimSpace(reason) == "" {
-						reason = "A Stop hook asked you to continue working."
-					}
-					a.ui.Info("stop hook: " + tools.OneLine(reason, 120))
-					next = append(next, llm.Block{Type: llm.BlockText, Text: reason})
-				}
-			}
+			next = a.stopHookBlocks(ctx, msg.Text(), &stopActive)
 			if len(next) == 0 {
 				return msg.Text(), stats, nil
 			}
 		}
-		next = append(next, a.jobBlocks()...)
-		if q := a.DrainQueue(); len(q) > 0 {
-			next = append(next, llm.Block{Type: llm.BlockText, Text: llm.QueuedLead})
-			next = append(next, q...)
-		}
-		if mb, ok := a.modeBlock(); ok {
-			next = append(next, mb)
-		}
-		a.appendMsg(llm.Message{Role: llm.RoleUser, Blocks: next}, nil)
-		a.SetContextTokens(a.ContextTokens() + blockChars(next)/4)
+		a.appendNext(next)
 	}
+}
+
+func (a *Agent) recordReply(msg llm.Message, usage llm.Usage) {
+	a.appendMsg(msg, &usage)
+	if usage.Input > 0 {
+		a.SetContextTokens(usage.Input + usage.Output)
+		a.pauseIfOver(usage.Input)
+		a.conv.thrashAt = 0
+		return
+	}
+	a.SetContextTokens(a.estimateTokens())
+}
+
+func (a *Agent) stopHookBlocks(ctx context.Context, answer string, active *bool) []llm.Block {
+	if a.conv.onStop == nil {
+		return nil
+	}
+	cont, reason := a.conv.onStop(ctx, answer, *active)
+	if !cont {
+		return nil
+	}
+	*active = true
+	if strings.TrimSpace(reason) == "" {
+		reason = "A Stop hook asked you to continue working."
+	}
+	a.ui.Info("stop hook: " + tools.OneLine(reason, 120))
+	return []llm.Block{{Type: llm.BlockText, Text: reason}}
+}
+
+func (a *Agent) appendNext(next []llm.Block) {
+	next = append(next, a.jobBlocks()...)
+	if q := a.DrainQueue(); len(q) > 0 {
+		next = append(next, llm.Block{Type: llm.BlockText, Text: llm.QueuedLead})
+		next = append(next, q...)
+	}
+	if mb, ok := a.modeBlock(); ok {
+		next = append(next, mb)
+	}
+	a.appendMsg(llm.Message{Role: llm.RoleUser, Blocks: next}, nil)
+	a.SetContextTokens(a.ContextTokens() + blockChars(next)/4)
 }
 
 func blockChars(blocks []llm.Block) int {
