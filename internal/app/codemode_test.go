@@ -147,28 +147,11 @@ func TestCodeModeSubagentRunHasNoSubagent(t *testing.T) {
 	}
 }
 
-func TestCodeModeOffKeepsDirectTools(t *testing.T) {
-	p := scripted()
-	cfg := config.Config{Model: "m", CodeMode: boolPtr(false)}
-	cwd := t.TempDir()
-	a, _ := buildAgent(cfg, options{}, cwd, p, devNullPrinter(t), true, false)
-	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "hi"}}); err != nil {
-		t.Fatal(err)
-	}
-	if got := strings.Join(toolNames(p.request(0)), ","); got != "read,write,edit,bash,jobs,subagent" {
-		t.Errorf("tools %s", got)
-	}
-	_, sys := agent.LoadPrompt(cwd, cfg, "")
-	if strings.Contains(sys.Text, "Your only tool is run") || !strings.Contains(sys.Text, "Put independent tool calls in the same response") {
-		t.Error("off mode did not get the direct-tools prompt")
-	}
-}
-
 func TestCodeModeProfileSwitch(t *testing.T) {
 	t.Setenv("QI_SESSION_DIR", t.TempDir())
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")
-	data := `{"api_key": "k", "model": "m", "subagent_models": [{"name": "one", "model": "m1"}], "profiles": {"b": {"code_mode": false, "subagent_models": [{"name": "two", "model": "m2"}]}}}`
+	data := `{"api_key": "k", "model": "m", "subagent_models": [{"name": "one", "model": "m1"}], "profiles": {"b": {"subagent_models": [{"name": "two", "model": "m2"}]}}}`
 	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +160,7 @@ func TestCodeModeProfileSwitch(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := scripted()
-	display, out := capturePrinter(t)
+	display, _ := capturePrinter(t)
 	o := options{configPath: path}
 	a, runner := buildAgent(cfg, o, t.TempDir(), p, display, true, false)
 	r := &repl{agent: a, display: display, hooks: &agent.Hooks{}, runner: runner, opts: o}
@@ -188,9 +171,6 @@ func TestCodeModeProfileSwitch(t *testing.T) {
 	r.editor = ui.NewEditor(&ui.Terminal{Keys: make(chan ui.Key, 64)}, display, filepath.Join(t.TempDir(), "history"))
 	if err := r.switchProfile("b"); err != nil {
 		t.Fatal(err)
-	}
-	if !r.agent.Config().CodeModeOn() || !strings.Contains(out.String(), "code_mode is false in the new settings; it applies after restarting qi") {
-		t.Errorf("code mode %v, output:\n%s", r.agent.Config().CodeModeOn(), out.String())
 	}
 	if !strings.Contains(r.agent.System(), "Your only tool is run") {
 		t.Error("the rebuilt prompt left code mode")

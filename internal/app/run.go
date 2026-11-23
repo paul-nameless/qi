@@ -250,10 +250,7 @@ func buildAgent(cfg config.Config, o options, cwd string, p llm.Provider, displa
 		inner = append(inner, tools.Subagent(cfg.Model, cfg.SubagentModels, cfg.SubagentEfforts))
 	}
 	inner = append(inner, extra...)
-	opts.Tools = inner
-	if cfg.CodeModeOn() {
-		opts.Tools = []*tools.Tool{tools.Run(tools.NewRegistry(inner...))}
-	}
+	opts.Tools = []*tools.Tool{tools.Run(tools.NewRegistry(inner...))}
 	a := agent.New(opts)
 	if runner != nil {
 		runner.ReadOnly = a.ReadOnly

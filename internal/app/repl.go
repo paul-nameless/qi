@@ -614,7 +614,6 @@ func (r *repl) apply(cfg config.Config, baseProvider string) error {
 	if err != nil {
 		return err
 	}
-	r.keepCodeMode(&cfg)
 	r.keepSettings(&cfg)
 	r.agent.Reconfigure(cfg, newProvider(cfg, key))
 	if r.runner != nil {
@@ -622,14 +621,6 @@ func (r *repl) apply(cfg config.Config, baseProvider string) error {
 		r.agent.ReplaceTool(tools.Subagent(cfg.Model, withProvider(cfg.SubagentModels, baseProvider), cfg.SubagentEfforts))
 	}
 	return nil
-}
-
-func (r *repl) keepCodeMode(cfg *config.Config) {
-	on := r.agent.Config().CodeModeOn()
-	if cfg.CodeModeOn() != on {
-		r.display.Info(fmt.Sprintf("code_mode is %v in the new settings; it applies after restarting qi", cfg.CodeModeOn()))
-	}
-	cfg.CodeMode = &on
 }
 
 func (r *repl) modelList() string {

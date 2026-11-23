@@ -45,7 +45,6 @@ func (p *scriptProvider) request(n int) llm.Request {
 	return p.requests[n]
 }
 
-func boolPtr(v bool) *bool { return &v }
 
 func textReply(s string) llm.Message {
 	return llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: s}}}
@@ -167,11 +166,11 @@ func TestHandleInputClearStartsNewSession(t *testing.T) {
 func TestTurnRunsToolsAndPrintsStats(t *testing.T) {
 	p := &scriptProvider{reply: func(_ context.Context, n int, _ llm.Request) (llm.Message, error) {
 		if n == 0 {
-			return bashCall("c1", "echo hi"), nil
+			return runCall("c1", `return (await bash("echo hi")).output`), nil
 		}
 		return textReply("all done"), nil
 	}}
-	r, out := testRepl(t, config.Config{Model: "m", CodeMode: boolPtr(false)}, p)
+	r, out := testRepl(t, config.Config{Model: "m"}, p)
 	draft := r.turn(func(context.Context) ([]llm.Block, error) {
 		return []llm.Block{{Type: llm.BlockText, Text: "go"}}, nil
 	}, "kept draft")
@@ -208,11 +207,11 @@ func TestTurnQueuesTypedMessages(t *testing.T) {
 			}
 			r.editor.T.Keys <- ui.Key{Kind: ui.KeyEnter}
 			waitFor(t, func() bool { return strings.Contains(out.String(), "queued: also this") })
-			return bashCall("c1", "true"), nil
+			return runCall("c1", `await bash("true")`), nil
 		}
 		return textReply("ok"), nil
 	}}
-	r, out = testRepl(t, config.Config{Model: "m", CodeMode: boolPtr(false)}, p)
+	r, out = testRepl(t, config.Config{Model: "m"}, p)
 	r.turn(func(context.Context) ([]llm.Block, error) {
 		return []llm.Block{{Type: llm.BlockText, Text: "go"}}, nil
 	}, "")

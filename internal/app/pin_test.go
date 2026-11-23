@@ -55,10 +55,8 @@ func pinHistory(cfg config.Config) []llm.Message {
 	}
 	use := llm.Block{Type: llm.BlockToolUse, ID: "call_1", Name: "bash", Input: json.RawMessage(`{"command":"ls"}`)}
 	result := llm.Block{Type: llm.BlockToolResult, ToolUseID: "call_1", Text: "a.go\nb.go", Images: []llm.Block{{Type: llm.BlockImage, MediaType: "image/png", Data: "AAAA", Width: 10, Height: 10}}}
-	if cfg.CodeModeOn() {
-		use.Name, use.Input = "run", json.RawMessage(`{"code":"return (await bash(\"ls\")).output"}`)
-		result.Calls = []llm.InnerCall{{Tool: "bash", Label: "bash ls", OK: true, Summary: "2 lines", Ms: 3, Input: json.RawMessage(`{"command":"ls"}`)}}
-	}
+	use.Name, use.Input = "run", json.RawMessage(`{"code":"return (await bash(\"ls\")).output"}`)
+	result.Calls = []llm.InnerCall{{Tool: "bash", Label: "bash ls", OK: true, Summary: "2 lines", Ms: 3, Input: json.RawMessage(`{"command":"ls"}`)}}
 	return []llm.Message{
 		llm.UserText("list the files"),
 		{Role: llm.RoleAssistant, Blocks: []llm.Block{
@@ -71,7 +69,7 @@ func pinHistory(cfg config.Config) []llm.Message {
 	}
 }
 
-func pinConfig(t *testing.T, dir, provider string, codeMode bool) config.Config {
+func pinConfig(t *testing.T, dir, provider string) config.Config {
 	path := filepath.Join(dir, "config.json")
 	data := fmt.Sprintf(`{
   "providers": {
@@ -92,9 +90,8 @@ func pinConfig(t *testing.T, dir, provider string, codeMode bool) config.Config 
     {"name": "luna", "model": "openai/gpt-6-luna", "use_for": "cheap searches"},
     {"name": "opus", "model": "claude-opus-5-5", "use_for": "hard problems"}
   ],
-  "mcp": {"notes": {"command": "notes-server", "description": "personal notes"}},
-  "code_mode": %[4]t
-}`, "http://placeholder/openrouter.ai/api/v1", "http://placeholder/v1", provider, codeMode)
+  "mcp": {"notes": {"command": "notes-server", "description": "personal notes"}}
+}`, "http://placeholder/openrouter.ai/api/v1", "http://placeholder/v1", provider)
 	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -155,13 +152,11 @@ func firstDiff(want, got string) string {
 func TestRequestBodiesPinned(t *testing.T) {
 	cases := []struct {
 		provider, reply, golden string
-		codeMode                bool
 	}{
-		{"anth", anthropicReply, "request-anthropic.json", false},
-		{"or", openAIReply, "request-openrouter.json", false},
-		{"oa", openAIReply, "request-openai.json", false},
-		{"rs", responsesReply, "request-responses.json", false},
-		{"anth", anthropicReply, "request-anthropic-code.json", true},
+		{"anth", anthropicReply, "request-anthropic.json"},
+		{"or", openAIReply, "request-openrouter.json"},
+		{"oa", openAIReply, "request-openai.json"},
+		{"rs", responsesReply, "request-responses.json"},
 	}
 	for _, c := range cases {
 		t.Run(c.golden, func(t *testing.T) {
@@ -170,7 +165,7 @@ func TestRequestBodiesPinned(t *testing.T) {
 			var bodies [][]byte
 			srv := pinServer(t, c.reply, &bodies)
 			dir := t.TempDir()
-			cfg := pinConfig(t, dir, c.provider, c.codeMode)
+			cfg := pinConfig(t, dir, c.provider)
 			cfg.BaseURL = strings.Replace(cfg.BaseURL, "http://placeholder", srv.URL, 1)
 			cwd := t.TempDir()
 			a := pinAgent(t, cfg, cwd)

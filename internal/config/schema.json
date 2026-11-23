@@ -78,10 +78,6 @@
       "description": "Draw local image files named in a turn's final answer in the terminal (kitty graphics: Ghostty, kitty; never inside tmux or screen). Default: true.",
       "type": "boolean"
     },
-    "code_mode": {
-      "description": "Give the model a single tool, run, which executes JavaScript that calls read, write, edit, bash, jobs, subagent, tool_search and mcp as async functions; each call still goes through hooks and read-only checks. false gives the model those tools directly. Fixed at startup: /profile and /model keep it until restart. Default: true.",
-      "type": "boolean"
-    },
     "run_code": {
       "description": "Show the whole JavaScript of each run call in the terminal (dim, up to 200 lines) with its tool calls under it. false shows one line per run call. /config switches it for the session. Default: true.",
       "type": "boolean"
