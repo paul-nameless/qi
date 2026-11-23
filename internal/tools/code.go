@@ -102,7 +102,7 @@ func applyDefaults(fields map[string]json.RawMessage, spec *CodeSpec) {
 var jsArgNames = map[string]string{"file_path": "path", "old_string": "old", "new_string": "new", "arguments": "args"}
 
 func checkRequired(t *Tool, fields map[string]json.RawMessage) error {
-	required := schemaRequired(t.Def.Schema)
+	required := t.schema().required
 	for _, name := range t.Code.Params {
 		if !slices.Contains(required, name) {
 			continue
@@ -125,14 +125,33 @@ func jsArgName(name string) string {
 	return name
 }
 
-func schemaRequired(schema json.RawMessage) []string {
+type schemaKeys struct {
+	required []string
+	props    []string
+}
+
+func (t *Tool) schema() schemaKeys {
+	t.schemaOnce.Do(func() { t.schemaKeys = parseSchema(t.Def.Schema) })
+	return t.schemaKeys
+}
+
+func parseSchema(schema json.RawMessage) schemaKeys {
 	var s struct {
-		Required []string `json:"required"`
+		Required   []string                   `json:"required"`
+		Properties map[string]json.RawMessage `json:"properties"`
 	}
 	if json.Unmarshal(schema, &s) != nil {
-		return nil
+		return schemaKeys{}
 	}
-	return s.Required
+	keys := schemaKeys{required: s.Required}
+	if s.Properties != nil {
+		keys.props = make([]string, 0, len(s.Properties))
+		for k := range s.Properties {
+			keys.props = append(keys.props, k)
+		}
+		sort.Strings(keys.props)
+	}
+	return keys
 }
 
 func positional(fields map[string]json.RawMessage, spec *CodeSpec, args []string) error {
@@ -198,7 +217,7 @@ func aliasConflict(spec *CodeSpec, opts map[string]json.RawMessage) error {
 }
 
 func checkFields(t *Tool, fields map[string]json.RawMessage) error {
-	known := schemaProps(t.Def.Schema)
+	known := t.schema().props
 	if known == nil {
 		return nil
 	}
@@ -213,21 +232,6 @@ func checkFields(t *Tool, fields map[string]json.RawMessage) error {
 	}
 	sort.Strings(unknown)
 	return fmt.Errorf("%s: unknown option %s (known: %s)", t.Code.Name, strings.Join(unknown, ", "), strings.Join(optionNames(t.Code, known), ", "))
-}
-
-func schemaProps(schema json.RawMessage) []string {
-	var s struct {
-		Properties map[string]json.RawMessage `json:"properties"`
-	}
-	if json.Unmarshal(schema, &s) != nil || s.Properties == nil {
-		return nil
-	}
-	names := make([]string, 0, len(s.Properties))
-	for k := range s.Properties {
-		names = append(names, k)
-	}
-	sort.Strings(names)
-	return names
 }
 
 func optionNames(spec *CodeSpec, known []string) []string {
