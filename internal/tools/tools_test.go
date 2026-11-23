@@ -154,18 +154,18 @@ func TestReadFile(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "f.txt")
 	os.WriteFile(p, []byte("a\nb\nc\nd\n"), 0o600)
-	res := readFile(p, 2, 2, nil)
+	res, _ := readFile(p, 2, 2, nil)
 	if res.Text != "b\nc\n" || res.Summary != "2 lines" {
 		t.Errorf("got %+v", res)
 	}
-	if res := readFile(p, 9, 0, nil); !res.IsError {
+	if res, _ := readFile(p, 9, 0, nil); !res.IsError {
 		t.Error("offset past end accepted")
 	}
 	os.WriteFile(filepath.Join(dir, "bin"), []byte{0, 1, 2}, 0o600)
-	if res := readFile(filepath.Join(dir, "bin"), 0, 0, nil); !res.IsError || !strings.Contains(res.Text, "binary file") {
+	if res, _ := readFile(filepath.Join(dir, "bin"), 0, 0, nil); !res.IsError || !strings.Contains(res.Text, "binary file") {
 		t.Errorf("binary: %+v", res)
 	}
-	if res := readFile("/dev/null", 0, 0, nil); !res.IsError {
+	if res, _ := readFile("/dev/null", 0, 0, nil); !res.IsError {
 		t.Error("device file accepted")
 	}
 }

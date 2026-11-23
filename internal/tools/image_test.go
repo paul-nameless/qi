@@ -162,16 +162,16 @@ func TestReadToolCropsImages(t *testing.T) {
 	if err := os.WriteFile(p, testPNG(t, 2000, 1000, solid(color.RGBA{0, 0, 0, 255})), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	res := readFile(p, 0, 0, []int{0, 0, 100, 50})
+	res, _ := readFile(p, 0, 0, []int{0, 0, 100, 50})
 	if res.IsError || len(res.Images) != 1 || res.Images[0].Width != 100 {
 		t.Fatalf("crop read: %+v", res.Text)
 	}
-	if res := readFile(p, 0, 0, nil); res.Images[0].Width != 1568 {
+	if res, _ := readFile(p, 0, 0, nil); res.Images[0].Width != 1568 {
 		t.Errorf("full read width %d", res.Images[0].Width)
 	}
 	txt := filepath.Join(dir, "a.txt")
 	os.WriteFile(txt, []byte("x\n"), 0o600)
-	if res := readFile(txt, 0, 0, []int{0, 0, 1, 1}); !res.IsError {
+	if res, _ := readFile(txt, 0, 0, []int{0, 0, 1, 1}); !res.IsError {
 		t.Error("crop on a text file should fail")
 	}
 }
@@ -187,7 +187,7 @@ func TestMCPImagesGetAPath(t *testing.T) {
 	if !strings.HasSuffix(src, ".png") || !strings.Contains(img.note, src) || !strings.Contains(img.note, "crop") {
 		t.Fatalf("source %q note %q", src, img.note)
 	}
-	if res := readFile(src, 0, 0, []int{0, 0, 10, 10}); res.IsError || res.Images[0].Width != 10 {
+	if res, _ := readFile(src, 0, 0, []int{0, 0, 10, 10}); res.IsError || res.Images[0].Width != 10 {
 		t.Errorf("saved MCP image can't be cropped: %s", res.Text)
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/paul-nameless/qi/internal/llm"
@@ -75,8 +76,12 @@ func Read() *Tool {
 				return errResult("file_path is required")
 			}
 			path := env.resolve(a.FilePath)
-			res := readFile(path, a.Offset, a.Limit, a.Crop)
-			if !res.IsError {
+			res, file := readFile(path, a.Offset, a.Limit, a.Crop)
+			switch {
+			case res.IsError:
+			case file.data != nil:
+				env.files.rememberData(path, file.data, file.mod)
+			default:
 				env.files.remember(path)
 			}
 			return res
@@ -84,31 +89,36 @@ func Read() *Tool {
 	}
 }
 
-func readFile(path string, offset, limit int, crop []int) Result {
+type fileRead struct {
+	data []byte
+	mod  time.Time
+}
+
+func readFile(path string, offset, limit int, crop []int) (Result, fileRead) {
 	st, err := os.Stat(path)
 	if err != nil {
-		return errResult("%v", err)
+		return errResult("%v", err), fileRead{}
 	}
 	if st.IsDir() {
-		return listDir(path)
+		return listDir(path), fileRead{}
 	}
 	if !st.Mode().IsRegular() {
-		return errResult("%s is not a regular file", path)
+		return errResult("%s is not a regular file", path), fileRead{}
 	}
 	if mt := ImageType(path); mt != "" {
-		return readImage(path, mt, st.Size(), crop)
+		return readImage(path, mt, st.Size(), crop), fileRead{}
 	}
 	if len(crop) > 0 {
-		return errResult("crop only applies to images")
+		return errResult("crop only applies to images"), fileRead{}
 	}
 	if st.Size() > maxReadBytes {
-		return errResult("file is %d MB; use bash (head, sed -n, rg) to read parts of it", st.Size()>>20)
+		return errResult("file is %d MB; use bash (head, sed -n, rg) to read parts of it", st.Size()>>20), fileRead{}
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return errResult("%v", err)
+		return errResult("%v", err), fileRead{}
 	}
-	return rawFile(data, offset, limit)
+	return rawFile(data, offset, limit), fileRead{data, st.ModTime()}
 }
 
 func isBinary(data []byte) bool {
@@ -267,7 +277,7 @@ func Write() *Tool {
 			if err := os.WriteFile(path, []byte(a.Content), 0o644); err != nil {
 				return errResult("%v", err)
 			}
-			env.files.remember(path)
+			env.files.rememberWritten(path, []byte(a.Content))
 			n := strings.Count(a.Content, "\n")
 			if a.Content != "" && !strings.HasSuffix(a.Content, "\n") {
 				n++
@@ -329,7 +339,7 @@ func Edit() *Tool {
 			if err := os.WriteFile(path, []byte(updated), 0o644); err != nil {
 				return errResult("%v", err)
 			}
-			env.files.remember(path)
+			env.files.rememberWritten(path, []byte(updated))
 			added, removed := lineDelta(a.OldString, a.NewString, count)
 			summary := fmt.Sprintf("+%d -%d", added, removed)
 			if count > 1 {

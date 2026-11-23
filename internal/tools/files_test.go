@@ -120,3 +120,19 @@ func TestNoDiffChangesOnOneLine(t *testing.T) {
 		t.Fatalf("second change not reported: %q", text)
 	}
 }
+
+func TestPartialReadSnapshotsWholeFile(t *testing.T) {
+	dir := t.TempDir()
+	env := &Env{Cwd: dir}
+	path := filepath.Join(dir, "a.txt")
+	if err := os.WriteFile(path, []byte("one\ntwo\nthree\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if res := runTool(t, Read(), env, map[string]any{"file_path": "a.txt", "offset": 3, "limit": 1}); res.IsError || res.Text != "three\n" {
+		t.Fatalf("read: %+v", res)
+	}
+	touchLater(t, path, "ONE\ntwo\nthree\n")
+	if text, _ := env.FileChanges(); !strings.Contains(text, "-one") || !strings.Contains(text, "+ONE") {
+		t.Fatalf("change outside the read range not diffed: %q", text)
+	}
+}

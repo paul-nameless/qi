@@ -36,20 +36,41 @@ func snapshot(path string) (fileState, bool) {
 	if err != nil || !st.Mode().IsRegular() {
 		return fileState{}, false
 	}
-	s := fileState{mod: st.ModTime()}
-	if st.Size() <= maxSnapshotBytes && ImageType(path) == "" {
-		if data, err := os.ReadFile(path); err == nil && utf8.Valid(data) && bytes.IndexByte(data, 0) < 0 {
-			s.text, s.hasText = string(data), true
-		}
+	if st.Size() > maxSnapshotBytes || ImageType(path) != "" {
+		return fileState{mod: st.ModTime()}, true
 	}
-	return s, true
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fileState{mod: st.ModTime()}, true
+	}
+	return snapshotOf(path, data, st.ModTime()), true
+}
+
+func snapshotOf(path string, data []byte, mod time.Time) fileState {
+	s := fileState{mod: mod}
+	if len(data) <= maxSnapshotBytes && ImageType(path) == "" && utf8.Valid(data) && bytes.IndexByte(data, 0) < 0 {
+		s.text, s.hasText = string(data), true
+	}
+	return s
 }
 
 func (f *fileTimes) remember(path string) {
-	s, ok := snapshot(path)
-	if !ok {
-		return
+	if s, ok := snapshot(path); ok {
+		f.store(path, s)
 	}
+}
+
+func (f *fileTimes) rememberData(path string, data []byte, mod time.Time) {
+	f.store(path, snapshotOf(path, data, mod))
+}
+
+func (f *fileTimes) rememberWritten(path string, data []byte) {
+	if st, err := os.Stat(path); err == nil && st.Mode().IsRegular() {
+		f.rememberData(path, data, st.ModTime())
+	}
+}
+
+func (f *fileTimes) store(path string, s fileState) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.seen == nil {
