@@ -18,10 +18,8 @@ import (
 )
 
 const (
-	defaultReadLimit = 2000
-	maxLineLen       = 2000
-	maxReadBytes     = 20 << 20
-	maxReadOutput    = 60 << 10
+	maxLineLen   = 2000
+	maxReadBytes = 20 << 20
 )
 
 var imageTypes = map[string]string{
@@ -48,9 +46,8 @@ func Read() *Tool {
 		ParallelSafe: true,
 		HookNames:    []string{"Read"},
 		Def: llm.ToolDef{
-			Name:        "read",
-			Description: "Read a file with line numbers (`N<tab>line`), a directory listing, or an image. Reads up to 2000 lines; use offset/limit for more. Images larger than 1568px are scaled down; use crop to see a region at full resolution.",
-			Schema:      json.RawMessage(`{"type":"object","properties":{"file_path":{"type":"string","description":"Path to the file or directory"},"offset":{"type":"integer","description":"1-based line number to start from"},"limit":{"type":"integer","description":"Maximum number of lines to read"},"crop":{"type":"array","items":{"type":"integer"},"description":"Images only: [x, y, width, height] in original pixels; returns that region at full resolution (scaled down only if larger than 1568px)"}},"required":["file_path"]}`),
+			Name:   "read",
+			Schema: json.RawMessage(`{"type":"object","properties":{"file_path":{"type":"string"},"offset":{"type":"integer"},"limit":{"type":"integer"},"crop":{"type":"array","items":{"type":"integer"}}},"required":["file_path"]}`),
 		},
 		Path: pathKey,
 		Code: &CodeSpec{
@@ -78,11 +75,7 @@ func Read() *Tool {
 				return errResult("file_path is required")
 			}
 			path := env.resolve(a.FilePath)
-			text := numberedFile
-			if inCell(ctx) {
-				text = rawFile
-			}
-			res := readFile(path, a.Offset, a.Limit, a.Crop, text)
+			res := readFile(path, a.Offset, a.Limit, a.Crop)
 			if !res.IsError {
 				env.files.remember(path)
 			}
@@ -91,11 +84,7 @@ func Read() *Tool {
 	}
 }
 
-func readPath(path string, offset, limit int, crop []int) Result {
-	return readFile(path, offset, limit, crop, numberedFile)
-}
-
-func readFile(path string, offset, limit int, crop []int, text func(data []byte, offset, limit int) Result) Result {
+func readFile(path string, offset, limit int, crop []int) Result {
 	st, err := os.Stat(path)
 	if err != nil {
 		return errResult("%v", err)
@@ -119,7 +108,7 @@ func readFile(path string, offset, limit int, crop []int, text func(data []byte,
 	if err != nil {
 		return errResult("%v", err)
 	}
-	return text(data, offset, limit)
+	return rawFile(data, offset, limit)
 }
 
 func isBinary(data []byte) bool {
@@ -128,13 +117,6 @@ func isBinary(data []byte) bool {
 		probe = probe[:8192]
 	}
 	return bytes.IndexByte(probe, 0) >= 0
-}
-
-func numberedFile(data []byte, offset, limit int) Result {
-	if isBinary(data) {
-		return Result{Text: fmt.Sprintf("binary file, %d bytes", len(data)), Summary: "binary"}
-	}
-	return numberedText(string(data), offset, limit)
 }
 
 func rawFile(data []byte, offset, limit int) Result {
@@ -169,42 +151,6 @@ func rawText(data string, offset, limit int) Result {
 		return Result{Text: data, Summary: fmt.Sprintf("%d lines", end)}
 	}
 	return Result{Text: strings.Join(lines[offset-1:end], ""), Summary: fmt.Sprintf("%d lines", end-offset+1)}
-}
-
-func numberedText(data string, offset, limit int) Result {
-	if data == "" {
-		return Result{Text: "(empty file)", Summary: "empty"}
-	}
-	lines := strings.Split(strings.TrimSuffix(data, "\n"), "\n")
-	if offset < 1 {
-		offset = 1
-	}
-	if limit <= 0 {
-		limit = defaultReadLimit
-	}
-	if offset > len(lines) {
-		return errResult("offset %d is past the end of the file (%d lines)", offset, len(lines))
-	}
-	end := min(offset-1+limit, len(lines))
-	var b strings.Builder
-	for i := offset - 1; i < end; i++ {
-		if b.Len() >= maxReadOutput {
-			end = i
-			break
-		}
-		line := strings.TrimSuffix(lines[i], "\r")
-		if len(line) > maxLineLen {
-			line = strutil.CutStart(line, maxLineLen) + "…"
-		}
-		fmt.Fprintf(&b, "%d\t%s\n", i+1, line)
-	}
-	switch {
-	case end < len(lines):
-		fmt.Fprintf(&b, "(lines %d-%d of %d; continue with offset=%d)\n", offset, end, len(lines), end+1)
-	case offset > 1:
-		fmt.Fprintf(&b, "(lines %d-%d of %d)\n", offset, end, len(lines))
-	}
-	return Result{Text: b.String(), Summary: fmt.Sprintf("%d lines", end-offset+1)}
 }
 
 func listDir(path string) Result {
@@ -287,9 +233,8 @@ func Write() *Tool {
 		Mutates:   true,
 		HookNames: []string{"Write"},
 		Def: llm.ToolDef{
-			Name:        "write",
-			Description: "Create or overwrite a file. Prefer edit for changes to existing files.",
-			Schema:      json.RawMessage(`{"type":"object","properties":{"file_path":{"type":"string"},"content":{"type":"string"}},"required":["file_path","content"]}`),
+			Name:   "write",
+			Schema: json.RawMessage(`{"type":"object","properties":{"file_path":{"type":"string"},"content":{"type":"string"}},"required":["file_path","content"]}`),
 		},
 		Path:  pathKey,
 		Label: func(env *Env, in json.RawMessage) string { return "write " + env.rel(pathKey(env, in)) },
@@ -348,9 +293,8 @@ func Edit() *Tool {
 		Mutates:   true,
 		HookNames: []string{"Edit"},
 		Def: llm.ToolDef{
-			Name:        "edit",
-			Description: "Replace old_string with new_string in a file. old_string must match exactly once (include enough surrounding lines) unless replace_all is true. Do not include the line-number prefixes from read.",
-			Schema:      json.RawMessage(`{"type":"object","properties":{"file_path":{"type":"string"},"old_string":{"type":"string","description":"Exact text to replace"},"new_string":{"type":"string","description":"Replacement text"},"replace_all":{"type":"boolean","description":"Replace every occurrence"}},"required":["file_path","old_string","new_string"]}`),
+			Name:   "edit",
+			Schema: json.RawMessage(`{"type":"object","properties":{"file_path":{"type":"string"},"old_string":{"type":"string"},"new_string":{"type":"string"},"replace_all":{"type":"boolean"}},"required":["file_path","old_string","new_string"]}`),
 		},
 		Path:  pathKey,
 		Label: func(env *Env, in json.RawMessage) string { return "edit " + env.rel(pathKey(env, in)) },

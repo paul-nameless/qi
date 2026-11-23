@@ -749,16 +749,10 @@ func TestCellTimersCancelledAfterSettle(t *testing.T) {
 
 func TestCellReadRejectsNonText(t *testing.T) {
 	k := newCellKit(t)
-	bin := k.file("bin", "a\x00b")
-	latin := k.file("latin.txt", "caf\xe9\n")
+	k.file("bin", "a\x00b")
+	k.file("latin.txt", "caf\xe9\n")
 	k.wantErr(`await read("bin")`, "ToolError: binary file, 3 bytes", "use bash")
 	k.wantErr(`await read("latin.txt")`, "ToolError: not valid UTF-8", "use bash")
-	if res := readPath(bin, 0, 0, nil); res.IsError || res.Summary != "binary" {
-		t.Errorf("direct binary read: %+v", res)
-	}
-	if res := readPath(latin, 0, 0, nil); res.IsError {
-		t.Errorf("direct latin-1 read: %+v", res)
-	}
 }
 
 func TestCellBashTruncated(t *testing.T) {

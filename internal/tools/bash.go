@@ -28,9 +28,8 @@ func Bash() *Tool {
 	return &Tool{
 		HookNames: []string{"Bash"},
 		Def: llm.ToolDef{
-			Name:        "bash",
-			Description: "Run a shell command with bash in the working directory. stdin is empty, output is stdout+stderr combined, long output is truncated to head and tail with the full text saved to a file. Use rg/fd/ls/cat/sed for search and inspection.",
-			Schema:      json.RawMessage(`{"type":"object","properties":{"command":{"type":"string"},"timeout":{"type":"integer","description":"Timeout in seconds (default 120, max 600; background job: default 3600, max 86400; daemon: none unless set)"},"background":{"type":"boolean","description":"Run as a background job for long builds and test runs: returns at once with the job id and output file, and you get a message with the exit status and output tail when it exits, so don't poll or sleep for it"},"daemon":{"type":"boolean","description":"Run in the background for servers and watchers that are not meant to exit: your turn does not wait for it"}},"required":["command"]}`),
+			Name:   "bash",
+			Schema: json.RawMessage(`{"type":"object","properties":{"command":{"type":"string"},"timeout":{"type":"integer"},"background":{"type":"boolean"},"daemon":{"type":"boolean"}},"required":["command"]}`),
 		},
 		Label: func(env *Env, in json.RawMessage) string {
 			a, _ := decode[bashArgs](in)
@@ -245,10 +244,7 @@ func runBash(ctx context.Context, env *Env, in json.RawMessage, progress func(st
 	if err != nil {
 		return errResult("%v", err)
 	}
-	if inCell(ctx) {
-		return run.value()
-	}
-	return run.result(env)
+	return run.value()
 }
 
 type bashRun struct {
@@ -320,14 +316,6 @@ func (r bashRun) suffix() string {
 		return fmt.Sprintf("\n[exit code %d]", r.code)
 	}
 	return ""
-}
-
-func (r bashRun) result(env *Env) Result {
-	text := env.capOutput(r.output) + r.suffix()
-	if text == "" {
-		text = "(no output)"
-	}
-	return Result{Text: text, IsError: r.code != 0 || r.interrupted, Summary: r.summary()}
 }
 
 func (r bashRun) value() Result {

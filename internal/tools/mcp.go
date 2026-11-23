@@ -42,9 +42,8 @@ func serverLines(m *mcp.Manager) string {
 func toolSearch(m *mcp.Manager) *Tool {
 	return &Tool{
 		Def: llm.ToolDef{
-			Name:        "tool_search",
-			Description: "Find tools on the connected MCP servers by keywords, or list one server's tools with server. Returns matching tools with their input schemas; call them with mcp_call. Servers:" + serverLines(m),
-			Schema:      json.RawMessage(`{"type":"object","properties":{"query":{"type":"string","description":"Keywords, e.g. 'github pull request comments'. Optional when server is set"},"server":{"type":"string","description":"Only this server's tools; without query, lists all of them"}}}`),
+			Name:   "tool_search",
+			Schema: json.RawMessage(`{"type":"object","properties":{"query":{"type":"string"},"server":{"type":"string"}}}`),
 		},
 		Label: func(env *Env, in json.RawMessage) string {
 			a, _ := decode[toolSearchArgs](in)
@@ -171,9 +170,8 @@ func MCPTools(m *mcp.Manager) []*Tool {
 	search.ParallelSafe = true
 	call := &Tool{
 		Def: llm.ToolDef{
-			Name:        "mcp_call",
-			Description: "Call a tool on an MCP server. Find the server, tool name and argument schema with tool_search first.",
-			Schema:      json.RawMessage(`{"type":"object","properties":{"server":{"type":"string"},"tool":{"type":"string"},"arguments":{"type":"object","description":"Arguments matching the tool's input schema"}},"required":["server","tool","arguments"]}`),
+			Name:   "mcp_call",
+			Schema: json.RawMessage(`{"type":"object","properties":{"server":{"type":"string"},"tool":{"type":"string"},"arguments":{"type":"object"}},"required":["server","tool","arguments"]}`),
 		},
 		Label: func(env *Env, in json.RawMessage) string {
 			a, _ := decode[mcpCallArgs](in)
@@ -213,10 +211,6 @@ func MCPTools(m *mcp.Manager) []*Tool {
 				text = "(no output)"
 			}
 			out := Result{Text: text, IsError: res.IsError, Images: images, Summary: fmt.Sprintf("%d lines", strings.Count(text, "\n")+1)}
-			if !inCell(ctx) {
-				out.Text = env.capOutput(text)
-				return out
-			}
 			if !out.IsError {
 				out.Value = jsonValue(text)
 			}

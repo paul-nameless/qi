@@ -150,22 +150,22 @@ func alive(pid int) bool {
 	return err != nil || !strings.Contains(string(stat), ") Z ")
 }
 
-func TestReadPath(t *testing.T) {
+func TestReadFile(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "f.txt")
 	os.WriteFile(p, []byte("a\nb\nc\nd\n"), 0o600)
-	res := readPath(p, 2, 2, nil)
-	if res.Text != "2\tb\n3\tc\n(lines 2-3 of 4; continue with offset=4)\n" {
-		t.Errorf("got %q", res.Text)
+	res := readFile(p, 2, 2, nil)
+	if res.Text != "b\nc\n" || res.Summary != "2 lines" {
+		t.Errorf("got %+v", res)
 	}
-	if res := readPath(p, 9, 0, nil); !res.IsError {
+	if res := readFile(p, 9, 0, nil); !res.IsError {
 		t.Error("offset past end accepted")
 	}
 	os.WriteFile(filepath.Join(dir, "bin"), []byte{0, 1, 2}, 0o600)
-	if res := readPath(filepath.Join(dir, "bin"), 0, 0, nil); res.Summary != "binary" {
+	if res := readFile(filepath.Join(dir, "bin"), 0, 0, nil); !res.IsError || !strings.Contains(res.Text, "binary file") {
 		t.Errorf("binary: %+v", res)
 	}
-	if res := readPath("/dev/null", 0, 0, nil); !res.IsError {
+	if res := readFile("/dev/null", 0, 0, nil); !res.IsError {
 		t.Error("device file accepted")
 	}
 }
@@ -224,17 +224,6 @@ func TestBashTimeoutUnits(t *testing.T) {
 		if got := bashTimeout(in[0], in[1]); got != want {
 			t.Errorf("bashTimeout(%d, %d) = %d, want %d", in[0], in[1], got, want)
 		}
-	}
-}
-
-func TestReadCapsOutputBytes(t *testing.T) {
-	dir := t.TempDir()
-	p := filepath.Join(dir, "big.jsonl")
-	line := strings.Repeat("x", 1999) + "\n"
-	os.WriteFile(p, []byte(strings.Repeat(line, 2000)), 0o600)
-	res := readPath(p, 0, 0, nil)
-	if len(res.Text) > maxReadOutput+5000 || !strings.Contains(res.Text, "of 2000; continue with offset=") {
-		t.Errorf("read returned %d bytes", len(res.Text))
 	}
 }
 

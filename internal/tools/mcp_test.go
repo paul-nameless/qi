@@ -81,13 +81,13 @@ func TestToolSearchByServer(t *testing.T) {
 	}
 }
 
-func TestToolSearchDescriptionListsServers(t *testing.T) {
+func TestToolSearchDocListsServers(t *testing.T) {
 	m := mcp.NewManager(map[string]config.MCPServer{
 		"github": {Command: "gh", Description: "GitHub issues", Tools: []string{"get_issue", "list_issues"}},
 		"bare":   {Command: "bare"},
 	})
-	desc := MCPTools(m)[0].Def.Description
-	if !strings.HasSuffix(desc, "Servers:\n- bare: \n- github: GitHub issues") {
+	desc := MCPTools(m)[0].Code.Doc
+	if !strings.HasSuffix(desc, "Servers:\n  - bare: \n  - github: GitHub issues") {
 		t.Errorf("description:\n%s", desc)
 	}
 }

@@ -17,7 +17,7 @@ type subagentArgs struct {
 	Effort string `json:"effort"`
 }
 
-const subagentIntro = "Run a task in a separate agent with a fresh context and get back only its final answer. Use it for self-contained side work (searching a codebase, reviewing, summarizing logs) to keep this conversation small, and run several at once for independent tasks. The subagent sees none of this conversation, so put every detail it needs in the prompt."
+const subagentIntro = "run a task in a separate agent with a fresh context and get back only its final answer. Use it for self-contained side work (searching a codebase, reviewing, summarizing logs) to keep this conversation small, and run several at once for independent tasks. The subagent sees none of this conversation, so put every detail it needs in the prompt."
 
 func subagentMenu(mainModel string, menu []config.SubagentModel, efforts []string, indent string) (string, []string) {
 	var b strings.Builder
@@ -39,16 +39,15 @@ func subagentMenu(mainModel string, menu []config.SubagentModel, efforts []strin
 
 func subagentDoc(mainModel string, menu []config.SubagentModel, efforts []string) string {
 	list, _ := subagentMenu(mainModel, menu, efforts, "  ")
-	return "subagent(prompt, {model, effort}) → string — r" + subagentIntro[1:] + " It has the same functions and the current mode. At most 20 per run call; the run timeout pauses while a subagent runs (each has its own 30 minute limit). model defaults to the first one below.\n  Models:\n" + list
+	return "subagent(prompt, {model, effort}) → string — " + subagentIntro + " It has the same functions and the current mode. At most 20 per run call; the run timeout pauses while a subagent runs (each has its own 30 minute limit). model defaults to the first one below.\n  Models:\n" + list
 }
 
 func Subagent(mainModel string, menu []config.SubagentModel, efforts []string) *Tool {
-	list, names := subagentMenu(mainModel, menu, efforts, "")
-	desc := subagentIntro + " It has the same tools and the current mode.\n\nModels:\n" + list
+	_, names := subagentMenu(mainModel, menu, efforts, "")
 	schema := map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"prompt": map[string]any{"type": "string", "description": "Complete task description for the subagent"},
+			"prompt": map[string]any{"type": "string"},
 			"model":  map[string]any{"type": "string", "enum": names},
 			"effort": map[string]any{"type": "string", "enum": efforts},
 		},
@@ -56,7 +55,7 @@ func Subagent(mainModel string, menu []config.SubagentModel, efforts []string) *
 	}
 	raw, _ := json.Marshal(schema)
 	return &Tool{
-		Def:          llm.ToolDef{Name: "subagent", Description: desc, Schema: raw},
+		Def:          llm.ToolDef{Name: "subagent", Schema: raw},
 		ParallelSafe: true,
 		HookNames:    []string{"Agent", "Task"},
 		Code: &CodeSpec{
@@ -85,9 +84,6 @@ func Subagent(mainModel string, menu []config.SubagentModel, efforts []string) *
 				return errResult("subagent failed: %v", err)
 			}
 			summary := fmt.Sprintf("%d chars", len(answer))
-			if !inCell(ctx) {
-				answer = env.capOutput(answer)
-			}
 			return Result{Text: answer, Summary: summary}
 		},
 	}

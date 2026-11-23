@@ -372,9 +372,8 @@ type jobsArgs struct {
 func JobsTool() *Tool {
 	return &Tool{
 		Def: llm.ToolDef{
-			Name:        "jobs",
-			Description: "List the background bash jobs of this session with their state, pid and output file, or stop one with kill (its whole process group is terminated). Read a job's output with bash on its output file.",
-			Schema:      json.RawMessage(`{"type":"object","properties":{"kill":{"type":"integer","description":"Id of a job to stop, including processes left running after its shell exited"}}}`),
+			Name:   "jobs",
+			Schema: json.RawMessage(`{"type":"object","properties":{"kill":{"type":"integer"}}}`),
 		},
 		Label: func(env *Env, in json.RawMessage) string {
 			a, _ := decode[jobsArgs](in)
