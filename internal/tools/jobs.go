@@ -75,6 +75,18 @@ func (j *Jobs) Waiting() []int {
 	return ids
 }
 
+func (j *Jobs) Running() int {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	n := 0
+	for _, jb := range j.list {
+		if !jb.isGone() {
+			n++
+		}
+	}
+	return n
+}
+
 func (j *Jobs) StopWaiting() {
 	j.mu.Lock()
 	defer j.mu.Unlock()

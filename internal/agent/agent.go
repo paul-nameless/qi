@@ -403,11 +403,21 @@ func (a *Agent) onDelta(d llm.Delta, showReasoning bool) bool {
 type TurnStats struct {
 	Requests int
 	Usage    llm.Usage
+	Jobs     int
 }
 
 func (s TurnStats) String(context string, elapsed time.Duration, done time.Time) string {
-	return fmt.Sprintf("%d req · %s · cooked for %s · done %s", s.Requests, context, fmtElapsed(elapsed), done.Format("15:04"))
+	jobs := ""
+	switch {
+	case s.Jobs == 1:
+		jobs = " · 1 bg job"
+	case s.Jobs > 1:
+		jobs = fmt.Sprintf(" · %d bg jobs", s.Jobs)
+	}
+	return fmt.Sprintf("%d req · %s · cooked for %s%s · done %s", s.Requests, context, fmtElapsed(elapsed), jobs, done.Format("15:04"))
 }
+
+func (a *Agent) RunningJobs() int { return a.env.Jobs.Running() }
 
 func cachedPct(u llm.Usage) string {
 	if u.Input == 0 {

@@ -418,6 +418,7 @@ func (r *repl) turn(prepare func(context.Context) ([]llm.Block, error), draft st
 	}
 	if stats.Requests > 0 {
 		r.display.Line("")
+		stats.Jobs = r.agent.RunningJobs()
 		r.display.Info(stats.String(r.agent.ContextShort(), time.Since(start), time.Now()))
 		r.display.Line("")
 	}

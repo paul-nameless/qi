@@ -505,3 +505,26 @@ func TestJSONNeedsHeadless(t *testing.T) {
 		t.Error("valid combinations rejected")
 	}
 }
+
+func TestTurnStatsShowRunningJobs(t *testing.T) {
+	p := &scriptProvider{reply: func(_ context.Context, n int, _ llm.Request) (llm.Message, error) {
+		if n == 0 {
+			return runCall("c1", `await bash("sleep 30", {daemon: true})`), nil
+		}
+		return textReply("started"), nil
+	}}
+	r, out := testRepl(t, config.Config{Model: "m"}, p)
+	r.turn(func(context.Context) ([]llm.Block, error) {
+		return []llm.Block{{Type: llm.BlockText, Text: "go"}}, nil
+	}, "")
+	if got := out.String(); !strings.Contains(got, " · 1 bg job · done ") {
+		t.Errorf("output:\n%s", got)
+	}
+	r.agent.KillJobs()
+	r.turn(func(context.Context) ([]llm.Block, error) {
+		return []llm.Block{{Type: llm.BlockText, Text: "again"}}, nil
+	}, "")
+	if got := out.String(); strings.Count(got, "bg job") != 1 {
+		t.Errorf("killed job still counted:\n%s", got)
+	}
+}

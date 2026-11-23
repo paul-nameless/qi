@@ -466,6 +466,12 @@ func TestTurnStatsLine(t *testing.T) {
 	if got := s.String(usageOf(8400, 1000000, true), 11400*time.Millisecond, done); got != "1 req · 8.4k/1M (0.8%) · cooked for 11s · done 21:11" {
 		t.Errorf("stats %q", got)
 	}
+	for jobs, want := range map[int]string{1: "cooked for 11s · 1 bg job · done 21:11", 3: "cooked for 11s · 3 bg jobs · done 21:11"} {
+		s.Jobs = jobs
+		if got := s.String("x", 11*time.Second, done); !strings.HasSuffix(got, want) {
+			t.Errorf("%d jobs: %q", jobs, got)
+		}
+	}
 	for d, want := range map[time.Duration]string{400 * time.Millisecond: "0s", 65 * time.Second: "1m 5s", 3*time.Hour + 4*time.Minute: "3h 4m"} {
 		if got := fmtElapsed(d); got != want {
 			t.Errorf("fmtElapsed(%v) = %q, want %q", d, got, want)

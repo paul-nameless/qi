@@ -14,7 +14,7 @@ A small coding agent for the terminal, built just because.
 ## What it does
 
 - Talks to any OpenAI-compatible API, and Anthropic's native API.
-- Code mode (default): the model's one tool, `run`, executes JavaScript that calls `read`, `write`, `edit`, `bash`, `jobs` and `subagent`, so a whole step (search, read, edit, test) is one call. See [Code mode](#code-mode). Long builds and servers run as background bash jobs; the agent gets a message when one exits instead of polling.
+- Code mode: the model's one tool, `run`, executes JavaScript that calls `read`, `write`, `edit`, `bash`, `jobs` and `subagent`, so a whole step (search, read, edit, test) is one call. See [Code mode](#code-mode). Long builds and servers run as background bash jobs; the agent gets a message when one exits instead of polling, and the line after each answer shows how many are still running (`2 bg jobs`).
 - Prompt caching, sessions saved as JSONL, automatic compaction when the context fills up and idle compaction.
 - MCP servers start on demand, with per-server limits on which tools the agent may use.
 - Two modes, toggled with shift+tab: yolo (default) and read-only (no edits, bash limited to an allowlist).
