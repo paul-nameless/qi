@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -22,6 +23,8 @@ import (
 
 const (
 	groupPoll       = 100 * time.Millisecond
+	groupPollMax    = time.Second
+	keepFinished    = 20
 	noticeTailLines = 20
 	noticeTailBytes = 2000
 )
@@ -99,18 +102,26 @@ func (j *Jobs) KillAll() {
 	var running []*job
 	for _, jb := range j.list {
 		if !jb.isGone() {
-			jb.killed = jb.killed || jb.status == ""
+			jb.markKilled()
 			running = append(running, jb)
 		}
 	}
 	j.mu.Unlock()
-	for _, jb := range running {
+	stopJobs(running...)
+	j.TakeNotices()
+}
+
+func (jb *job) markKilled() {
+	jb.killed = jb.killed || jb.status == ""
+}
+
+func stopJobs(jobs ...*job) {
+	for _, jb := range jobs {
 		jb.cancel()
 	}
-	for _, jb := range running {
+	for _, jb := range jobs {
 		<-jb.gone
 	}
-	j.TakeNotices()
 }
 
 func (jb *job) isGone() bool {
@@ -144,7 +155,7 @@ func (j *Jobs) start(ctx context.Context, cmd *exec.Cmd, cancel context.CancelFu
 	}
 	jb := &job{id: id, command: command, path: path, daemon: daemon, start: time.Now(), cmd: cmd, cancel: cancel, gone: make(chan struct{})}
 	j.mu.Lock()
-	j.list = append(j.list, jb)
+	j.list = append(pruneFinished(j.list), jb)
 	j.mu.Unlock()
 	go func() {
 		err := cmd.Wait()
@@ -157,8 +168,31 @@ func (j *Jobs) start(ctx context.Context, cmd *exec.Cmd, cancel context.CancelFu
 	return jb, nil
 }
 
+func pruneFinished(list []*job) []*job {
+	gone := 0
+	for _, jb := range list {
+		if jb.isGone() {
+			gone++
+		}
+	}
+	if gone <= keepFinished {
+		return list
+	}
+	out := list[:0]
+	for _, jb := range list {
+		if jb.isGone() && gone > keepFinished {
+			gone--
+			continue
+		}
+		out = append(out, jb)
+	}
+	return out
+}
+
 func waitGroup(ctx context.Context, pgid int) {
-	for proc.Alive(pgid) {
+	poll := time.NewTimer(groupPoll)
+	defer poll.Stop()
+	for wait := groupPoll; proc.Alive(pgid); {
 		select {
 		case <-ctx.Done():
 			_ = proc.Terminate(pgid, proc.Grace)
@@ -166,7 +200,9 @@ func waitGroup(ctx context.Context, pgid int) {
 				time.Sleep(groupPoll)
 			}
 			return
-		case <-time.After(groupPoll):
+		case <-poll.C:
+			wait = min(2*wait, groupPollMax)
+			poll.Reset(wait)
 		}
 	}
 }
@@ -184,7 +220,13 @@ func (j *Jobs) finish(jb *job, err error, timedOut bool, timeout time.Duration) 
 	case err != nil && !errors.Is(err, exec.ErrWaitDelay):
 		status = err.Error()
 	}
-	notice := jb.notice(status, !timedOut && proc.Alive(jb.cmd.Process.Pid), timeout)
+	j.mu.Lock()
+	killed := jb.killed
+	j.mu.Unlock()
+	notice := ""
+	if !killed {
+		notice = jb.notice(status, !timedOut && proc.Alive(jb.cmd.Process.Pid), timeout)
+	}
 	j.mu.Lock()
 	if jb.killed {
 		jb.status = "killed"
@@ -233,11 +275,7 @@ func fileTail(path string) (int, string) {
 	var last byte
 	for {
 		n, err := f.Read(buf)
-		for _, c := range buf[:n] {
-			if c == '\n' {
-				lines++
-			}
-		}
+		lines += bytes.Count(buf[:n], []byte{'\n'})
 		if n > 0 {
 			last = buf[n-1]
 			size += int64(n)
@@ -317,10 +355,9 @@ func (j *Jobs) kill(id int) error {
 		j.mu.Unlock()
 		return fmt.Errorf("job %d already finished: %s", id, target.status)
 	}
-	target.killed = target.killed || target.status == ""
+	target.markKilled()
 	j.mu.Unlock()
-	target.cancel()
-	<-target.gone
+	stopJobs(target)
 	return nil
 }
 

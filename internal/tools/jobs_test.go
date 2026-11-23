@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"syscall"
 	"testing"
@@ -161,5 +162,29 @@ func TestJobLogNamesAreUnique(t *testing.T) {
 	runBash(context.Background(), b, bashIn(t, map[string]any{"command": "true", "background": true}), nil)
 	if a.Jobs.list[0].path == b.Jobs.list[0].path {
 		t.Fatal("two processes' job 1 share a log file")
+	}
+}
+
+func TestFinishedJobsArePruned(t *testing.T) {
+	env := jobEnv(t)
+	for i := 0; i < keepFinished+5; i++ {
+		if res := runBash(context.Background(), env, bashIn(t, map[string]any{"command": "true", "background": true}), nil); res.IsError {
+			t.Fatal(res.Text)
+		}
+		waitNotice(t, env.Jobs)
+		env.Jobs.mu.Lock()
+		last := env.Jobs.list[len(env.Jobs.list)-1]
+		env.Jobs.mu.Unlock()
+		<-last.gone
+	}
+	res := runBash(context.Background(), env, bashIn(t, map[string]any{"command": "sleep 5", "daemon": true}), nil)
+	if !strings.Contains(res.Text, fmt.Sprintf("Started background job %d", keepFinished+6)) {
+		t.Fatalf("id reused: %s", res.Text)
+	}
+	env.Jobs.mu.Lock()
+	n, first := len(env.Jobs.list), env.Jobs.list[0].id
+	env.Jobs.mu.Unlock()
+	if n != keepFinished+1 || first != 6 {
+		t.Errorf("list has %d jobs starting at %d, want %d starting at 6", n, first, keepFinished+1)
 	}
 }
