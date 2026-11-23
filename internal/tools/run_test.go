@@ -153,6 +153,7 @@ func TestCellBashShape(t *testing.T) {
 	k.want(`JSON.stringify(await bash("echo oops; exit 3"))`, `{"output":"oops","exit_code":3,"timed_out":false,"truncated":false}`)
 	k.want(`JSON.stringify(await bash("echo start; sleep 5", {timeout: 1}))`, `{"output":"start","exit_code":-1,"timed_out":true,"truncated":false}`)
 	k.want(`JSON.stringify(await bash({command: "printf 'a\\n\\nb\\n\\n'"}))`, `{"output":"a\n\nb","exit_code":0,"timed_out":false,"truncated":false}`)
+	k.want("(await bash(String.raw`echo ab.c | sed -E 's/(b)\\.c/\\1x/'; printf 'p\\nq'`)).output", "abx\np\nq")
 }
 
 func TestCellToolError(t *testing.T) {

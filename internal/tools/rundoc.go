@@ -13,6 +13,7 @@ Rules:
 - A single call is fine: ` + "`return await read(\"go.mod\")`" + `. Start independent calls together with Promise.all (up to 8 run at once) and await every call you start.
 - Promise.all rejects on the first failure and the results of the other calls are lost: for subagents and other slow calls use Promise.allSettled or catch each call.
 - Results inside the VM are not cut, except bash output past its first and last 512 KB (truncated is then true; redirect to a file for more): filter, count and summarize in code instead of printing everything.
+- Write shell scripts as ` + "String.raw`...`" + ` when they contain backslashes (sed, regex, printf): in a plain template literal \1 is a syntax error and \n becomes a newline before bash sees it.
 - Never run two edits of the same file at once.
 - The names {names} are set again at the start of every run call: don't use them for your own variables.
 - The call times out after 300 s (timeout changes it, up to 1800). bash() times out on its own after its timeout and returns the output so far with timed_out true, so a hanging command does not stop your code. Start long builds and test runs with {background: true}.
