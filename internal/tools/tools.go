@@ -380,10 +380,10 @@ func (e *Env) capOutput(out string) string {
 }
 
 func (e *Env) capText(out string, maxLines, maxBytes int) string {
-	lines := strings.Split(out, "\n")
-	if len(out) <= maxBytes && len(lines) <= maxLines {
+	if len(out) <= maxBytes && strings.Count(out, "\n") < maxLines {
 		return out
 	}
+	lines := strings.Split(out, "\n")
 	path, err := e.spill(out)
 	if err != nil {
 		path = "(not saved: " + err.Error() + ")"

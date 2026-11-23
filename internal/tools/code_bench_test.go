@@ -37,3 +37,12 @@ func BenchmarkBashValue(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkCapTextShort(b *testing.B) {
+	env := &Env{SpillDir: b.TempDir()}
+	out := strings.Repeat("a short line of output\n", 1500)
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = env.capText(out, cellOutLines, cellOutBytes)
+	}
+}
