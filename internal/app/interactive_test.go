@@ -177,7 +177,7 @@ func TestTurnRunsToolsAndPrintsStats(t *testing.T) {
 		t.Errorf("draft %q cancelled %v", draft, r.lastCancelled)
 	}
 	got := out.String()
-	if !strings.Contains(got, "✓ bash echo hi") || !strings.Contains(got, "2 req · 110 · cooked for ") {
+	if !strings.Contains(got, "✓ bash echo hi") || !strings.Contains(got, "\n110 · cooked for ") {
 		t.Errorf("output:\n%s", got)
 	}
 	results := p.request(1).Messages
@@ -517,7 +517,7 @@ func TestTurnStatsShowRunningJobs(t *testing.T) {
 	r.turn(func(context.Context) ([]llm.Block, error) {
 		return []llm.Block{{Type: llm.BlockText, Text: "go"}}, nil
 	}, "")
-	if got := out.String(); !strings.Contains(got, " · 1 bg job · done ") {
+	if got := out.String(); !strings.Contains(got, " · 1 bg job\n") {
 		t.Errorf("output:\n%s", got)
 	}
 	r.agent.KillJobs()

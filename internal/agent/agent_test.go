@@ -463,10 +463,10 @@ func TestAccessorsDuringTurn(t *testing.T) {
 func TestTurnStatsLine(t *testing.T) {
 	s := TurnStats{Requests: 1, Usage: llm.Usage{Input: 8300, CacheRead: 4731, Output: 80}}
 	done := time.Date(2026, 11, 15, 21, 11, 5, 0, time.Local)
-	if got := s.String(usageOf(8400, 1000000, true), 11400*time.Millisecond, done); got != "1 req · 8.4k/1M (0.8%) · cooked for 11s · done 21:11" {
+	if got := s.String(usageOf(8400, 1000000, true), 11400*time.Millisecond, done); got != "8.4k/1M (0.8%) · cooked for 11s · done 21:11" {
 		t.Errorf("stats %q", got)
 	}
-	for jobs, want := range map[int]string{1: "cooked for 11s · 1 bg job · done 21:11", 3: "cooked for 11s · 3 bg jobs · done 21:11"} {
+	for jobs, want := range map[int]string{1: "cooked for 11s · done 21:11 · 1 bg job", 3: "cooked for 11s · done 21:11 · 3 bg jobs"} {
 		s.Jobs = jobs
 		if got := s.String("x", 11*time.Second, done); !strings.HasSuffix(got, want) {
 			t.Errorf("%d jobs: %q", jobs, got)

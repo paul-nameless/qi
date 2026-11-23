@@ -414,7 +414,7 @@ func (s TurnStats) String(context string, elapsed time.Duration, done time.Time)
 	case s.Jobs > 1:
 		jobs = fmt.Sprintf(" · %d bg jobs", s.Jobs)
 	}
-	return fmt.Sprintf("%d req · %s · cooked for %s%s · done %s", s.Requests, context, fmtElapsed(elapsed), jobs, done.Format("15:04"))
+	return fmt.Sprintf("%s · cooked for %s · done %s%s", context, fmtElapsed(elapsed), done.Format("15:04"), jobs)
 }
 
 func (a *Agent) RunningJobs() int { return a.env.Jobs.Running() }
