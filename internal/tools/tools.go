@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/paul-nameless/qi/internal/config"
+	"github.com/paul-nameless/qi/internal/jsvm"
 	"github.com/paul-nameless/qi/internal/llm"
 	"github.com/paul-nameless/qi/internal/strutil"
 )
@@ -24,6 +25,7 @@ type Result struct {
 	Images  []llm.Block
 	Summary string
 	Value   json.RawMessage
+	JS      func(vm *jsvm.VM) jsvm.Value
 	Denied  bool
 	Calls   []llm.InnerCall
 }

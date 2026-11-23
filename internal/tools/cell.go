@@ -448,7 +448,7 @@ func (c *cell) keepAnswer(o outcome) {
 }
 
 func rejects(res Result) bool {
-	return res.IsError && res.Value == nil
+	return res.IsError && res.Value == nil && res.JS == nil
 }
 
 func (c *cell) collect(o outcome) {
@@ -465,6 +465,9 @@ func (c *cell) collect(o outcome) {
 }
 
 func (c *cell) jsValue(res Result) jsvm.Value {
+	if res.JS != nil {
+		return res.JS(c.vm)
+	}
 	if res.Value != nil {
 		if v, err := c.vm.JSONParse(string(res.Value)); err == nil {
 			return v

@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/paul-nameless/qi/internal/jsvm"
 	"github.com/paul-nameless/qi/internal/llm"
 	"github.com/paul-nameless/qi/internal/proc"
 )
@@ -326,14 +327,21 @@ func (r bashRun) value() Result {
 	if r.interrupted {
 		return Result{Text: text, IsError: true, Summary: r.summary()}
 	}
-	v, err := json.Marshal(struct {
-		Output    string `json:"output"`
-		ExitCode  int    `json:"exit_code"`
-		TimedOut  bool   `json:"timed_out"`
-		Truncated bool   `json:"truncated"`
-	}{r.output, r.code, r.timedOut, r.truncated})
-	if err != nil {
-		return errResult("encode bash result: %v", err)
+	return Result{Text: text, JS: r.jsObject, IsError: r.code != 0, Summary: r.summary()}
+}
+
+func (r bashRun) jsObject(vm *jsvm.VM) jsvm.Value {
+	obj := vm.NewObject()
+	for _, p := range []struct {
+		key string
+		v   jsvm.Value
+	}{
+		{"output", jsvm.Str(r.output)},
+		{"exit_code", jsvm.Number(float64(r.code))},
+		{"timed_out", jsvm.Bool(r.timedOut)},
+		{"truncated", jsvm.Bool(r.truncated)},
+	} {
+		_ = vm.SetProp(obj, p.key, p.v)
 	}
-	return Result{Text: text, Value: v, IsError: r.code != 0, Summary: r.summary()}
+	return obj
 }

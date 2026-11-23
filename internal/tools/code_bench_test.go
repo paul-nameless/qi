@@ -2,7 +2,10 @@ package tools
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
+
+	"github.com/paul-nameless/qi/internal/jsvm"
 )
 
 func BenchmarkArgChecks(b *testing.B) {
@@ -18,6 +21,19 @@ func BenchmarkArgChecks(b *testing.B) {
 			if checkFields(c.t, c.f) != nil || checkRequired(c.t, c.f) != nil {
 				b.Fatal("unexpected error")
 			}
+		}
+	}
+}
+
+func BenchmarkBashValue(b *testing.B) {
+	vm := jsvm.New(jsvm.Options{MemoryLimit: 512 << 20})
+	c := &cell{vm: vm}
+	run := bashRun{output: strings.Repeat("line of build output with a path/to/file.go:123\n", 20000)}
+	b.ReportAllocs()
+	b.SetBytes(int64(len(run.output)))
+	for b.Loop() {
+		if v := c.jsValue(run.value()); v.IsUndefined() {
+			b.Fatal("undefined")
 		}
 	}
 }
