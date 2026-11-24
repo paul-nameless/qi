@@ -1,6 +1,7 @@
 package jsvm
 
 import (
+	"runtime"
 	"testing"
 )
 
@@ -13,7 +14,7 @@ var chargeCases = map[string]string{
 	"repeat multibyte": "try { 'abcdefgh'.repeat(6e7) } catch (e) { return e.message }",
 	"padStart":         "try { 'x'.padStart(1e7) } catch (e) { return e.message }",
 	"padEnd":           "try { 'a'.padEnd(4e6, '€') } catch (e) { return e.message }",
-	"toUpperCase":      "const s = 'ΐ'.repeat(1.5e6); try { s.toUpperCase() } catch (e) { return e.message }",
+	"toUpperCase":      "const s = 'ΐ'.repeat(1.2e6); try { s.toUpperCase() } catch (e) { return e.message }",
 	"stringify escape": "const s = '\\x01'.repeat(2e6); try { JSON.stringify(s) } catch (e) { return e.message }",
 	"encodeURI":        "const s = 'é'.repeat(2e6); try { encodeURIComponent(s) } catch (e) { return e.message }",
 	"split capture":    "const s = 'a'.repeat(3e6); try { s.split(/()/) } catch (e) { return e.message }",
@@ -73,6 +74,8 @@ func TestSizeCaps(t *testing.T) {
 		"try { 'x'.repeat(1e9) } catch (e) { return e.message }":            "Invalid string length",
 		"try { 'x'.padStart(1e9) } catch (e) { return e.message }":          "Invalid string length",
 		"try { 'a'.padEnd(2e8, '€') } catch (e) { return e.message }":       "Invalid string length",
+		"''.repeat(1e300).length":                                           "0",
+		"try { new RegExp('('.repeat(1e5)) } catch (e) { return e.name }":   "SyntaxError",
 	}
 	vm := New(Options{})
 	for src, want := range cases {
@@ -80,6 +83,38 @@ func TestSizeCaps(t *testing.T) {
 			t.Errorf("%s: got %q %v, want %s", src, ToString(v), err, want)
 		}
 	}
+}
+
+func TestMemoryLimitIsRangeError(t *testing.T) {
+	t.Parallel()
+	vm := chargedVM(chargeLimit)
+	defer vm.Close()
+	if v, err := vm.RunCell("cell.js", "try { new Array(1e6) } catch (e) { return e.name }"); err != nil || ToString(v) != "RangeError" {
+		t.Errorf("caught: %q %v", ToString(v), err)
+	}
+	_, err := vm.RunCell("cell.js", "const f = () => {}; for (let i = 0; i < 1e6; i++) queueMicrotask(f)")
+	if errName(err) != "RangeError" {
+		t.Errorf("uncaught with queued jobs: %v", err)
+	}
+	vm.AbandonPending()
+	if v, err := vm.RunCell("cell.js", "[1, 2].length"); err != nil || ToString(v) != "2" {
+		t.Errorf("after an uncaught limit: %q %v", ToString(v), err)
+	}
+}
+
+func TestNoFalseOutOfMemoryAtProductionLimit(t *testing.T) {
+	vm := New(Options{MemoryLimit: 512 << 20})
+	defer vm.Close()
+	cases := map[string]string{
+		"[parseInt('f'.repeat(1e6), 16), parseInt('0'.repeat(1e6) + 'ff', 16)].join()": "Infinity,255",
+		"try { 'x'.repeat(1e6).match(/x/g); return 'ok' } catch (e) { return e.name }": "ok",
+	}
+	for src, want := range cases {
+		if v, err := vm.RunCell("cell.js", src); err != nil || ToString(v) != want {
+			t.Errorf("%s: got %q %v, want %s", src, ToString(v), err, want)
+		}
+	}
+	forceGC()
 }
 
 func TestMemoryChargesUnderLimit(t *testing.T) {
@@ -108,6 +143,6 @@ func TestMemoryLimitProcessHeap(t *testing.T) {
 		}
 	}
 	vm.Close()
-	_ = ballast[0]
+	runtime.KeepAlive(ballast)
 	forceGC()
 }
