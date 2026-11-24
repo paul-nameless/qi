@@ -130,7 +130,10 @@ var sandbox = sync.OnceValue(findSandbox)
 func findSandbox() sandboxSpec {
 	if runtime.GOOS == "darwin" {
 		path, _ := exec.LookPath("sandbox-exec")
-		return sandboxSpec{path, path != ""}
+		if path == "" || exec.Command(path, "-p", `(version 1)(allow default)(deny file-write* (subpath "/qi-sandbox-probe"))`, "true").Run() != nil {
+			return sandboxSpec{}
+		}
+		return sandboxSpec{path, true}
 	}
 	path, err := exec.LookPath("bwrap")
 	if err != nil {

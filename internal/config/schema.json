@@ -87,12 +87,12 @@
       "type": "boolean"
     },
     "mode": {
-      "description": "Mode to start in, globally or per profile (/profile applies a profile's mode): yolo (no limits), project (files can only change inside the working directory plus a private temp dir and package caches, never git config or hooks; bash runs in an OS sandbox with the network on), or read-only. shift+tab cycles yolo, project, read-only. Default: yolo.",
+      "description": "Mode to start in, globally or per profile (/profile applies a profile's mode): yolo (no limits), project (files can only change inside the working directory plus a private temp dir and package caches, never git config or hooks; bash runs in an OS sandbox with the network on), or read-only. shift+tab cycles yolo, read-only, project. Default: yolo.",
       "type": "string",
       "enum": ["yolo", "project", "read-only"]
     },
     "project_writable": {
-      "description": "Extra directories that stay writable in project mode, e.g. [\"~/.gradle\"]. Always writable: the working directory, the repo's git dir (but not its config or hooks), a private temp dir per session (also TMPDIR and GOCACHE for bash), the Go module cache, ~/.npm and the cargo registry.",
+      "description": "Extra directories that stay writable in project mode, e.g. [\"~/.gradle\"]. Always writable: the working directory, the repo's git dir (but not its config or hooks), a private temp dir per session (TMPDIR for bash), a Go build cache per project (GOCACHE), the Go module cache, ~/.npm, the cargo registry and ~/.Trash.",
       "type": "array",
       "items": { "type": "string" }
     },

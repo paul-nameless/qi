@@ -121,7 +121,7 @@ func TestSubagentModeIsFixedAtLaunch(t *testing.T) {
 		r.toggleMode()
 		seen = append(seen, runner.Mode().String())
 	}
-	if strings.Join(seen, ",") != "project,read-only,yolo" {
+	if strings.Join(seen, ",") != "read-only,project,yolo" {
 		t.Errorf("shift+tab cycle as seen by subagents: %v", seen)
 	}
 }

@@ -17,7 +17,7 @@ A small coding agent for the terminal, built just because.
 - Code mode only: the model's one tool, `run`, executes JavaScript that calls `read`, `write`, `edit`, `bash`, `jobs`, `subagent`, `tool_search` and `mcp`, so a whole step (search, read, edit, test) is one call, with independent calls in parallel. The JavaScript engine is qi's own. See [Code mode](#code-mode). Long builds and servers run as background bash jobs; the agent gets a message when one exits instead of polling, and the line after each answer shows how many are still running (`2 bg jobs`).
 - Prompt caching, sessions saved as JSONL, automatic compaction when the context fills up and idle compaction.
 - MCP servers start on demand, with per-server limits on which tools the agent may use.
-- Three modes, cycled with shift+tab: yolo (default, no limits), project (files can only change inside the working directory, plus a private temp dir and package caches, and never `.git/config` or `.git/hooks`; bash runs in an OS sandbox with the network on, no unix sockets on macOS and no signals to other processes, handy for models you don't trust yet; your hooks and MCP servers still run outside it) and read-only (no edits, bash limited to an allowlist). `-project`, `-read-only` or `"mode": "yolo" | "project" | "read-only"` in the config (globally or per profile, e.g. project for a model you're trying out) pick the start mode; `/profile` applies a profile's mode.
+- Three modes, cycled with shift+tab: yolo (default, no limits), read-only (no edits, bash limited to an allowlist) and project (files can only change inside the working directory, plus a private temp dir, package caches, `~/.Trash` and `project_writable` dirs, and never `.git/config` or `.git/hooks`; bash runs in an OS sandbox with the network on and, on macOS, no unix sockets outside the project except DNS and ssh-agent). Project mode is for trying models you don't trust with your files yet: it limits where they can write, not what they read or send, so secrets on disk and your credentials (git push, gh, cloud CLIs) are still reachable, and your hooks and MCP servers run outside it. `-project`, `-read-only` or `"mode": "yolo" | "project" | "read-only"` in the config (globally or per profile, e.g. project for a model you're trying out) pick the start mode; `/profile` applies a profile's mode.
 
 ## Install
 
@@ -101,7 +101,7 @@ qi -q "list files" -json       # stream the session entries (meta, message, comp
 git diff | qi -q "review this"
 ```
 
-Keys: shift+tab cycles yolo, project and read-only, ctrl+g opens `$EDITOR`, ctrl+r searches past prompts, `@` picks files, alt+c copies the session id (on macOS the terminal must send Option as Alt), alt+enter adds a newline, esc or ctrl+c stops the agent. Text typed while it works is sent with the next tool results.
+Keys: shift+tab cycles yolo, read-only and project, ctrl+g opens `$EDITOR`, ctrl+r searches past prompts, `@` picks files, alt+c copies the session id (on macOS the terminal must send Option as Alt), alt+enter adds a newline, esc or ctrl+c stops the agent. Text typed while it works is sent with the next tool results.
 
 Images: local PNG, JPEG and GIF files whose paths appear in the final answer of a turn are drawn after it (up to 4) in terminals with the kitty graphics protocol (Ghostty, kitty), not inside tmux or screen. `"terminal_images": false` turns this off, globally or in a profile.
 

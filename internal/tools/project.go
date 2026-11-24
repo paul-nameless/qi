@@ -2,6 +2,8 @@ package tools
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,13 +15,12 @@ import (
 	"github.com/paul-nameless/qi/internal/config"
 )
 
-const projectRules = `(deny process-exec (literal "/usr/bin/osascript") (literal "/usr/bin/open") (literal "/bin/launchctl") (literal "/usr/bin/defaults") (literal "/usr/bin/security") (literal "/usr/bin/sudo") (literal "/usr/bin/shortcuts"))` +
-	`(deny network-outbound (remote unix-socket))(allow network-outbound (remote unix-socket (path-literal "/private/var/run/mDNSResponder")))` +
-	`(deny signal (target others))(allow signal (target children))`
+const projectExecRules = `(deny process-exec (literal "/usr/bin/osascript") (literal "/usr/bin/open") (literal "/bin/launchctl") (literal "/usr/bin/defaults") (literal "/usr/bin/security") (literal "/usr/bin/sudo") (literal "/usr/bin/shortcuts"))`
 
 type projectSpec struct {
 	writable []string
 	guarded  []string
+	sockets  []string
 }
 
 func projectProfile(spec projectSpec) string {
@@ -36,7 +37,16 @@ func projectProfile(spec projectSpec) string {
 		}
 		b.WriteString(")")
 	}
-	return b.String() + projectRules
+	b.WriteString(projectExecRules)
+	b.WriteString(`(deny network-outbound (remote unix-socket))(allow network-outbound (remote unix-socket (path-literal "/private/var/run/mDNSResponder"))`)
+	for i := range spec.writable {
+		fmt.Fprintf(&b, ` (remote unix-socket (subpath (param "W%d")))`, i)
+	}
+	for i := range spec.sockets {
+		fmt.Fprintf(&b, ` (remote unix-socket (path-literal (param "S%d")))`, i)
+	}
+	b.WriteString(")")
+	return b.String()
 }
 
 func projectSandbox(ctx context.Context, command string, spec projectSpec) *exec.Cmd {
@@ -51,6 +61,9 @@ func projectSandbox(ctx context.Context, command string, spec projectSpec) *exec
 		}
 		for i, g := range spec.guarded {
 			args = append(args, "-D", fmt.Sprintf("G%d=%s", i, g))
+		}
+		for i, s := range spec.sockets {
+			args = append(args, "-D", fmt.Sprintf("S%d=%s", i, s))
 		}
 		args = append(args, "-p", projectProfile(spec), "bash", "-c", command)
 		return exec.CommandContext(ctx, sb.path, args...)
@@ -113,10 +126,22 @@ func (e *Env) gitDir() string {
 	return strings.TrimSpace(string(out))
 }
 
+func projectGoCache(cwd string) string {
+	base, err := os.UserCacheDir()
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(cwd))
+	return filepath.Join(base, "qi", "gocache", hex.EncodeToString(sum[:8]))
+}
+
 func (e *Env) projectSpec() projectSpec {
-	roots := append([]string{e.Cwd}, cacheDirs()...)
+	roots := append([]string{e.Cwd, filepath.Join(config.Home(), ".Trash")}, cacheDirs()...)
 	if tmp := e.scratch(); tmp != "" {
 		roots = append(roots, tmp)
+	}
+	if gc := projectGoCache(e.Cwd); gc != "" {
+		roots = append(roots, gc)
 	}
 	for _, p := range e.Writable {
 		roots = append(roots, config.ExpandHome(p))
@@ -127,6 +152,9 @@ func (e *Env) projectSpec() projectSpec {
 		gitDirs = append(gitDirs, g)
 	}
 	var spec projectSpec
+	if sock := os.Getenv("SSH_AUTH_SOCK"); sock != "" {
+		spec.sockets = append(spec.sockets, realPath(sock))
+	}
 	for _, r := range roots {
 		spec.writable = append(spec.writable, realPath(r))
 	}
@@ -138,11 +166,14 @@ func (e *Env) projectSpec() projectSpec {
 }
 
 func (e *Env) projectEnv() []string {
-	tmp := e.scratch()
-	if tmp == "" {
-		return []string{"TMUX="}
+	env := []string{"TMUX="}
+	if tmp := e.scratch(); tmp != "" {
+		env = append(env, "TMPDIR="+tmp)
 	}
-	return []string{"TMUX=", "TMPDIR=" + tmp, "GOCACHE=" + filepath.Join(tmp, "gocache")}
+	if gc := projectGoCache(e.Cwd); gc != "" {
+		env = append(env, "GOCACHE="+gc)
+	}
+	return env
 }
 
 const maxLinks = 40

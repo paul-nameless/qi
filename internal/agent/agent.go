@@ -108,16 +108,16 @@ func (m Mode) String() string {
 func (m Mode) Next() Mode {
 	switch m {
 	case ModeYolo:
-		return ModeProject
-	case ModeProject:
 		return ModeReadOnly
+	case ModeReadOnly:
+		return ModeProject
 	}
 	return ModeYolo
 }
 
 const (
 	readOnlyNote   = "<mode>Read-only mode is on: write and edit are refused, and bash only runs allowlisted read-only commands.</mode>"
-	projectNote    = "<mode>Project mode is on: write, edit and bash can only change files inside the working directory (plus temp and build caches), not .git/config or .git/hooks; bash runs sandboxed with the network on.</mode>"
+	projectNote    = "<mode>Project mode is on: write, edit and bash can only change files inside the working directory (plus temp and build caches), not .git/config or .git/hooks; bash runs sandboxed with the network on and TMPDIR set to a private temp dir.</mode>"
 	yoloNote       = "<mode>Yolo mode is on: all tools are available with no limits.</mode>"
 	legacyYoloNote = "<mode>Read-only mode is off: all tools are available again.</mode>"
 )

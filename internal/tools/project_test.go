@@ -73,8 +73,8 @@ func TestProjectModeSandboxesBash(t *testing.T) {
 		in, _ := json.Marshal(bashArgs{Command: cmd})
 		return runBash(context.Background(), env, in, nil).Text
 	}
-	if out := run(`echo in > inside.txt && echo t > "$TMPDIR/t.txt" && echo "$GOCACHE"`); !strings.HasPrefix(strings.TrimSpace(out), env.scratch()) {
-		t.Errorf("TMPDIR and GOCACHE should be the session scratch dir: %s", out)
+	if out := run(`echo in > inside.txt && echo t > "$TMPDIR/t.txt" && echo "$TMPDIR|$GOCACHE"`); !strings.HasPrefix(strings.TrimSpace(out), env.scratch()+"|") || !strings.HasSuffix(strings.TrimSpace(out), projectGoCache(proj)) {
+		t.Errorf("TMPDIR should be the session scratch dir and GOCACHE the project's own: %s", out)
 	}
 	for _, p := range []string{filepath.Join(proj, "inside.txt"), filepath.Join(env.scratch(), "t.txt")} {
 		if _, err := os.Stat(p); err != nil {
