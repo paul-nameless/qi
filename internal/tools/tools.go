@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/paul-nameless/qi/internal/config"
@@ -73,6 +74,8 @@ type Env struct {
 	PreHook     Hook
 	PostHook    PostHook
 	files       fileTimes
+	gitOnce     sync.Once
+	git         []string
 }
 
 func (e *Env) readOnly() bool {

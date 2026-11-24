@@ -252,6 +252,9 @@ func runBash(ctx context.Context, env *Env, in json.RawMessage, progress func(st
 			return deniedResult("read-only mode: %v", err)
 		}
 	}
+	if env.project() && !HasSandbox() {
+		return deniedResult("project mode: bash needs an OS sandbox and none is usable here (on Linux install bubblewrap); write and edit still work, or switch the mode with shift+tab")
+	}
 	if a.Background || a.Daemon {
 		return startJob(env, a)
 	}

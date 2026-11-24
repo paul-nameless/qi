@@ -22,6 +22,7 @@ func projectEnv(t *testing.T) (env *Env, proj, outside string) {
 	}
 	os.WriteFile(filepath.Join(proj, ".git", "config"), []byte("[core]\n"), 0o600)
 	env = &Env{Cwd: proj, Project: func() bool { return true }, Scratch: func() string { return scratch }, SpillDir: t.TempDir()}
+	t.Cleanup(func() { os.RemoveAll(projectGoCache(proj)) })
 	return env, proj, outside
 }
 
@@ -42,6 +43,9 @@ func TestProjectModeWriteAndEditStayInside(t *testing.T) {
 		in("dangle", "write", `{"file_path":"dangle","content":"hi"}`),
 		in("gitconfig", "write", `{"file_path":".git/config","content":"[core]\nfsmonitor = touch /tmp/pwned\n"}`),
 		in("githook", "write", `{"file_path":".git/hooks/pre-commit","content":"#!/bin/sh\n"}`),
+		in("gitcase", "write", `{"file_path":".GIT/CONFIG","content":"[core]\nfsmonitor = x\n"}`),
+		in("commondir", "write", `{"file_path":".git/commondir","content":"../evil"}`),
+		in("dotgit", "write", `{"file_path":".git","content":"gitdir: ../evil"}`),
 		in("edit", "edit", `{"file_path":"`+filepath.Join(outside, "o.txt")+`","old_string":"a","new_string":"b"}`),
 		in("tmp", "write", `{"file_path":"`+filepath.Join(env.scratch(), "t.txt")+`","content":"hi"}`),
 	}, nopUI{})
@@ -143,6 +147,7 @@ func TestProjectModeGitWorktree(t *testing.T) {
 	git(repo, "worktree", "add", "-q", "-b", "w", wt)
 	scratch, _ := filepath.EvalSymlinks(t.TempDir())
 	env := &Env{Cwd: wt, Project: func() bool { return true }, Scratch: func() string { return scratch }, SpillDir: t.TempDir()}
+	t.Cleanup(func() { os.RemoveAll(projectGoCache(wt)) })
 	in, _ := json.Marshal(bashArgs{Command: "echo b > b && git add b && git -c user.email=t@t -c user.name=t commit -qm b && git log --oneline | wc -l; echo x >> " + filepath.Join(repo, ".git", "config")})
 	out := runBash(context.Background(), env, in, nil).Text
 	if !strings.HasPrefix(strings.TrimSpace(out), "2") {
@@ -150,5 +155,32 @@ func TestProjectModeGitWorktree(t *testing.T) {
 	}
 	if data, _ := os.ReadFile(filepath.Join(repo, ".git", "config")); strings.Contains(string(data), "x\n") {
 		t.Errorf("the main repo's .git/config was changed from a worktree: %s", out)
+	}
+}
+
+func TestProjectModeGitCannotBeRedirected(t *testing.T) {
+	if !HasSandbox() {
+		t.Skip("no OS sandbox")
+	}
+	env, proj, outside := projectEnv(t)
+	run := func(cmd string) string {
+		in, _ := json.Marshal(bashArgs{Command: cmd})
+		return runBash(context.Background(), env, in, nil).Text
+	}
+	evil := filepath.Join(outside, "evil")
+	out := run("mkdir -p " + evil + " 2>&1; echo ../evil > .git/commondir; echo x > .git/config.worktree; mv .git .git2; echo 'gitdir: .git2' > .git.tmp && mv .git.tmp .git; ls -a")
+	for _, name := range []string{"commondir", "config.worktree"} {
+		if _, err := os.Stat(filepath.Join(proj, ".git", name)); err == nil {
+			t.Errorf(".git/%s was written: %s", name, out)
+		}
+	}
+	if fi, err := os.Stat(filepath.Join(proj, ".git")); err != nil || !fi.IsDir() {
+		t.Errorf(".git was renamed or replaced: %v %s", err, out)
+	}
+	if out := run(`go env GOCACHE 2>/dev/null || echo "$GOCACHE"`); !strings.Contains(out, projectGoCache(proj)) {
+		t.Errorf("GOCACHE: %s", out)
+	}
+	if _, err := os.Stat(projectGoCache(proj)); err != nil {
+		t.Errorf("the per-project Go cache should be created by qi: %v", err)
 	}
 }

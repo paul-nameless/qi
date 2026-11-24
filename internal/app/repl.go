@@ -79,7 +79,7 @@ func broadProject(cwd string) bool {
 const (
 	noSandboxNote        = "no usable OS sandbox (bubblewrap missing, or user namespaces blocked): read-only relies on the command allowlist only"
 	noNetworkNote        = "the OS sandbox can't isolate the network here (bwrap --unshare-net failed): read-only commands can still reach it"
-	noProjectSandboxNote = "no usable OS sandbox (bubblewrap missing, or user namespaces blocked): project mode only limits write and edit, bash can still write anywhere"
+	noProjectSandboxNote = "no usable OS sandbox (bubblewrap missing, user namespaces blocked, or qi already sandboxed): project mode refuses bash, write and edit stay limited to the project"
 )
 
 func warnNoSandbox(display notifier, m agent.Mode) {
@@ -536,8 +536,8 @@ func (r *repl) switchProfile(name string) error {
 	if err := r.apply(cfg, cfg.Provider); err != nil {
 		return err
 	}
-	if pm := cfg.ProfileMode(); pm != "" {
-		m := agent.ParseMode(pm)
+	if cfg.ProfileMode() != "" {
+		m := agent.ParseMode(cfg.StartMode())
 		r.agent.SetMode(m)
 		r.warnMode(m)
 	}
