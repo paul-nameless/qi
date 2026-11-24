@@ -320,7 +320,7 @@ func (e *Env) outDir() (string, error) {
 	if s == "" {
 		return "", fmt.Errorf("no private scratch dir under %s", os.TempDir())
 	}
-	dir := filepath.Join(s, "out")
+	dir := filepath.Join(s, ".qi-out")
 	if err := os.Mkdir(dir, 0o700); err != nil && !errors.Is(err, fs.ErrExist) {
 		return "", err
 	}

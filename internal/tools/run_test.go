@@ -736,7 +736,7 @@ func TestCellFailedCallsNote(t *testing.T) {
 	k := newCellKit(t)
 	k.file("a.go", "package a\n")
 	res := k.cell(`edit("a.go", "x", "y"); await bash("sleep 0.3"); "done"`)
-	if res.IsError || !strings.HasPrefix(res.Text, "done\nFailed calls:\n✗ edit a.go: old_string not found") || strings.Contains(res.Text, "still running") {
+	if res.IsError || !strings.HasPrefix(res.Text, "done\nFailed calls:\n✗ edit a.go: old not found") || strings.Contains(res.Text, "still running") {
 		t.Errorf("unawaited failure: %+v", res)
 	}
 	res = k.cell(`for (let i = 0; i < 12; i++) { try { await read("missing" + i) } catch {} } "ok"`)

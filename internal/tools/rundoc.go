@@ -7,7 +7,7 @@ import (
 
 var runIntro = fmt.Sprintf(`Run JavaScript in a persistent VM. This is your only tool: reading, searching, editing, running commands, MCP and subagents all happen through the async functions below. Variables and functions stay defined between calls, so keep large results in variables and print only what you need. Top-level await and return work. The result is everything console.log prints plus the value of the last expression or of return (a string as it is, other values as JSON), cut to head and tail past %d lines or %d KB with the full text saved to a file.
 
-Functions. All are async: call them with await. Each call goes through the user's hooks and permission checks and shows in their terminal. A failure throws ToolError (message; denied is true when a hook or read-only mode refused the call). Paths are relative to the working directory.
+Functions. All are async: call them with await. Each call goes through the user's hooks and permission checks and shows in their terminal. A failure throws ToolError (message; denied is true when a hook or the mode refused the call). Paths are relative to the working directory.
 `, cellOutLines, cellOutBytes>>10)
 
 var runRules = fmt.Sprintf(`

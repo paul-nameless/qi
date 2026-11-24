@@ -190,10 +190,10 @@ func TestRenderRunCell(t *testing.T) {
 	use := runCall("c1", "const s = await read(\"a.txt\")\nawait edit(\"a.txt\", \"x\", \"y\")\nreturn s")
 	res := llm.Message{Role: llm.RoleUser, Blocks: []llm.Block{{Type: llm.BlockToolResult, ToolUseID: "c1", Text: "x", Calls: []llm.InnerCall{
 		{Tool: "read", Label: "read a.txt", OK: true, Summary: "1 lines"},
-		{Tool: "edit", Label: "edit a.txt", Summary: "old_string not found", Input: json.RawMessage(`"{\"file_path\":…"`)},
+		{Tool: "edit", Label: "edit a.txt", Summary: "old not found", Input: json.RawMessage(`"{\"file_path\":…"`)},
 	}}}}
 	got := renderTranscript([]llm.Message{use, res}, 0, 0)
-	want := "· run\n    const s = await read(\"a.txt\")\n    await edit(\"a.txt\", \"x\", \"y\")\n    return s\n  ⎿ x\n    ✓ read a.txt · 1 lines\n    ✗ edit a.txt · old_string not found\n"
+	want := "· run\n    const s = await read(\"a.txt\")\n    await edit(\"a.txt\", \"x\", \"y\")\n    return s\n  ⎿ x\n    ✓ read a.txt · 1 lines\n    ✗ edit a.txt · old not found\n"
 	if got != want {
 		t.Errorf("got\n%s\nwant\n%s", got, want)
 	}

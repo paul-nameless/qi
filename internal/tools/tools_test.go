@@ -341,7 +341,7 @@ func TestSpillGoesToTheSessionScratch(t *testing.T) {
 	scratch := t.TempDir()
 	env := &Env{Scratch: func() string { return scratch }}
 	path, err := env.spill("big output")
-	if err != nil || !strings.HasPrefix(path, filepath.Join(scratch, "out")+string(filepath.Separator)) {
+	if err != nil || !strings.HasPrefix(path, filepath.Join(scratch, ".qi-out")+string(filepath.Separator)) {
 		t.Errorf("spill went to %q: %v", path, err)
 	}
 	if _, err := (&Env{}).spill("x"); err == nil {
@@ -349,12 +349,12 @@ func TestSpillGoesToTheSessionScratch(t *testing.T) {
 	}
 	other := t.TempDir()
 	link := t.TempDir()
-	os.Symlink(other, filepath.Join(link, "out"))
+	os.Symlink(other, filepath.Join(link, ".qi-out"))
 	if _, err := (&Env{Scratch: func() string { return link }}).spill("x"); err == nil {
 		t.Error("spill followed an out symlink")
 	}
 	open := t.TempDir()
-	os.Mkdir(filepath.Join(open, "out"), 0o755)
+	os.Mkdir(filepath.Join(open, ".qi-out"), 0o755)
 	if _, err := (&Env{Scratch: func() string { return open }}).spill("x"); err == nil {
 		t.Error("spill used an out dir others can read")
 	}

@@ -372,10 +372,10 @@ var lineNumPrefix = regexp.MustCompile(`^\s*\d+(\t|\| ?|: )`)
 
 func applyEdit(content, oldText, newText string, all bool) (string, int, error) {
 	if oldText == "" {
-		return "", 0, errors.New("old_string is empty; use write to create a file")
+		return "", 0, errors.New("old is empty; use write to create a file")
 	}
 	if oldText == newText {
-		return "", 0, errors.New("old_string and new_string are identical")
+		return "", 0, errors.New("old and new are identical")
 	}
 	crlf := strings.Contains(content, "\r\n")
 	if crlf && !strings.Contains(oldText, "\r\n") {
@@ -395,9 +395,9 @@ func applyEdit(content, oldText, newText string, all bool) (string, int, error) 
 	case n == 1:
 		return out, 1, nil
 	case n > 1:
-		return "", 0, fmt.Errorf("old_string matches %d places when ignoring whitespace; include more context", n)
+		return "", 0, fmt.Errorf("old matches %d places when ignoring whitespace; include more context", n)
 	}
-	return "", 0, errors.New("old_string not found in file; read the file again and copy the text exactly")
+	return "", 0, errors.New("old not found in file; read the file again and copy the text exactly")
 }
 
 func replaceExact(content, oldText, newText string, all bool) (string, int, error) {
@@ -410,7 +410,7 @@ func replaceExact(content, oldText, newText string, all bool) (string, int, erro
 	case all:
 		return strings.ReplaceAll(content, oldText, newText), n, nil
 	default:
-		return "", 0, fmt.Errorf("old_string matches %d places; include more context or set replace_all", n)
+		return "", 0, fmt.Errorf("old matches %d places; include more context or pass {all: true}", n)
 	}
 }
 

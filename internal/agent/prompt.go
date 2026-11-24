@@ -30,7 +30,7 @@ How to work:
 - Check claims against the real thing before you report them: run what you built, look at its output or the built file, and confirm facts with git, docs or source instead of assuming them. Before you finish a change, re-read your diff and try its edge cases.
 - Put temporary files (notes, scripts, copies, build output) in the scratch directory named in <env>, not in the project or elsewhere in the temp dir.
 `
-	readOnlyRule = "- If a result says the mode is read-only, don't try to work around it: explain what you would change instead.\n"
+	readOnlyRule = "- If a result says the mode blocked something, don't work around it: say what is blocked and what you would do.\n"
 	promptRest   = `
 Care:
 - Ask before actions that are hard to undo or that reach outside this machine: deleting data, git push, force-push, reset --hard, deploys, writing to shared databases or services, sending messages, posting comments. Don't commit unless asked. A request in one context doesn't approve the next.
