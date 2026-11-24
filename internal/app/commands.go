@@ -44,7 +44,7 @@ func init() {
 		{name: "help", help: "this help", short: "show commands", run: func(r *repl, _ string) { r.display.Info(helpText()) }},
 		{name: "keys", help: "key bindings", short: "show key bindings", run: func(r *repl, _ string) { r.display.Info(keysText) }},
 		{name: "status", help: "model, effort, profile, mode, context, session id and file", short: "show the current session status", run: func(r *repl, _ string) { r.display.Info(r.status()) }},
-		{name: "config", args: "[setting]", help: "config file, external tools and settings; switch a setting for this session (picker without a name)", short: "show the config and switch settings", run: (*repl).configCmd},
+		{name: "config", args: "[setting]", help: "config file, external tools and settings; switch a setting and save it (picker without a name)", short: "show the config and switch settings", run: (*repl).configCmd},
 		{name: "clear", help: "start a new session", short: "start a new session", run: func(r *repl, _ string) { r.clear() }},
 		{name: "context", help: "show what takes space in the context", short: "show what takes space in the context", run: func(r *repl, _ string) { r.display.Info(r.agent.ContextReport()) }},
 		{name: "reload", help: "re-read skills, commands and CLAUDE.md files (rebuilds the cached prompt)", short: "re-read skills, commands and CLAUDE.md files", run: func(r *repl, _ string) { r.reload() }},

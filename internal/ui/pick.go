@@ -191,7 +191,7 @@ func fuzzy(query, text string) (int, []int, bool) {
 func (st *pickState) frame(p *Printer, width, height int) Frame {
 	list := max(min(len(st.found), height*2/5), min(len(st.found), 3))
 	st.top = scrollTop(st.top, st.cur, len(st.found), list)
-	head := st.prompt + string(st.query)
+	head := strings.Map(printable, st.prompt+string(st.query))
 	rows := []string{truncateVisible(head, width-1)}
 	rows = append(rows, p.Color(Dim, "  "+strconv.Itoa(len(st.found))+"/"+strconv.Itoa(len(st.items))))
 	for i := st.top; i < st.top+list && i < len(st.found); i++ {
@@ -208,6 +208,7 @@ func (st *pickState) row(p *Printer, m match, current bool) string {
 	}
 	var b strings.Builder
 	for n, r := range []rune(it.Name) {
+		r = printable(r)
 		if !slices.Contains(m.pos, n) {
 			b.WriteRune(r)
 			continue
@@ -221,5 +222,12 @@ func (st *pickState) row(p *Printer, m match, current bool) string {
 	if it.Desc == "" {
 		return mark + name
 	}
-	return mark + name + "  " + p.Color(Dim, Sanitize(it.Desc))
+	return mark + name + "  " + p.Color(Dim, strings.Join(strings.Fields(strings.Map(printable, it.Desc)), " "))
+}
+
+func printable(r rune) rune {
+	if unicode.IsControl(r) {
+		return ' '
+	}
+	return r
 }

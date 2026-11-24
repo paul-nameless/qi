@@ -84,6 +84,9 @@ func TestExpandTool(t *testing.T) {
 	if strings.Join(env, "|") != "QI_MSG={prompt}|QI_PROMPT=a b|QI_TITLE=it's" {
 		t.Errorf("env %q", env)
 	}
+	if got, _ := expandTool("fd | {picker}", "builtin", map[string]string{"prompt": "@ "}); got != `fd | "$QI_BIN" pick -p "${QI_PROMPT}"` {
+		t.Errorf("a pipeline into the builtin picker runs qi pick: %s", got)
+	}
 	evil := "`touch x` $(touch x) \" ' done"
 	out, err := runQuiet(`printf '%s|' {msg} "q={msg}" "$(printf %s {msg})"; sh -c 'printf "%s|" {msg}'`, "", map[string]string{"msg": evil}, "")
 	if err != nil || out != evil+"|q="+evil+"|"+evil+"|"+evil+"|" {

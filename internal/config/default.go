@@ -16,6 +16,9 @@ func SetValue(path, profile, key string, value any) (inProfile bool, err error) 
 		path = DefaultPath()
 	}
 	path = ExpandHome(path)
+	if real, err := filepath.EvalSymlinks(path); err == nil {
+		path = real
+	}
 	data, err := os.ReadFile(path)
 	perm := fs.FileMode(0o600)
 	switch {

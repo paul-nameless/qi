@@ -2,12 +2,14 @@ package app
 
 import (
 	"bufio"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/paul-nameless/qi/internal/ui"
 )
@@ -22,10 +24,17 @@ func pickMain(args []string, in io.Reader, out io.Writer) int {
 	desc := fs.Bool("d", false, "search descriptions too")
 	files := fs.Bool("f", false, "browse files from the current directory instead of reading stdin")
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
 		return 2
 	}
 	var lines []string
 	if !*files {
+		if f, ok := in.(*os.File); ok && ui.IsTerminal(f) {
+			fs.Usage()
+			return 2
+		}
 		lines = readLines(in)
 	}
 	ed, done, err := ttyEditor()
@@ -49,11 +58,13 @@ func ttyEditor() (*ui.Editor, func(), error) {
 	}
 	t, err := ui.OpenTerminalOn(tty, tty)
 	if err != nil {
+		tty.Close()
 		return nil, nil, err
 	}
 	ed := ui.NewEditor(t, ui.NewPrinter(tty), "")
 	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT)
+	signal.Ignore(syscall.SIGTSTP)
 	go func() {
 		for range sig {
 			select {
@@ -64,6 +75,7 @@ func ttyEditor() (*ui.Editor, func(), error) {
 	}()
 	return ed, func() {
 		signal.Stop(sig)
+		signal.Reset(syscall.SIGTSTP)
 		t.Restore()
 	}, nil
 }

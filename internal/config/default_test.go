@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -57,5 +58,26 @@ func TestSetInWritesWhereTheKeyIsDefined(t *testing.T) {
 		if err != nil || string(got) != c.want || inProfile != c.inProfile {
 			t.Errorf("%s/%s: inProfile=%v err=%v\n%s", c.profile, c.key, inProfile, err, got)
 		}
+	}
+}
+
+func TestSetValueKeepsASymlinkedConfig(t *testing.T) {
+	dir := t.TempDir()
+	real := filepath.Join(dir, "real.json")
+	link := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(real, []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SetValue(link, "", "run_code", false); err != nil {
+		t.Fatal(err)
+	}
+	if fi, err := os.Lstat(link); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("the link was replaced: %v", err)
+	}
+	if data, _ := os.ReadFile(real); !strings.Contains(string(data), `"run_code": false`) {
+		t.Errorf("real file: %s", data)
 	}
 }

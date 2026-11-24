@@ -147,6 +147,12 @@ func TestPickFrame(t *testing.T) {
 	if strings.Join(f.Rows, "\n") != strings.Join(want, "\n") || f.Row != 0 || f.Col != 2 {
 		t.Errorf("frame %q at %d,%d", f.Rows, f.Row, f.Col)
 	}
+	st.show(&PickList{Prompt: "/", Items: []PickItem{{Name: "x\x1b]52;c;aGk=\ay", Desc: "first line\n\tsecond"}}})
+	st.query = nil
+	st.filter()
+	if row := st.frame(p, 60, 20).Rows[2]; row != "▌ x ]52;c;aGk= y  first line second" {
+		t.Errorf("control characters must not reach the terminal: %q", row)
+	}
 	st.show(&PickList{Prompt: "/", Items: items("a", "b", "c", "d", "e", "f", "g", "h", "i", "j")})
 	st.query = nil
 	st.filter()

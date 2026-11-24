@@ -114,7 +114,7 @@ func newFlagSet(c *cliArgs, out io.Writer) *flag.FlagSet {
 
 func usage(fs *flag.FlagSet) {
 	out := fs.Output()
-	fmt.Fprintln(out, "Usage: qi [flags]")
+	fmt.Fprintln(out, "Usage: qi [flags]\n       qi pick [-p prompt] [-d] [-f]   pick a line from stdin (qi pick -h)")
 	var rows [][2]string
 	width := 0
 	fs.VisitAll(func(f *flag.Flag) {

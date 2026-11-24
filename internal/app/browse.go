@@ -15,8 +15,8 @@ func browseFiles(ed *ui.Editor, cwd string) (string, bool) {
 	list := func() *ui.PickList {
 		items = readDir(dir)
 		prompt := "@ "
-		if rel := relPath(cwd, dir); rel != cwd {
-			prompt += rel + "/"
+		if rel := relPath(cwd, dir); rel != "." {
+			prompt += strings.TrimSuffix(rel, "/") + "/"
 		}
 		return &ui.PickList{Prompt: prompt, Items: items}
 	}

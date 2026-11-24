@@ -2,7 +2,7 @@
 
 A small coding agent for the terminal, built just because.
 
-![qi fixing a failing test, then the fzf command menu and /context](demo.gif)
+![qi fixing a failing test, then the command menu and /context](demo.gif)
 
 ## Philosophy
 
@@ -126,7 +126,7 @@ Each tool is a shell command in the config (`picker`, `file_picker`, `history_pi
 
 ```json
 {
-  "picker": "fzf --height=40% --reverse --delimiter='\t' --nth=1 --prompt={prompt}",
+  "picker": "fzf --height=40% --reverse --no-multi --bind=ctrl-z:ignore --delimiter='\t' --nth=1 --prompt={prompt}",
   "file_picker": "yazi --chooser-file={file}",
   "notify_cmd": "off"
 }

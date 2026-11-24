@@ -81,7 +81,7 @@ func (r *repl) toggleSetting(key string) error {
 	inProfile, err := config.SetValue(r.opts.configPath, cfg.Profile, s.key, v)
 	switch {
 	case err != nil:
-		r.display.Info(fmt.Sprintf("%s: %s for this session", s.key, s.value(v)))
+		r.display.Info(fmt.Sprintf("%s: %s (not saved)", s.key, s.value(v)))
 		return fmt.Errorf("not saved: %w", err)
 	case inProfile:
 		r.display.Info(fmt.Sprintf("%s: %s (saved in profile %q)", s.key, s.value(v), cfg.Profile))
