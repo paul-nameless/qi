@@ -23,10 +23,7 @@ type CodeSpec struct {
 
 type ctxKey int
 
-const (
-	cellKey ctxKey = iota
-	callKey
-)
+const callKey ctxKey = 0
 
 type callInfo struct {
 	id string
@@ -42,15 +39,6 @@ func callFrom(ctx context.Context) (string, UI) {
 		return c.id, c.ui
 	}
 	return "run", silentUI{}
-}
-
-func withCell(ctx context.Context) context.Context {
-	return context.WithValue(ctx, cellKey, true)
-}
-
-func inCell(ctx context.Context) bool {
-	v, _ := ctx.Value(cellKey).(bool)
-	return v
 }
 
 type silentUI struct{}

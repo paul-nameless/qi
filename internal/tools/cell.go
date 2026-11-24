@@ -102,7 +102,7 @@ func newCell(ctx context.Context, r *runner, env *Env, progress func(string), ti
 		pending:  map[int]*pendingCall{},
 		sem:      make(chan struct{}, cellParallel),
 	}
-	c.ctx, c.cancel = context.WithCancel(withCell(ctx))
+	c.ctx, c.cancel = context.WithCancel(ctx)
 	c.clock = newClock(timeout, func() {
 		c.timedOut.Store(true)
 		c.cancel()

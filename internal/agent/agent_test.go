@@ -514,7 +514,7 @@ func TestAccessorsDuringTurn(t *testing.T) {
 }
 
 func TestTurnStatsLine(t *testing.T) {
-	s := TurnStats{Requests: 1, Usage: llm.Usage{Input: 8300, CacheRead: 4731, Output: 80}}
+	s := TurnStats{Requests: 1}
 	done := time.Date(2026, 11, 15, 21, 11, 5, 0, time.Local)
 	if got := s.String(usageOf(8400, 1000000, true), 11400*time.Millisecond, done); got != "8.4k/1M (0.8%) · cooked for 11s · done 21:11" {
 		t.Errorf("stats %q", got)

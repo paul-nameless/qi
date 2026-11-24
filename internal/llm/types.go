@@ -118,14 +118,6 @@ type Usage struct {
 	Cost       float64 `json:"cost,omitempty"`
 }
 
-func (u *Usage) Add(o Usage) {
-	u.Input += o.Input
-	u.Output += o.Output
-	u.CacheRead += o.CacheRead
-	u.CacheWrite += o.CacheWrite
-	u.Cost += o.Cost
-}
-
 const (
 	DeltaText      = "text"
 	DeltaReasoning = "reasoning"

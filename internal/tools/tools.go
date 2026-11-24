@@ -292,9 +292,6 @@ func (r *Registry) invokeSplit(ctx context.Context, env *Env, t *Tool, call llm.
 		}
 	}
 	res = t.Run(ctx, env, call.Input, func(s string) { ui.ToolProgress(call.ID, s) })
-	if ctx.Err() != nil && !res.IsError && !inCell(ctx) {
-		res.Text += "\n[interrupted by user]"
-	}
 	if env.PostHook != nil && t.Inner == nil {
 		extra = env.PostHook(ctx, t.HookCall(call), res)
 	}

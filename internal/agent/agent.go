@@ -404,7 +404,6 @@ func (a *Agent) onDelta(d llm.Delta, showReasoning bool) bool {
 
 type TurnStats struct {
 	Requests int
-	Usage    llm.Usage
 	Jobs     int
 }
 
@@ -523,7 +522,6 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 			return "", stats, err
 		}
 		stats.Requests++
-		stats.Usage.Add(usage)
 		a.recordReply(msg, usage)
 		calls := msg.ToolUses()
 		if a.headless && len(calls) > 0 && strings.TrimSpace(msg.Text()) != "" {
