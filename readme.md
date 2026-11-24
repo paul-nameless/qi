@@ -14,7 +14,7 @@ A small coding agent for the terminal, built just because.
 ## What it does
 
 - Talks to any OpenAI-compatible API, and Anthropic's native API.
-- Code mode: the model's one tool, `run`, executes JavaScript that calls `read`, `write`, `edit`, `bash`, `jobs` and `subagent`, so a whole step (search, read, edit, test) is one call. See [Code mode](#code-mode). Long builds and servers run as background bash jobs; the agent gets a message when one exits instead of polling, and the line after each answer shows how many are still running (`2 bg jobs`).
+- Code mode only: the model's one tool, `run`, executes JavaScript that calls `read`, `write`, `edit`, `bash`, `jobs`, `subagent`, `tool_search` and `mcp`, so a whole step (search, read, edit, test) is one call, with independent calls in parallel. The JavaScript engine is qi's own. See [Code mode](#code-mode). Long builds and servers run as background bash jobs; the agent gets a message when one exits instead of polling, and the line after each answer shows how many are still running (`2 bg jobs`).
 - Prompt caching, sessions saved as JSONL, automatic compaction when the context fills up and idle compaction.
 - MCP servers start on demand, with per-server limits on which tools the agent may use.
 - Two modes, toggled with shift+tab: yolo (default) and read-only (no edits, bash limited to an allowlist).
@@ -86,7 +86,7 @@ The agent finds MCP tools with `tool_search()` and calls them with `mcp()`, so t
 
 ### Code mode
 
-The model gets a single tool, `run`, which executes JavaScript in an in-process VM. The functions `read`, `write`, `edit`, `bash`, `jobs`, `subagent`, `tool_search` and `mcp` are async JavaScript functions there; each call goes through read-only mode, the stale-file check and your PreToolUse/PostToolUse hooks under Claude Code's tool names (`Read`, `Write`, `Edit`, `Bash`, `Agent`/`Task`, `mcp__server__tool`; `jobs` and `tool_search` under their own), and shows as its own line under the `run` line. Variables stay defined between `run` calls; this state lives in memory only and is dropped on `/clear`, on resume and at exit (not on compaction). `run` itself fires no hooks, so a `*` matcher sees each call once.
+The model gets a single tool, `run`, which executes JavaScript in an in-process VM. The engine is qi's own (`internal/jsvm`): a subset of JavaScript in plain Go with no dependencies. Classes, generators, getters/setters, `Symbol` and `BigInt` are left out, and each fails with a `SyntaxError` naming it. On qi's benchmarks it is faster than goja and QuickJS in all 16 tests and adds 1.2 MB to the binary. It ran all 501 cells written by real models in testing. The functions `read`, `write`, `edit`, `bash`, `jobs`, `subagent`, `tool_search` and `mcp` are async JavaScript functions there; each call goes through read-only mode, the stale-file check and your PreToolUse/PostToolUse hooks under Claude Code's tool names (`Read`, `Write`, `Edit`, `Bash`, `Agent`/`Task`, `mcp__server__tool`; `jobs` and `tool_search` under their own), and shows as its own line under the `run` line. Variables stay defined between `run` calls; this state lives in memory only and is dropped on `/clear`, on resume and at exit (not on compaction). `run` itself fires no hooks, so a `*` matcher sees each call once.
 
 The terminal shows the whole code of each `run` call (dim, up to 200 lines) with its tool calls under it; `"run_code": false`, globally or in a profile, shows one line per call instead, and `/config` switches it for the session.
 
