@@ -37,15 +37,22 @@ func (s spend) String() string {
 	cost := "not reported by the provider"
 	switch {
 	case s.priced == s.requests:
-		cost = fmt.Sprintf("$%.2f", s.Cost)
+		cost = dollars(s.Cost)
 	case s.priced > 0:
-		cost = fmt.Sprintf("$%.2f for %d of %d requests (the rest not reported)", s.Cost, s.priced, s.requests)
+		cost = fmt.Sprintf("%s for %d of %d requests (the rest not reported)", dollars(s.Cost), s.priced, s.requests)
 	}
 	parts := []string{cost, plural(s.requests, "request"), "input " + agent.FmtTokens(s.Input) + cachedShare(s.Usage), "output " + agent.FmtTokens(s.Output)}
 	if s.CacheWrite > 0 {
 		parts = append(parts, "cache write "+agent.FmtTokens(s.CacheWrite))
 	}
 	return strings.Join(parts, " · ")
+}
+
+func dollars(v float64) string {
+	if v < 0.01 {
+		return fmt.Sprintf("$%.4f", v)
+	}
+	return fmt.Sprintf("$%.2f", v)
 }
 
 func cachedShare(u llm.Usage) string {

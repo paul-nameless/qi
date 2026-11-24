@@ -16,8 +16,9 @@ func TestSpendString(t *testing.T) {
 	}{
 		{nil, "no requests"},
 		{[]llm.Usage{{Input: 1000, CacheRead: 750, Output: 20, Cost: 0.5}, {Input: 1000, CacheRead: 750, Output: 30, Cost: 0.25}}, "$0.75 · 2 requests · input 2.0k (75% cached) · output 50"},
+		{[]llm.Usage{{Input: 7000, CacheWrite: 6900, Output: 120, Cost: 0.00093}}, "$0.0009 · 1 request · input 7.0k (0% cached) · output 120 · cache write 6.9k"},
 		{[]llm.Usage{{Input: 5000, Output: 10}}, "not reported by the provider · 1 request · input 5.0k (0% cached) · output 10"},
-		{[]llm.Usage{{Input: 100, Cost: 0.01}, {Input: 100, CacheWrite: 90}}, "$0.01 for 1 of 2 requests (the rest not reported) · 2 requests · input 200 (0% cached) · output 0 · cache write 90"},
+		{[]llm.Usage{{Input: 100, Cost: 0.0009}, {Input: 100, CacheWrite: 90}}, "$0.0009 for 1 of 2 requests (the rest not reported) · 2 requests · input 200 (0% cached) · output 0 · cache write 90"},
 	}
 	for _, c := range cases {
 		var s spend
