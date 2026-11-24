@@ -92,7 +92,7 @@
       "enum": ["yolo", "project", "read-only"]
     },
     "project_writable": {
-      "description": "Extra directories that stay writable in project mode, e.g. [\"~/.gradle\"]. Always writable: the working directory, the repo's git dir (but not its config or hooks), a private temp dir per session (TMPDIR for bash), a Go build cache per project (GOCACHE), the Go module cache, ~/.npm, the cargo registry and ~/.Trash.",
+      "description": "Extra directories that stay writable in project mode, e.g. [\"~/.gradle\"]. Always writable: the working directory, the repo's git dir (but not its config or hooks), temp, the Go build and module caches, ~/.npm, the cargo registry, uv and golangci-lint caches and ~/.Trash.",
       "type": "array",
       "items": { "type": "string" }
     },

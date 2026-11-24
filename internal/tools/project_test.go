@@ -13,16 +13,25 @@ import (
 	"github.com/paul-nameless/qi/internal/llm"
 )
 
+func outsideDir(t *testing.T) string {
+	dir, err := os.MkdirTemp("/private/tmp", "qi-outside-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	return dir
+}
+
 func projectEnv(t *testing.T) (env *Env, proj, outside string) {
-	outside, _ = filepath.EvalSymlinks(t.TempDir())
+	outside = outsideDir(t)
 	proj, _ = filepath.EvalSymlinks(t.TempDir())
 	scratch, _ := filepath.EvalSymlinks(t.TempDir())
+	t.Setenv("TMPDIR", t.TempDir())
 	if err := os.MkdirAll(filepath.Join(proj, ".git", "hooks"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	os.WriteFile(filepath.Join(proj, ".git", "config"), []byte("[core]\n"), 0o600)
 	env = &Env{Cwd: proj, Project: func() bool { return true }, Scratch: func() string { return scratch }, SpillDir: t.TempDir()}
-	t.Cleanup(func() { os.RemoveAll(projectGoCache(proj)); os.RemoveAll(env.projectTmp()) })
 	return env, proj, outside
 }
 
@@ -38,7 +47,7 @@ func TestProjectModeWriteAndEditStayInside(t *testing.T) {
 	res := r.Execute(context.Background(), env, []llm.Block{
 		in("ok", "write", `{"file_path":"src/new.txt","content":"hi"}`),
 		in("abs", "write", `{"file_path":"`+filepath.Join(outside, "x.txt")+`","content":"hi"}`),
-		in("dots", "write", `{"file_path":"../`+filepath.Base(outside)+`/y.txt","content":"hi"}`),
+		in("dots", "write", `{"file_path":"`+relTo(proj, filepath.Join(outside, "y.txt"))+`","content":"hi"}`),
 		in("link", "write", `{"file_path":"escape/z.txt","content":"hi"}`),
 		in("dangle", "write", `{"file_path":"dangle","content":"hi"}`),
 		in("gitconfig", "write", `{"file_path":".git/config","content":"[core]\nfsmonitor = touch /tmp/pwned\n"}`),
@@ -47,7 +56,7 @@ func TestProjectModeWriteAndEditStayInside(t *testing.T) {
 		in("commondir", "write", `{"file_path":".git/commondir","content":"../evil"}`),
 		in("dotgit", "write", `{"file_path":".git","content":"gitdir: ../evil"}`),
 		in("edit", "edit", `{"file_path":"`+filepath.Join(outside, "o.txt")+`","old_string":"a","new_string":"b"}`),
-		in("tmp", "write", `{"file_path":"`+filepath.Join(env.projectTmp(), "t.txt")+`","content":"hi"}`),
+		in("tmp", "write", `{"file_path":"`+filepath.Join(env.scratch(), "t.txt")+`","content":"hi"}`),
 	}, nopUI{})
 	for _, b := range res {
 		allowed := b.ToolUseID == "ok" || b.ToolUseID == "tmp"
@@ -77,10 +86,10 @@ func TestProjectModeSandboxesBash(t *testing.T) {
 		in, _ := json.Marshal(bashArgs{Command: cmd})
 		return runBash(context.Background(), env, in, nil).Text
 	}
-	if out := run(`echo in > inside.txt && echo t > "$TMPDIR/t.txt" && echo "$TMPDIR|$GOCACHE"`); !strings.HasPrefix(strings.TrimSpace(out), env.projectTmp()+"|") || !strings.HasSuffix(strings.TrimSpace(out), projectGoCache(proj)) {
-		t.Errorf("TMPDIR should be the session's short temp dir and GOCACHE the project's own: %s", out)
+	if out := run(`echo in > inside.txt && f=$(mktemp) && echo t > "$f" && echo "mktemp ok"`); !strings.Contains(out, "mktemp ok") {
+		t.Errorf("mktemp and temp writes should work: %s", out)
 	}
-	for _, p := range []string{filepath.Join(proj, "inside.txt"), filepath.Join(env.projectTmp(), "t.txt")} {
+	for _, p := range []string{filepath.Join(proj, "inside.txt")} {
 		if _, err := os.Stat(p); err != nil {
 			t.Errorf("bash could not write %s: %v", p, err)
 		}
@@ -147,7 +156,6 @@ func TestProjectModeGitWorktree(t *testing.T) {
 	git(repo, "worktree", "add", "-q", "-b", "w", wt)
 	scratch, _ := filepath.EvalSymlinks(t.TempDir())
 	env := &Env{Cwd: wt, Project: func() bool { return true }, Scratch: func() string { return scratch }, SpillDir: t.TempDir()}
-	t.Cleanup(func() { os.RemoveAll(projectGoCache(wt)); os.RemoveAll(env.projectTmp()) })
 	in, _ := json.Marshal(bashArgs{Command: "echo b > b && git add b && git -c user.email=t@t -c user.name=t commit -qm b && git log --oneline | wc -l; echo x >> " + filepath.Join(repo, ".git", "config")})
 	out := runBash(context.Background(), env, in, nil).Text
 	if !strings.HasPrefix(strings.TrimSpace(out), "2") {
@@ -176,12 +184,6 @@ func TestProjectModeGitCannotBeRedirected(t *testing.T) {
 	}
 	if fi, err := os.Stat(filepath.Join(proj, ".git")); err != nil || !fi.IsDir() {
 		t.Errorf(".git was renamed or replaced: %v %s", err, out)
-	}
-	if out := run(`go env GOCACHE 2>/dev/null || echo "$GOCACHE"`); !strings.Contains(out, projectGoCache(proj)) {
-		t.Errorf("GOCACHE: %s", out)
-	}
-	if _, err := os.Stat(projectGoCache(proj)); err != nil {
-		t.Errorf("the per-project Go cache should be created by qi: %v", err)
 	}
 }
 
@@ -214,17 +216,13 @@ func TestProjectModeTrickyPaths(t *testing.T) {
 	}
 }
 
-func TestProjectModeShortTmpAndGitInit(t *testing.T) {
+func TestProjectModeGitInit(t *testing.T) {
 	if !HasSandbox() {
 		t.Skip("no OS sandbox")
 	}
 	proj, _ := filepath.EvalSymlinks(t.TempDir())
 	scratch, _ := filepath.EvalSymlinks(t.TempDir())
 	env := &Env{Cwd: proj, Project: func() bool { return true }, Scratch: func() string { return scratch }, SpillDir: t.TempDir()}
-	t.Cleanup(func() { os.RemoveAll(projectGoCache(proj)); os.RemoveAll(env.projectTmp()) })
-	if tmp := env.projectTmp(); len(tmp) > 40 {
-		t.Errorf("TMPDIR %q leaves too little room for unix socket names", tmp)
-	}
 	in, _ := json.Marshal(bashArgs{Command: "git init -q && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m x && echo committed"})
 	if out := runBash(context.Background(), env, in, nil).Text; !strings.Contains(out, "committed") {
 		t.Errorf("git init in a folder without a repo should work: %s", out)
@@ -243,7 +241,6 @@ func TestProjectModeRepoSubdirCannotMoveGit(t *testing.T) {
 	}
 	scratch, _ := filepath.EvalSymlinks(t.TempDir())
 	env := &Env{Cwd: sub, Project: func() bool { return true }, Scratch: func() string { return scratch }, SpillDir: t.TempDir()}
-	t.Cleanup(func() { os.RemoveAll(projectGoCache(sub)); os.RemoveAll(env.projectTmp()) })
 	in, _ := json.Marshal(bashArgs{Command: "mv ../.git ./x; ls -a"})
 	out := runBash(context.Background(), env, in, nil).Text
 	if fi, err := os.Stat(filepath.Join(repo, ".git")); err != nil || !fi.IsDir() {
@@ -271,4 +268,9 @@ func TestProjectModeScratchAndDotDotLinks(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(outside, "f.txt")); err == nil {
 		t.Error("f.txt was written outside the project")
 	}
+}
+
+func relTo(base, target string) string {
+	rel, _ := filepath.Rel(base, target)
+	return rel
 }

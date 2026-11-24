@@ -130,7 +130,7 @@ var sandbox = sync.OnceValue(findSandbox)
 func findSandbox() sandboxSpec {
 	if runtime.GOOS == "darwin" {
 		path, _ := exec.LookPath("sandbox-exec")
-		if path == "" || exec.Command(path, "-p", `(version 1)(allow default)(deny file-write* (subpath "/qi-sandbox-probe"))`, "true").Run() != nil {
+		if path == "" || probe(path, "-p", `(version 1)(allow default)(deny file-write* (subpath "/qi-sandbox-probe"))`, "true") != nil {
 			return sandboxSpec{}
 		}
 		return sandboxSpec{path, true}
@@ -141,11 +141,17 @@ func findSandbox() sandboxSpec {
 	}
 	tmp, _ := filepath.EvalSymlinks(os.TempDir())
 	for _, isolate := range []bool{true, false} {
-		if exec.Command(path, bwrapArgs("true", []string{tmp}, execDenied(), isolate)...).Run() == nil {
+		if probe(path, bwrapArgs("true", []string{tmp}, execDenied(), isolate)...) == nil {
 			return sandboxSpec{path, isolate}
 		}
 	}
 	return sandboxSpec{}
+}
+
+func probe(name string, args ...string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
+	defer cancel()
+	return exec.CommandContext(ctx, name, args...).Run()
 }
 
 func sandboxCmd(ctx context.Context, command, tmp string) *exec.Cmd {

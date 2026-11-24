@@ -2,8 +2,6 @@ package tools
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,7 +10,6 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/paul-nameless/qi/internal/config"
@@ -98,18 +95,22 @@ func projectBwrapArgs(command string, spec projectSpec) []string {
 	return append(append(prefix, "--unshare-pid"), args[len(args)-4:]...)
 }
 
-var goModCache = sync.OnceValue(func() string {
-	if d := os.Getenv("GOMODCACHE"); d != "" {
-		return d
-	}
+var goDirs = sync.OnceValue(func() []string {
 	ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "go", "env", "GOMODCACHE")
+	cmd := exec.CommandContext(ctx, "go", "env", "GOMODCACHE", "GOCACHE")
 	cmd.Env = append(os.Environ(), "GOTOOLCHAIN=local")
-	if out, err := cmd.Output(); err == nil && strings.TrimSpace(string(out)) != "" {
-		return strings.TrimSpace(string(out))
+	out, err := cmd.Output()
+	if err != nil {
+		return []string{filepath.Join(config.Home(), "go", "pkg", "mod")}
 	}
-	return filepath.Join(config.Home(), "go", "pkg", "mod")
+	var dirs []string
+	for _, d := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if d = strings.TrimSpace(d); filepath.IsAbs(d) {
+			dirs = append(dirs, d)
+		}
+	}
+	return dirs
 })
 
 func cacheDirs() []string {
@@ -118,11 +119,16 @@ func cacheDirs() []string {
 	if cargo == "" {
 		cargo = filepath.Join(home, ".cargo")
 	}
-	dirs := []string{
-		goModCache(), filepath.Join(filepath.Dir(goModCache()), "sumdb"), filepath.Join(home, "go", "pkg", "sumdb"), filepath.Join(home, ".npm"),
+	dirs := append(goDirs(), os.TempDir(), filepath.Join(home, "go", "pkg", "sumdb"), filepath.Join(home, ".npm"),
 		filepath.Join(home, ".cache", "uv"), filepath.Join(home, ".cache", "golangci-lint"),
 		filepath.Join(cargo, "registry"), filepath.Join(cargo, "git"),
 		filepath.Join(cargo, ".package-cache"), filepath.Join(cargo, ".global-cache"),
+	)
+	if d := darwinTempDir(); d != "" {
+		dirs = append(dirs, d)
+	}
+	if len(goDirs()) > 0 {
+		dirs = append(dirs, filepath.Join(filepath.Dir(goDirs()[0]), "sumdb"))
 	}
 	if d, err := os.UserCacheDir(); err == nil {
 		dirs = append(dirs, filepath.Join(d, "golangci-lint"))
@@ -151,7 +157,10 @@ func (e *Env) gitDirs() []string {
 			return
 		}
 		for _, d := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-			if d = realPath(strings.TrimSpace(d)); d != "" && !slices.Contains(e.git, d) {
+			if d = strings.TrimSpace(d); !filepath.IsAbs(d) {
+				continue
+			}
+			if d = realPath(d); !slices.Contains(e.git, d) {
 				e.git = append(e.git, d)
 			}
 		}
@@ -181,25 +190,10 @@ func gitPins(dirs []string) []string {
 
 var gitControl = []string{"config", "config.worktree", "hooks", "commondir", "gitdir"}
 
-func projectGoCache(cwd string) string {
-	base, err := os.UserCacheDir()
-	if err != nil {
-		return ""
-	}
-	sum := sha256.Sum256([]byte(cwd))
-	return filepath.Join(base, "qi", "gocache", hex.EncodeToString(sum[:8]))
-}
-
 func (e *Env) projectSpec() projectSpec {
 	roots := append([]string{e.Cwd, filepath.Join(config.Home(), ".Trash")}, cacheDirs()...)
-	if tmp := e.projectTmp(); tmp != "" {
-		roots = append(roots, tmp)
-	}
 	if s := e.scratch(); s != "" {
 		roots = append(roots, s)
-	}
-	if gc := projectGoCache(e.Cwd); gc != "" {
-		roots = append(roots, gc)
 	}
 	for _, p := range e.Writable {
 		roots = append(roots, config.ExpandHome(p))
@@ -230,41 +224,8 @@ func (e *Env) projectSpec() projectSpec {
 	return spec
 }
 
-func (e *Env) projectTmpPath() string {
-	scratch := e.scratch()
-	if scratch == "" {
-		return ""
-	}
-	sum := sha256.Sum256([]byte(scratch))
-	return filepath.Join("/tmp", fmt.Sprintf("qi-%d", os.Getuid()), hex.EncodeToString(sum[:4]))
-}
-
-func (e *Env) projectTmp() string {
-	dir := e.projectTmpPath()
-	if dir == "" {
-		return ""
-	}
-	scratch := e.scratch()
-	for _, d := range []string{filepath.Dir(dir), dir} {
-		if err := os.Mkdir(d, 0o700); err != nil && !os.IsExist(err) {
-			return scratch
-		}
-		if fi, err := os.Lstat(d); err != nil || !fi.IsDir() || fi.Mode().Perm() != 0o700 || !ownedByMe(fi) {
-			return scratch
-		}
-	}
-	return realPath(dir)
-}
-
 func (e *Env) projectEnv() []string {
-	env := []string{"TMUX="}
-	if tmp := e.projectTmp(); tmp != "" {
-		env = append(env, "TMPDIR="+tmp)
-	}
-	if gc := projectGoCache(e.Cwd); gc != "" && os.MkdirAll(gc, 0o700) == nil {
-		env = append(env, "GOCACHE="+gc)
-	}
-	return env
+	return []string{"TMUX="}
 }
 
 const maxLinks = 40
@@ -371,14 +332,13 @@ func projectHint(out string) string {
 	return out
 }
 
-func ownedByMe(fi os.FileInfo) bool {
-	st, ok := fi.Sys().(*syscall.Stat_t)
-	return ok && int(st.Uid) == os.Getuid()
-}
-
-func RemoveProjectTmp(scratch string) {
-	e := &Env{Scratch: func() string { return scratch }}
-	if tmp := e.projectTmpPath(); tmp != "" {
-		_ = os.Remove(tmp)
+var darwinTempDir = sync.OnceValue(func() string {
+	if runtime.GOOS != "darwin" {
+		return ""
 	}
-}
+	out, err := exec.Command("getconf", "DARWIN_USER_TEMP_DIR").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+})

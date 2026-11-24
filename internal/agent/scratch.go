@@ -7,8 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"syscall"
-
-	"github.com/paul-nameless/qi/internal/tools"
 )
 
 func ScratchDir(sessionID string) string {
@@ -40,6 +38,5 @@ func ownPrivateDir(path string) bool {
 }
 
 func RemoveScratchIfEmpty(sessionID string) {
-	tools.RemoveProjectTmp(ScratchDir(sessionID))
 	_ = os.Remove(ScratchDir(sessionID))
 }
