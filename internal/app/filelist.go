@@ -37,7 +37,7 @@ func listFiles(dir string, limit int) []string {
 func gitFiles(dir string) []string {
 	ctx, cancel := context.WithTimeout(context.Background(), fileListTime)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "ls-files", "-co", "--exclude-standard", "-z")
+	cmd := exec.CommandContext(ctx, "git", "-c", "core.fsmonitor=", "ls-files", "-co", "--exclude-standard", "-z")
 	cmd.Dir = dir
 	out, err := cmd.Output()
 	if err != nil || len(out) == 0 {

@@ -60,7 +60,20 @@ func (r *repl) prompt() string {
 func (r *repl) toggleMode() {
 	m := r.agent.Mode().Next()
 	r.agent.SetMode(m)
+	r.warnMode(m)
+}
+
+func (r *repl) warnMode(m agent.Mode) {
 	warnNoSandbox(r.display, m)
+	if m == agent.ModeProject && broadProject(r.agent.Cwd()) {
+		r.display.Info(broadProjectNote)
+	}
+}
+
+const broadProjectNote = "project mode in your home folder or / protects almost nothing: the model can change everything under it"
+
+func broadProject(cwd string) bool {
+	return cwd == "/" || cwd == config.Home()
 }
 
 const (
@@ -115,7 +128,7 @@ func (r *repl) run() error {
 	r.handleSignals()
 	r.handleResize()
 	r.banner()
-	warnNoSandbox(r.display, r.agent.Mode())
+	r.warnMode(r.agent.Mode())
 
 	draft := ""
 	for {
@@ -523,10 +536,10 @@ func (r *repl) switchProfile(name string) error {
 	if err := r.apply(cfg, cfg.Provider); err != nil {
 		return err
 	}
-	if cfg.Mode != "" || cfg.ReadOnly {
-		m := agent.ParseMode(cfg.StartMode())
+	if pm := cfg.ProfileMode(); pm != "" {
+		m := agent.ParseMode(pm)
 		r.agent.SetMode(m)
-		warnNoSandbox(r.display, m)
+		r.warnMode(m)
 	}
 	r.report(r.loadPrompt())
 	if r.runner != nil && !sameMCP(cfg.MCP, r.runner.MCP) {

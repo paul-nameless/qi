@@ -103,6 +103,7 @@ func newFlagSet(c *cliArgs, out io.Writer) *flag.FlagSet {
 	fs.StringVar(&o.systemPromptFile, "system-prompt-file", "", "replace the built-in base prompt with this `file` for this run")
 	fs.BoolVar(&o.readOnly, "read-only", false, "start in read-only mode")
 	fs.BoolVar(&o.project, "project", false, "start in project mode: files can only change inside the working directory")
+	fs.BoolVar(&o.yolo, "yolo", false, "start in yolo mode, whatever the config says")
 	fs.StringVar(&o.sessionID, "session-id", "", "use this session `id`: continues it if it exists, creates it otherwise")
 	fs.Var(resumeFlag{o}, "r", "pick a session of this directory to resume, or resume <id>")
 	fs.StringVar(&c.show, "show", "", "print a `session` of this directory (id or path) as plain text and exit")

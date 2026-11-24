@@ -222,12 +222,15 @@ func bashCmd(ctx context.Context, env *Env, command string) *exec.Cmd {
 	case env.readOnly():
 		cmd = readOnlySandbox(ctx, command)
 	case env.project():
-		cmd = projectSandbox(ctx, command, env.writableRoots())
+		cmd = projectSandbox(ctx, command, env.projectSpec())
 	}
 	cmd.Dir = env.Cwd
 	cmd.Env = append(os.Environ(), "PAGER=cat", "GIT_PAGER=cat", "GIT_TERMINAL_PROMPT=0", "TERM=dumb", "NO_COLOR=1", "CLICOLOR=0")
-	if env.readOnly() {
+	switch {
+	case env.readOnly():
 		cmd.Env = append(cmd.Env, readOnlyEnv()...)
+	case env.project():
+		cmd.Env = append(cmd.Env, env.projectEnv()...)
 	}
 	proc.Setup(cmd, proc.Session, proc.Grace)
 	return cmd
@@ -252,6 +255,9 @@ func runBash(ctx context.Context, env *Env, in json.RawMessage, progress func(st
 	run, err := execBash(ctx, env, a, progress)
 	if err != nil {
 		return errResult("%v", err)
+	}
+	if env.project() {
+		run.output = projectHint(run.output)
 	}
 	return run.value()
 }

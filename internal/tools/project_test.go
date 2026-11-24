@@ -3,7 +3,9 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -11,18 +13,23 @@ import (
 	"github.com/paul-nameless/qi/internal/llm"
 )
 
-func projectDirs(t *testing.T) (proj, outside string) {
+func projectEnv(t *testing.T) (env *Env, proj, outside string) {
 	outside, _ = filepath.EvalSymlinks(t.TempDir())
 	proj, _ = filepath.EvalSymlinks(t.TempDir())
-	t.Setenv("TMPDIR", t.TempDir())
-	return proj, outside
+	scratch, _ := filepath.EvalSymlinks(t.TempDir())
+	if err := os.MkdirAll(filepath.Join(proj, ".git", "hooks"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(proj, ".git", "config"), []byte("[core]\n"), 0o600)
+	env = &Env{Cwd: proj, Project: func() bool { return true }, Scratch: func() string { return scratch }, SpillDir: t.TempDir()}
+	return env, proj, outside
 }
 
 func TestProjectModeWriteAndEditStayInside(t *testing.T) {
-	proj, outside := projectDirs(t)
+	env, proj, outside := projectEnv(t)
 	os.WriteFile(filepath.Join(outside, "o.txt"), []byte("a"), 0o600)
 	os.Symlink(outside, filepath.Join(proj, "escape"))
-	env := &Env{Cwd: proj, Project: func() bool { return true }}
+	os.Symlink(filepath.Join(outside, "dangling.txt"), filepath.Join(proj, "dangle"))
 	r := newFuncSet(Write(), Edit())
 	in := func(id, name, args string) llm.Block {
 		return llm.Block{ID: id, Name: name, Input: json.RawMessage(args)}
@@ -32,8 +39,11 @@ func TestProjectModeWriteAndEditStayInside(t *testing.T) {
 		in("abs", "write", `{"file_path":"`+filepath.Join(outside, "x.txt")+`","content":"hi"}`),
 		in("dots", "write", `{"file_path":"../`+filepath.Base(outside)+`/y.txt","content":"hi"}`),
 		in("link", "write", `{"file_path":"escape/z.txt","content":"hi"}`),
+		in("dangle", "write", `{"file_path":"dangle","content":"hi"}`),
+		in("gitconfig", "write", `{"file_path":".git/config","content":"[core]\nfsmonitor = touch /tmp/pwned\n"}`),
+		in("githook", "write", `{"file_path":".git/hooks/pre-commit","content":"#!/bin/sh\n"}`),
 		in("edit", "edit", `{"file_path":"`+filepath.Join(outside, "o.txt")+`","old_string":"a","new_string":"b"}`),
-		in("tmp", "write", `{"file_path":"`+filepath.Join(os.TempDir(), "t.txt")+`","content":"hi"}`),
+		in("tmp", "write", `{"file_path":"`+filepath.Join(env.scratch(), "t.txt")+`","content":"hi"}`),
 	}, nopUI{})
 	for _, b := range res {
 		allowed := b.ToolUseID == "ok" || b.ToolUseID == "tmp"
@@ -41,7 +51,7 @@ func TestProjectModeWriteAndEditStayInside(t *testing.T) {
 			t.Errorf("%s: error %v: %s", b.ToolUseID, b.IsError, b.Text)
 		}
 	}
-	for _, name := range []string{"x.txt", "y.txt", "z.txt"} {
+	for _, name := range []string{"x.txt", "y.txt", "z.txt", "dangling.txt"} {
 		if _, err := os.Stat(filepath.Join(outside, name)); err == nil {
 			t.Errorf("%s was written outside the project", name)
 		}
@@ -49,33 +59,96 @@ func TestProjectModeWriteAndEditStayInside(t *testing.T) {
 	if data, _ := os.ReadFile(filepath.Join(outside, "o.txt")); string(data) != "a" {
 		t.Error("edit changed a file outside the project")
 	}
+	if data, _ := os.ReadFile(filepath.Join(proj, ".git", "config")); string(data) != "[core]\n" {
+		t.Error("write changed .git/config")
+	}
 }
 
 func TestProjectModeSandboxesBash(t *testing.T) {
 	if !HasSandbox() {
 		t.Skip("no OS sandbox")
 	}
-	proj, outside := projectDirs(t)
-	env := &Env{Cwd: proj, Project: func() bool { return true }, SpillDir: t.TempDir()}
-	run := func(cmd string) Result {
+	env, proj, outside := projectEnv(t)
+	run := func(cmd string) string {
 		in, _ := json.Marshal(bashArgs{Command: cmd})
-		return runBash(context.Background(), env, in, nil)
+		return runBash(context.Background(), env, in, nil).Text
 	}
-	run("echo in > inside.txt && mkdir -p sub && echo t > \"$TMPDIR/t.txt\"")
-	if _, err := os.Stat(filepath.Join(proj, "inside.txt")); err != nil {
-		t.Errorf("bash could not write inside the project: %v", err)
+	if out := run(`echo in > inside.txt && echo t > "$TMPDIR/t.txt" && echo "$GOCACHE"`); !strings.HasPrefix(strings.TrimSpace(out), env.scratch()) {
+		t.Errorf("TMPDIR and GOCACHE should be the session scratch dir: %s", out)
 	}
-	if _, err := os.Stat(filepath.Join(os.TempDir(), "t.txt")); err != nil {
-		t.Errorf("bash could not write to temp: %v", err)
+	for _, p := range []string{filepath.Join(proj, "inside.txt"), filepath.Join(env.scratch(), "t.txt")} {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("bash could not write %s: %v", p, err)
+		}
 	}
-	res := run("echo out > " + filepath.Join(outside, "x.txt") + "; rm -rf " + outside)
+	out := run("echo out > " + filepath.Join(outside, "x.txt") + "; rm -rf " + outside + "; echo x >> .git/config; echo x > .git/hooks/pre-commit")
 	if _, err := os.Stat(filepath.Join(outside, "x.txt")); err == nil {
-		t.Errorf("bash wrote outside the project: %s", res.Text)
+		t.Errorf("bash wrote outside the project: %s", out)
 	}
 	if _, err := os.Stat(outside); err != nil {
-		t.Errorf("bash removed a directory outside the project: %s", res.Text)
+		t.Errorf("bash removed a directory outside the project: %s", out)
 	}
-	if res := run("sleep 30 & kill $!; timeout 1 sleep 5; echo done"); !strings.Contains(res.Text, "done") {
-		t.Errorf("own processes and timeout must work: %s", res.Text)
+	if data, _ := os.ReadFile(filepath.Join(proj, ".git", "config")); string(data) != "[core]\n" {
+		t.Errorf("bash changed .git/config: %s", out)
+	}
+	if !strings.Contains(out, "project mode:") {
+		t.Errorf("denials should carry the project-mode hint: %s", out)
+	}
+	if out := run(`sleep 30 & k=$!; kill $k; wait $k; echo "own child $?"; timeout 1 sleep 5; echo "timeout $?"`); !strings.Contains(out, "own child 143") || !strings.Contains(out, "timeout 124") {
+		t.Errorf("own processes and timeout must work: %s", out)
+	}
+	if _, err := exec.LookPath("python3"); err != nil {
+		return
+	}
+	short, err := os.MkdirTemp("/tmp", "qs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(short)
+	sock := filepath.Join(short, "s")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	out = run(`python3 -c "import socket; s=socket.socket(socket.AF_UNIX); s.connect('` + sock + `'); print('CONNECTED')" 2>&1 | tail -1`)
+	if strings.Contains(out, "CONNECTED") {
+		t.Errorf("bash reached a unix socket outside the sandbox: %s", out)
+	}
+	out = run(`python3 -c "import os,time; os.setpgrp(); time.sleep(20)" & k=$!; python3 -c "import time; time.sleep(0.3)"; kill $k; wait $k; echo "pgrp child $?"`)
+	if !strings.Contains(out, "pgrp child 143") {
+		t.Errorf("a child in its own process group must be killable: %s", out)
+	}
+}
+
+func TestProjectModeGitWorktree(t *testing.T) {
+	if !HasSandbox() {
+		t.Skip("no OS sandbox")
+	}
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	repo, _ := filepath.EvalSymlinks(t.TempDir())
+	wt := filepath.Join(repo, "wt")
+	git := func(dir string, args ...string) {
+		cmd := exec.Command("git", append([]string{"-C", dir, "-c", "user.email=t@t", "-c", "user.name=t"}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+	git(repo, "init", "-q")
+	os.WriteFile(filepath.Join(repo, "a"), []byte("a"), 0o600)
+	git(repo, "add", "a")
+	git(repo, "commit", "-qm", "a")
+	git(repo, "worktree", "add", "-q", "-b", "w", wt)
+	scratch, _ := filepath.EvalSymlinks(t.TempDir())
+	env := &Env{Cwd: wt, Project: func() bool { return true }, Scratch: func() string { return scratch }, SpillDir: t.TempDir()}
+	in, _ := json.Marshal(bashArgs{Command: "echo b > b && git add b && git -c user.email=t@t -c user.name=t commit -qm b && git log --oneline | wc -l; echo x >> " + filepath.Join(repo, ".git", "config")})
+	out := runBash(context.Background(), env, in, nil).Text
+	if !strings.HasPrefix(strings.TrimSpace(out), "2") {
+		t.Errorf("commit in a worktree should work in project mode: %s", out)
+	}
+	if data, _ := os.ReadFile(filepath.Join(repo, ".git", "config")); strings.Contains(string(data), "x\n") {
+		t.Errorf("the main repo's .git/config was changed from a worktree: %s", out)
 	}
 }

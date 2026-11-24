@@ -29,6 +29,7 @@ type options struct {
 	systemPromptFile string
 	readOnly         bool
 	project          bool
+	yolo             bool
 	sessionID        string
 	pickSession      bool
 	resumeID         string
@@ -253,6 +254,8 @@ func startMode(o options, cfg config.Config) agent.Mode {
 		return agent.ModeReadOnly
 	case o.project:
 		return agent.ModeProject
+	case o.yolo:
+		return agent.ModeYolo
 	}
 	return agent.ParseMode(cfg.StartMode())
 }

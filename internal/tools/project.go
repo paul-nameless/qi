@@ -8,62 +8,160 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/paul-nameless/qi/internal/config"
 )
 
-const projectDenied = `(deny process-exec (literal "/usr/bin/osascript") (literal "/usr/bin/open") (literal "/bin/launchctl") (literal "/usr/bin/defaults") (literal "/usr/bin/security") (literal "/usr/bin/sudo") (literal "/usr/bin/shortcuts"))(deny signal (target others))`
+const projectRules = `(deny process-exec (literal "/usr/bin/osascript") (literal "/usr/bin/open") (literal "/bin/launchctl") (literal "/usr/bin/defaults") (literal "/usr/bin/security") (literal "/usr/bin/sudo") (literal "/usr/bin/shortcuts"))` +
+	`(deny network-outbound (remote unix-socket))(allow network-outbound (remote unix-socket (path-literal "/private/var/run/mDNSResponder")))` +
+	`(deny signal (target others))(allow signal (target children))`
 
-func projectProfile(roots int) string {
-	var b strings.Builder
-	b.WriteString(`(version 1)(allow default)(deny file-write*)(allow file-write* (literal "/dev/null") (literal "/dev/zero") (literal "/dev/tty") (literal "/dev/dtracehelper") (regex #"^/dev/fd/")`)
-	for i := range roots {
-		fmt.Fprintf(&b, ` (subpath (param "W%d"))`, i)
-	}
-	b.WriteString(")" + projectDenied)
-	return b.String()
+type projectSpec struct {
+	writable []string
+	guarded  []string
 }
 
-func projectSandbox(ctx context.Context, command string, roots []string) *exec.Cmd {
+func projectProfile(spec projectSpec) string {
+	var b strings.Builder
+	b.WriteString(`(version 1)(allow default)(deny file-write*)(allow file-write* (literal "/dev/null") (literal "/dev/zero") (literal "/dev/tty") (literal "/dev/ptmx") (literal "/dev/dtracehelper") (regex #"^/dev/fd/") (regex #"^/dev/ttys")`)
+	for i := range spec.writable {
+		fmt.Fprintf(&b, ` (subpath (param "W%d"))`, i)
+	}
+	b.WriteString(")")
+	if len(spec.guarded) > 0 {
+		b.WriteString("(deny file-write*")
+		for i := range spec.guarded {
+			fmt.Fprintf(&b, ` (subpath (param "G%d"))`, i)
+		}
+		b.WriteString(")")
+	}
+	return b.String() + projectRules
+}
+
+func projectSandbox(ctx context.Context, command string, spec projectSpec) *exec.Cmd {
 	sb := sandbox()
 	switch {
 	case sb.path == "":
 		return exec.CommandContext(ctx, "bash", "-c", command)
 	case runtime.GOOS == "darwin":
 		var args []string
-		for i, r := range roots {
+		for i, r := range spec.writable {
 			args = append(args, "-D", fmt.Sprintf("W%d=%s", i, r))
 		}
-		args = append(args, "-p", projectProfile(len(roots)), "bash", "-c", command)
+		for i, g := range spec.guarded {
+			args = append(args, "-D", fmt.Sprintf("G%d=%s", i, g))
+		}
+		args = append(args, "-p", projectProfile(spec), "bash", "-c", command)
 		return exec.CommandContext(ctx, sb.path, args...)
 	}
-	return exec.CommandContext(ctx, sb.path, bwrapArgs(command, roots, execDenied(), false)...)
+	return exec.CommandContext(ctx, sb.path, projectBwrapArgs(command, spec)...)
 }
+
+func projectBwrapArgs(command string, spec projectSpec) []string {
+	var writable []string
+	for _, w := range spec.writable {
+		if _, err := os.Stat(w); err == nil {
+			writable = append(writable, w)
+		}
+	}
+	args := bwrapArgs(command, writable, execDenied(), false)
+	prefix := append([]string{}, args[:len(args)-4]...)
+	for _, g := range spec.guarded {
+		if _, err := os.Stat(g); err == nil {
+			prefix = append(prefix, "--ro-bind", g, g)
+		}
+	}
+	return append(append(prefix, "--unshare-pid"), args[len(args)-4:]...)
+}
+
+var goModCache = sync.OnceValue(func() string {
+	if d := os.Getenv("GOMODCACHE"); d != "" {
+		return d
+	}
+	if out, err := exec.Command("go", "env", "GOMODCACHE").Output(); err == nil && strings.TrimSpace(string(out)) != "" {
+		return strings.TrimSpace(string(out))
+	}
+	return filepath.Join(config.Home(), "go", "pkg", "mod")
+})
 
 func cacheDirs() []string {
 	home := config.Home()
-	dirs := []string{filepath.Join(home, ".npm"), filepath.Join(home, "go", "pkg", "mod"), filepath.Join(home, ".cargo", "registry"), filepath.Join(home, ".cargo", "git")}
-	if d, err := os.UserCacheDir(); err == nil {
-		dirs = append(dirs, d)
+	cargo := os.Getenv("CARGO_HOME")
+	if cargo == "" {
+		cargo = filepath.Join(home, ".cargo")
 	}
-	return dirs
+	return []string{
+		goModCache(), filepath.Join(home, ".npm"),
+		filepath.Join(cargo, "registry"), filepath.Join(cargo, "git"),
+		filepath.Join(cargo, ".package-cache"), filepath.Join(cargo, ".global-cache"),
+	}
 }
 
-func (e *Env) writableRoots() []string {
-	roots := append([]string{e.Cwd, os.TempDir()}, cacheDirs()...)
+func (e *Env) scratch() string {
+	if e.Scratch == nil {
+		return ""
+	}
+	return e.Scratch()
+}
+
+func (e *Env) gitDir() string {
+	out, err := exec.Command("git", "-C", e.Cwd, "-c", "core.fsmonitor=", "rev-parse", "--path-format=absolute", "--git-common-dir").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func (e *Env) projectSpec() projectSpec {
+	roots := append([]string{e.Cwd}, cacheDirs()...)
+	if tmp := e.scratch(); tmp != "" {
+		roots = append(roots, tmp)
+	}
 	for _, p := range e.Writable {
 		roots = append(roots, config.ExpandHome(p))
 	}
-	var out []string
-	for _, r := range roots {
-		if real, err := filepath.EvalSymlinks(r); err == nil {
-			out = append(out, real)
-		}
+	gitDirs := []string{filepath.Join(e.Cwd, ".git")}
+	if g := e.gitDir(); g != "" {
+		roots = append(roots, g)
+		gitDirs = append(gitDirs, g)
 	}
-	return out
+	var spec projectSpec
+	for _, r := range roots {
+		spec.writable = append(spec.writable, realPath(r))
+	}
+	for _, g := range gitDirs {
+		g = realPath(g)
+		spec.guarded = append(spec.guarded, filepath.Join(g, "config"), filepath.Join(g, "hooks"))
+	}
+	return spec
 }
 
+func (e *Env) projectEnv() []string {
+	tmp := e.scratch()
+	if tmp == "" {
+		return []string{"TMUX="}
+	}
+	return []string{"TMUX=", "TMPDIR=" + tmp, "GOCACHE=" + filepath.Join(tmp, "gocache")}
+}
+
+const maxLinks = 40
+
 func realPath(p string) string {
+	for range maxLinks {
+		fi, err := os.Lstat(p)
+		if err != nil || fi.Mode()&os.ModeSymlink == 0 {
+			break
+		}
+		target, err := os.Readlink(p)
+		if err != nil {
+			break
+		}
+		if !filepath.IsAbs(target) {
+			target = filepath.Join(filepath.Dir(p), target)
+		}
+		p = filepath.Clean(target)
+	}
 	rest := ""
 	for {
 		if real, err := filepath.EvalSymlinks(p); err == nil {
@@ -88,10 +186,25 @@ func (e *Env) checkWritable(path string) error {
 		return nil
 	}
 	real := realPath(e.resolve(path))
-	for _, r := range e.writableRoots() {
+	spec := e.projectSpec()
+	for _, g := range spec.guarded {
+		if within(real, g) {
+			return fmt.Errorf("project mode: %s is git configuration or hooks, which would run outside the sandbox", path)
+		}
+	}
+	for _, r := range spec.writable {
 		if within(real, r) {
 			return nil
 		}
 	}
 	return fmt.Errorf("project mode: %s is outside the working directory; only files inside it (plus temp and build caches) can be changed", path)
+}
+
+const projectDenialHint = "\n(project mode: writes outside the working directory, temp and build caches are blocked, and so are .git/config and .git/hooks)"
+
+func projectHint(out string) string {
+	if strings.Contains(out, "Operation not permitted") || strings.Contains(out, "Read-only file system") {
+		return out + projectDenialHint
+	}
+	return out
 }

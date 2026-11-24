@@ -63,6 +63,7 @@ type Env struct {
 	Cwd         string
 	ReadOnly    func() bool
 	Project     func() bool
+	Scratch     func() string
 	Writable    []string
 	Allow       []string
 	BashTimeout int

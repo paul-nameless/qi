@@ -82,6 +82,8 @@ func (r *SubagentRunner) args(task tools.SubagentTask) []string {
 		args = append(args, "-read-only")
 	case ModeProject:
 		args = append(args, "-project")
+	default:
+		args = append(args, "-yolo")
 	}
 	return args
 }

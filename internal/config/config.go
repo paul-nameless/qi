@@ -3,6 +3,7 @@ package config
 import (
 	"bytes"
 	"encoding/json/jsontext"
+	json "encoding/json/v2"
 	"errors"
 	"fmt"
 	"net/url"
@@ -478,6 +479,23 @@ func isOpenRouter(baseURL string) bool {
 	}
 	host := strings.ToLower(u.Hostname())
 	return host == "openrouter.ai" || strings.HasSuffix(host, ".openrouter.ai")
+}
+
+func (c Config) ProfileMode() string {
+	if c.profileRaw == nil {
+		return ""
+	}
+	var p struct {
+		Mode     string `json:"mode"`
+		ReadOnly bool   `json:"read_only"`
+	}
+	if json.Unmarshal(c.profileRaw, &p) != nil {
+		return ""
+	}
+	if p.ReadOnly {
+		return "read-only"
+	}
+	return p.Mode
 }
 
 func (c Config) StartMode() string {

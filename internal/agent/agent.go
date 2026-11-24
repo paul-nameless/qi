@@ -80,7 +80,7 @@ type conversation struct {
 func New(o Options) *Agent {
 	a := &Agent{cwd: o.Cwd, ui: o.UI, headless: o.Headless, wake: make(chan struct{}, 1)}
 	a.mode.Store(int32(o.Mode))
-	a.env = &tools.Env{Cwd: o.Cwd, ReadOnly: a.ReadOnly, Project: a.Project, Writable: o.Config.ProjectWritable, Allow: o.Config.ReadOnlyAllow, BashTimeout: o.Config.BashTimeout, SpillDir: o.SpillDir, Subagent: o.Subagent, Jobs: tools.NewJobs()}
+	a.env = &tools.Env{Cwd: o.Cwd, ReadOnly: a.ReadOnly, Project: a.Project, Scratch: a.scratch, Writable: o.Config.ProjectWritable, Allow: o.Config.ReadOnlyAllow, BashTimeout: o.Config.BashTimeout, SpillDir: o.SpillDir, Subagent: o.Subagent, Jobs: tools.NewJobs()}
 	a.live = live{cfg: o.Config, provider: o.Provider}
 	a.conv.tool = o.Tool
 	return a
@@ -117,7 +117,7 @@ func (m Mode) Next() Mode {
 
 const (
 	readOnlyNote   = "<mode>Read-only mode is on: write and edit are refused, and bash only runs allowlisted read-only commands.</mode>"
-	projectNote    = "<mode>Project mode is on: files can only be changed inside the working directory (plus temp and build caches); write, edit and bash writes anywhere else fail.</mode>"
+	projectNote    = "<mode>Project mode is on: write, edit and bash can only change files inside the working directory (plus temp and build caches), not .git/config or .git/hooks; bash runs sandboxed with the network on.</mode>"
 	yoloNote       = "<mode>Yolo mode is on: all tools are available with no limits.</mode>"
 	legacyYoloNote = "<mode>Read-only mode is off: all tools are available again.</mode>"
 )
@@ -146,6 +146,13 @@ func ParseMode(s string) Mode {
 }
 
 func (a *Agent) ReadOnly() bool { return a.Mode() == ModeReadOnly }
+
+func (a *Agent) scratch() string {
+	if s := a.Session(); s != nil {
+		return ensureScratch(ScratchDir(s.ID))
+	}
+	return ""
+}
 
 func (a *Agent) Project() bool { return a.Mode() == ModeProject }
 
