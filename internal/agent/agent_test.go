@@ -410,7 +410,7 @@ func TestContextReport(t *testing.T) {
 		{Role: llm.RoleUser, Blocks: []llm.Block{{Type: llm.BlockToolResult, ToolUseID: "1", Text: strings.Repeat("r", 2000)}}},
 	}
 	got := a.ContextReport()
-	for _, want := range []string{"context 1.7k/200k (0.8%)", "system prompt", "base prompt", "environment", "tools (1)", "messages (3)", "user text", "read results", "500", "free"} {
+	for _, want := range []string{"context 1.6k/200k (0.8%)", "system prompt", "base prompt", "environment", "tools (1)", "messages (3)", "user text", "read results", "500", "free"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("report misses %q:\n%s", want, got)
 		}

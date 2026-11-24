@@ -29,8 +29,7 @@ func Bash() *Tool {
 	return &Tool{
 		HookNames: []string{"Bash"},
 		Def: llm.ToolDef{
-			Name:   "bash",
-			Schema: json.RawMessage(`{"type":"object","properties":{"command":{"type":"string"},"timeout":{"type":"integer"},"background":{"type":"boolean"},"daemon":{"type":"boolean"}},"required":["command"]}`),
+			Name: "bash",
 		},
 		Label: func(env *Env, in json.RawMessage) string {
 			a, _ := decode[bashArgs](in)
@@ -38,9 +37,11 @@ func Bash() *Tool {
 		},
 		Run: runBash,
 		Code: &CodeSpec{
-			Name:   "bash",
-			Params: []string{"command"},
-			Doc:    fmt.Sprintf("bash(command, {timeout, background, daemon}) → {output, exit_code, timed_out, truncated} — stdin is empty, output is stdout+stderr combined; never throws on a non-zero exit. output keeps the first and last %d KB; truncated is true when the middle was dropped (redirect to a file for more). timeout in seconds (default %d, max %d). {background: true} starts a job for long builds and test runs and returns at once with a string naming the job id and its output file; you get a message when it exits, so don't poll or sleep for it. {daemon: true} is for servers and watchers that are not meant to exit.", keepBytes>>10, defaultBashTimeout, maxBashTimeout),
+			Name:     "bash",
+			Params:   []string{"command"},
+			Required: 1,
+			Options:  []string{"timeout", "background", "daemon"},
+			Doc:      fmt.Sprintf("bash(command, {timeout, background, daemon}) → {output, exit_code, timed_out, truncated} — stdin is empty, output is stdout+stderr combined; never throws on a non-zero exit. output keeps the first and last %d KB; truncated is true when the middle was dropped (redirect to a file for more). timeout in seconds (default %d, max %d). {background: true} starts a job for long builds and test runs and returns at once with a string naming the job id and its output file; you get a message when it exits, so don't poll or sleep for it. {daemon: true} is for servers and watchers that are not meant to exit.", keepBytes>>10, defaultBashTimeout, maxBashTimeout),
 		},
 	}
 }

@@ -41,7 +41,7 @@ func newCellKit(t *testing.T, extra ...*Tool) *cellKit {
 
 func (k *cellKit) tickTool() *Tool {
 	return &Tool{
-		Def:  llm.ToolDef{Name: "tick", Schema: json.RawMessage(`{"type":"object","properties":{"n":{"type":"integer"}}}`)},
+		Def:  llm.ToolDef{Name: "tick"},
 		Code: &CodeSpec{Name: "tick", Params: []string{"n"}, Doc: "tick(n) → number"},
 		Run: func(ctx context.Context, env *Env, in json.RawMessage, _ func(string)) Result {
 			k.tick.Add(1)

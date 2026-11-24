@@ -47,14 +47,15 @@ func Read() *Tool {
 		ParallelSafe: true,
 		HookNames:    []string{"Read"},
 		Def: llm.ToolDef{
-			Name:   "read",
-			Schema: json.RawMessage(`{"type":"object","properties":{"file_path":{"type":"string"},"offset":{"type":"integer"},"limit":{"type":"integer"},"crop":{"type":"array","items":{"type":"integer"}}},"required":["file_path"]}`),
+			Name: "read",
 		},
 		Path: pathKey,
 		Code: &CodeSpec{
-			Name:   "read",
-			Params: []string{"file_path"},
-			Doc:    fmt.Sprintf("read(path, {offset, limit}) → string — file text without line numbers; offset is the 1-based first line, limit the number of lines (default: the whole file). A directory gives its entries, one per line. An image file (png, jpg, gif, webp) is attached to the result of this run call so you can see it (at most %d images per run call); the user does not see it, so to show an image to the user, put its full path in your answer. {crop: [x, y, width, height]} shows a region at full resolution.", maxCellImages),
+			Name:     "read",
+			Params:   []string{"file_path"},
+			Required: 1,
+			Options:  []string{"offset", "limit", "crop"},
+			Doc:      fmt.Sprintf("read(path, {offset, limit}) → string — file text without line numbers; offset is the 1-based first line, limit the number of lines (default: the whole file). A directory gives its entries, one per line. An image file (png, jpg, gif, webp) is attached to the result of this run call so you can see it (at most %d images per run call); the user does not see it, so to show an image to the user, put its full path in your answer. {crop: [x, y, width, height]} shows a region at full resolution.", maxCellImages),
 		},
 		Label: func(env *Env, in json.RawMessage) string {
 			a, _ := decode[readArgs](in)
@@ -243,15 +244,15 @@ func Write() *Tool {
 		Mutates:   true,
 		HookNames: []string{"Write"},
 		Def: llm.ToolDef{
-			Name:   "write",
-			Schema: json.RawMessage(`{"type":"object","properties":{"file_path":{"type":"string"},"content":{"type":"string"}},"required":["file_path","content"]}`),
+			Name: "write",
 		},
 		Path:  pathKey,
 		Label: func(env *Env, in json.RawMessage) string { return "write " + env.rel(pathKey(env, in)) },
 		Code: &CodeSpec{
-			Name:   "write",
-			Params: []string{"file_path", "content"},
-			Doc:    "write(path, content) → string — create or overwrite a file; prefer edit for changes to existing files.",
+			Name:     "write",
+			Params:   []string{"file_path", "content"},
+			Required: 2,
+			Doc:      "write(path, content) → string — create or overwrite a file; prefer edit for changes to existing files.",
 		},
 		Run: func(ctx context.Context, env *Env, in json.RawMessage, _ func(string)) Result {
 			if env.readOnly() {
@@ -303,16 +304,17 @@ func Edit() *Tool {
 		Mutates:   true,
 		HookNames: []string{"Edit"},
 		Def: llm.ToolDef{
-			Name:   "edit",
-			Schema: json.RawMessage(`{"type":"object","properties":{"file_path":{"type":"string"},"old_string":{"type":"string"},"new_string":{"type":"string"},"replace_all":{"type":"boolean"}},"required":["file_path","old_string","new_string"]}`),
+			Name: "edit",
 		},
 		Path:  pathKey,
 		Label: func(env *Env, in json.RawMessage) string { return "edit " + env.rel(pathKey(env, in)) },
 		Code: &CodeSpec{
-			Name:   "edit",
-			Params: []string{"file_path", "old_string", "new_string"},
-			Alias:  map[string]string{"all": "replace_all"},
-			Doc:    "edit(path, old, new, {all}) → string — replace old with new; old must match exactly once (include enough surrounding lines) unless all is true.",
+			Name:     "edit",
+			Params:   []string{"file_path", "old_string", "new_string"},
+			Required: 3,
+			Options:  []string{"replace_all"},
+			Alias:    map[string]string{"all": "replace_all"},
+			Doc:      "edit(path, old, new, {all}) → string — replace old with new; old must match exactly once (include enough surrounding lines) unless all is true.",
 		},
 		Run: func(ctx context.Context, env *Env, in json.RawMessage, _ func(string)) Result {
 			if env.readOnly() {

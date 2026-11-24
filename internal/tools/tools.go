@@ -107,8 +107,6 @@ type Tool struct {
 	Inner        *Registry
 	Reset        func(hadCells bool)
 	describe     func(inner *Registry) string
-	schemaOnce   sync.Once
-	schemaKeys   schemaKeys
 }
 
 func (t *Tool) HookCall(call llm.Block) HookCall {

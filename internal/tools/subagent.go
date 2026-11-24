@@ -48,24 +48,16 @@ func subagentDoc(mainModel string, menu []config.SubagentModel, efforts []string
 
 func Subagent(mainModel string, menu []config.SubagentModel, efforts []string) *Tool {
 	_, names := subagentMenu(mainModel, menu, efforts, "")
-	schema := map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"prompt": map[string]any{"type": "string"},
-			"model":  map[string]any{"type": "string", "enum": names},
-			"effort": map[string]any{"type": "string", "enum": efforts},
-		},
-		"required": []string{"prompt", "model", "effort"},
-	}
-	raw, _ := json.Marshal(schema)
 	return &Tool{
-		Def:          llm.ToolDef{Name: "subagent", Schema: raw},
+		Def:          llm.ToolDef{Name: "subagent"},
 		ParallelSafe: true,
 		HookNames:    []string{"Agent", "Task"},
 		Code: &CodeSpec{
-			Name:   "subagent",
-			Params: []string{"prompt"},
-			Doc:    subagentDoc(mainModel, menu, efforts),
+			Name:     "subagent",
+			Params:   []string{"prompt"},
+			Required: 1,
+			Options:  []string{"model", "effort"},
+			Doc:      subagentDoc(mainModel, menu, efforts),
 		},
 		Label: func(env *Env, in json.RawMessage) string {
 			a, _ := decode[subagentArgs](in)

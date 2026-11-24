@@ -42,8 +42,7 @@ func serverLines(m *mcp.Manager) string {
 func toolSearch(m *mcp.Manager) *Tool {
 	return &Tool{
 		Def: llm.ToolDef{
-			Name:   "tool_search",
-			Schema: json.RawMessage(`{"type":"object","properties":{"query":{"type":"string"},"server":{"type":"string"}}}`),
+			Name: "tool_search",
 		},
 		Label: func(env *Env, in json.RawMessage) string {
 			a, _ := decode[toolSearchArgs](in)
@@ -170,8 +169,7 @@ func MCPTools(m *mcp.Manager) []*Tool {
 	search.ParallelSafe = true
 	call := &Tool{
 		Def: llm.ToolDef{
-			Name:   "mcp_call",
-			Schema: json.RawMessage(`{"type":"object","properties":{"server":{"type":"string"},"tool":{"type":"string"},"arguments":{"type":"object"}},"required":["server","tool","arguments"]}`),
+			Name: "mcp_call",
 		},
 		Label: func(env *Env, in json.RawMessage) string {
 			a, _ := decode[mcpCallArgs](in)
@@ -219,6 +217,7 @@ func MCPTools(m *mcp.Manager) []*Tool {
 		Code: &CodeSpec{
 			Name:     "mcp",
 			Params:   []string{"server", "tool", "arguments"},
+			Required: 3,
 			Defaults: map[string]string{"arguments": "{}"},
 			Doc:      "mcp(server, tool, args) → value — call an MCP tool found with tool_search; a JSON result comes back parsed, anything else as a string.",
 		},

@@ -421,8 +421,7 @@ type jobsArgs struct {
 func JobsTool() *Tool {
 	return &Tool{
 		Def: llm.ToolDef{
-			Name:   "jobs",
-			Schema: json.RawMessage(`{"type":"object","properties":{"kill":{"type":"integer"}}}`),
+			Name: "jobs",
 		},
 		Label: func(env *Env, in json.RawMessage) string {
 			a, _ := decode[jobsArgs](in)
@@ -450,8 +449,9 @@ func JobsTool() *Tool {
 		},
 		ParallelSafe: true,
 		Code: &CodeSpec{
-			Name: "jobs",
-			Doc:  "jobs({kill}) → string — list this session's background jobs, or stop one by its number: jobs({kill: 2}).",
+			Name:    "jobs",
+			Options: []string{"kill"},
+			Doc:     "jobs({kill}) → string — list this session's background jobs, or stop one by its number: jobs({kill: 2}).",
 		},
 	}
 }

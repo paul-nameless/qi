@@ -14,6 +14,8 @@ import (
 type CodeSpec struct {
 	Name     string
 	Params   []string
+	Required int
+	Options  []string
 	Alias    map[string]string
 	Defaults map[string]string
 	Doc      string
@@ -102,11 +104,7 @@ func applyDefaults(fields map[string]json.RawMessage, spec *CodeSpec) {
 var jsArgNames = map[string]string{"file_path": "path", "old_string": "old", "new_string": "new", "arguments": "args"}
 
 func checkRequired(t *Tool, fields map[string]json.RawMessage) error {
-	required := t.schema().required
-	for _, name := range t.Code.Params {
-		if !slices.Contains(required, name) {
-			continue
-		}
+	for _, name := range t.Code.Params[:t.Code.Required] {
 		v, ok := fields[name]
 		switch {
 		case !ok:
@@ -123,35 +121,6 @@ func jsArgName(name string) string {
 		return js + " (" + name + ")"
 	}
 	return name
-}
-
-type schemaKeys struct {
-	required []string
-	props    []string
-}
-
-func (t *Tool) schema() schemaKeys {
-	t.schemaOnce.Do(func() { t.schemaKeys = parseSchema(t.Def.Schema) })
-	return t.schemaKeys
-}
-
-func parseSchema(schema json.RawMessage) schemaKeys {
-	var s struct {
-		Required   []string                   `json:"required"`
-		Properties map[string]json.RawMessage `json:"properties"`
-	}
-	if json.Unmarshal(schema, &s) != nil {
-		return schemaKeys{}
-	}
-	keys := schemaKeys{required: s.Required}
-	if s.Properties != nil {
-		keys.props = make([]string, 0, len(s.Properties))
-		for k := range s.Properties {
-			keys.props = append(keys.props, k)
-		}
-		sort.Strings(keys.props)
-	}
-	return keys
 }
 
 func positional(fields map[string]json.RawMessage, spec *CodeSpec, args []string) error {
@@ -217,13 +186,9 @@ func aliasConflict(spec *CodeSpec, opts map[string]json.RawMessage) error {
 }
 
 func checkFields(t *Tool, fields map[string]json.RawMessage) error {
-	known := t.schema().props
-	if known == nil {
-		return nil
-	}
 	var unknown []string
 	for k := range fields {
-		if !slices.Contains(known, k) {
+		if !slices.Contains(t.Code.Params, k) && !slices.Contains(t.Code.Options, k) {
 			unknown = append(unknown, k)
 		}
 	}
@@ -231,10 +196,11 @@ func checkFields(t *Tool, fields map[string]json.RawMessage) error {
 		return nil
 	}
 	sort.Strings(unknown)
-	return fmt.Errorf("%s: unknown option %s (known: %s)", t.Code.Name, strings.Join(unknown, ", "), strings.Join(optionNames(t.Code, known), ", "))
+	return fmt.Errorf("%s: unknown option %s (known: %s)", t.Code.Name, strings.Join(unknown, ", "), strings.Join(optionNames(t.Code), ", "))
 }
 
-func optionNames(spec *CodeSpec, known []string) []string {
+func optionNames(spec *CodeSpec) []string {
+	known := slices.Sorted(slices.Values(append(slices.Clone(spec.Params), spec.Options...)))
 	out := make([]string, 0, len(known))
 	for _, k := range known {
 		name := k
