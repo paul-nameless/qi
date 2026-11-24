@@ -161,7 +161,7 @@ func TestCompactRejectsCutOffSummary(t *testing.T) {
 func TestCompactReannouncesModeLostToSummary(t *testing.T) {
 	a := newAgent(t, &fakeProvider{replies: []llm.Message{assistantText("SUMMARY")}})
 	a.conv.messages = append([]llm.Message{{Role: llm.RoleUser, Blocks: []llm.Block{{Type: llm.BlockText, Text: "go"}, {Type: llm.BlockText, Text: readOnlyNote}}}}, history()[1:]...)
-	a.conv.announced = true
+	a.conv.announced = ModeReadOnly
 	if err := a.Compact(context.Background(), ""); err != nil {
 		t.Fatal(err)
 	}

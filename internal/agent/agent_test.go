@@ -112,14 +112,19 @@ func TestModeNoteSentOnChangeOnly(t *testing.T) {
 	_, _, _ = a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "two"}})
 	a.SetReadOnly(false)
 	_, _, _ = a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "three"}})
+	a.SetMode(ModeProject)
+	_, _, _ = a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "four"}})
 	users := []string{}
 	for _, m := range a.conv.messages {
 		if m.Role == llm.RoleUser {
 			users = append(users, lastText(m))
 		}
 	}
-	if !strings.Contains(users[0], "Read-only mode is on") || strings.Contains(users[1], "<mode>") || !strings.Contains(users[2], "Read-only mode is off") {
+	if !strings.Contains(users[0], "Read-only mode is on") || strings.Contains(users[1], "<mode>") || !strings.Contains(users[2], "Yolo mode is on") || !strings.Contains(users[3], "Project mode is on") {
 		t.Errorf("mode notes: %q", users)
+	}
+	if m, ok := lastModeNote([]llm.Message{llm.UserText(legacyYoloNote)}); !ok || m != ModeYolo {
+		t.Errorf("sessions from before project mode end in yolo: %v %v", m, ok)
 	}
 }
 

@@ -18,7 +18,7 @@ import (
 )
 
 const keysText = `Keys:
-  shift+tab          toggle read-only / yolo
+  shift+tab          cycle yolo / project / read-only
   ctrl+g             edit the prompt in $EDITOR
   ctrl+r             pick a prompt from history
   @                  pick files to insert (at the start of a word)

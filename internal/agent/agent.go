@@ -36,7 +36,7 @@ type Options struct {
 	Provider llm.Provider
 	UI       Display
 	Headless bool
-	ReadOnly bool
+	Mode     Mode
 	Tool     *tools.Tool
 	Subagent tools.SubagentFunc
 	SpillDir string
@@ -47,7 +47,7 @@ type Agent struct {
 	ui       Display
 	headless bool
 	env      *tools.Env
-	readOnly atomic.Bool
+	mode     atomic.Int32
 
 	mu   sync.Mutex
 	live live
@@ -70,7 +70,7 @@ type conversation struct {
 	messages     []llm.Message
 	tool         *tools.Tool
 	onStop       StopHook
-	announced    bool
+	announced    Mode
 	carry        []llm.Block
 	paused       bool
 	thrashAt     int
@@ -79,23 +79,75 @@ type conversation struct {
 
 func New(o Options) *Agent {
 	a := &Agent{cwd: o.Cwd, ui: o.UI, headless: o.Headless, wake: make(chan struct{}, 1)}
-	a.readOnly.Store(o.ReadOnly)
-	a.env = &tools.Env{Cwd: o.Cwd, ReadOnly: a.ReadOnly, Allow: o.Config.ReadOnlyAllow, BashTimeout: o.Config.BashTimeout, SpillDir: o.SpillDir, Subagent: o.Subagent, Jobs: tools.NewJobs()}
+	a.mode.Store(int32(o.Mode))
+	a.env = &tools.Env{Cwd: o.Cwd, ReadOnly: a.ReadOnly, Project: a.Project, Writable: o.Config.ProjectWritable, Allow: o.Config.ReadOnlyAllow, BashTimeout: o.Config.BashTimeout, SpillDir: o.SpillDir, Subagent: o.Subagent, Jobs: tools.NewJobs()}
 	a.live = live{cfg: o.Config, provider: o.Provider}
 	a.conv.tool = o.Tool
 	return a
 }
 
+type Mode int32
+
 const (
-	readOnlyNote = "<mode>Read-only mode is on: write and edit are refused, and bash only runs allowlisted read-only commands.</mode>"
-	yoloNote     = "<mode>Read-only mode is off: all tools are available again.</mode>"
+	ModeYolo Mode = iota
+	ModeReadOnly
+	ModeProject
+	modeUnknown Mode = -1
 )
 
-func (a *Agent) ReadOnly() bool { return a.readOnly.Load() }
+func (m Mode) String() string {
+	switch m {
+	case ModeReadOnly:
+		return "read-only"
+	case ModeProject:
+		return "project"
+	}
+	return "yolo"
+}
+
+func (m Mode) Next() Mode {
+	switch m {
+	case ModeYolo:
+		return ModeProject
+	case ModeProject:
+		return ModeReadOnly
+	}
+	return ModeYolo
+}
+
+const (
+	readOnlyNote   = "<mode>Read-only mode is on: write and edit are refused, and bash only runs allowlisted read-only commands.</mode>"
+	projectNote    = "<mode>Project mode is on: files can only be changed inside the working directory (plus temp and build caches); write, edit and bash writes anywhere else fail.</mode>"
+	yoloNote       = "<mode>Yolo mode is on: all tools are available with no limits.</mode>"
+	legacyYoloNote = "<mode>Read-only mode is off: all tools are available again.</mode>"
+)
+
+var modeNotes = map[Mode]string{ModeReadOnly: readOnlyNote, ModeProject: projectNote, ModeYolo: yoloNote}
+
+func (a *Agent) Mode() Mode { return Mode(a.mode.Load()) }
+
+func (a *Agent) SetMode(m Mode) { a.mode.Store(int32(m)) }
 
 func (a *Agent) SetReadOnly(v bool) {
-	a.readOnly.Store(v)
+	if v {
+		a.SetMode(ModeReadOnly)
+		return
+	}
+	a.SetMode(ModeYolo)
 }
+
+func ParseMode(s string) Mode {
+	for _, m := range []Mode{ModeYolo, ModeReadOnly, ModeProject} {
+		if m.String() == s {
+			return m
+		}
+	}
+	return ModeYolo
+}
+
+func (a *Agent) ReadOnly() bool { return a.Mode() == ModeReadOnly }
+
+func (a *Agent) Project() bool { return a.Mode() == ModeProject }
 
 func (a *Agent) Cwd() string { return a.cwd }
 
@@ -132,7 +184,7 @@ func (a *Agent) setSession(s *session.Session) {
 func (a *Agent) resetConversation(msgs []llm.Message) {
 	a.conv.messages = msgs
 	a.env.ForgetFiles()
-	a.conv.announced, a.conv.carry = false, nil
+	a.conv.announced, a.conv.carry = ModeYolo, nil
 	a.conv.paused, a.conv.thrashAt = false, 0
 }
 
@@ -178,7 +230,7 @@ func (a *Agent) Reconfigure(cfg config.Config, p llm.Provider) {
 	defer a.mu.Unlock()
 	a.live.cfg = cfg
 	a.live.provider = p
-	a.env.Allow, a.env.BashTimeout = cfg.ReadOnlyAllow, cfg.BashTimeout
+	a.env.Allow, a.env.Writable, a.env.BashTimeout = cfg.ReadOnlyAllow, cfg.ProjectWritable, cfg.BashTimeout
 	a.conv.windowWarned = false
 	a.conv.paused, a.conv.thrashAt = false, 0
 }
@@ -333,35 +385,37 @@ func (a *Agent) DrainQueue() []llm.Block {
 	return q
 }
 
-func lastModeNote(msgs []llm.Message) (readOnly, found bool) {
+func lastModeNote(msgs []llm.Message) (Mode, bool) {
 	for i := len(msgs) - 1; i >= 0; i-- {
 		for _, b := range msgs[i].Blocks {
-			switch b.Text {
-			case readOnlyNote:
-				return true, true
-			case yoloNote:
-				return false, true
+			if b.Text == legacyYoloNote {
+				return ModeYolo, true
+			}
+			for m, note := range modeNotes {
+				if b.Text == note {
+					return m, true
+				}
 			}
 		}
 	}
-	return false, false
+	return ModeYolo, false
 }
 
 func (a *Agent) restoreMode() {
-	if ro, ok := lastModeNote(a.conv.messages); ok {
-		a.conv.announced = ro
+	if m, ok := lastModeNote(a.conv.messages); ok {
+		a.conv.announced = m
 	}
 }
 
 func (a *Agent) restoreModeAfter(hadNote bool) {
-	ro, ok := lastModeNote(a.conv.messages)
+	m, ok := lastModeNote(a.conv.messages)
 	switch {
 	case ok:
-		a.conv.announced = ro
+		a.conv.announced = m
 	case hadNote:
-		a.conv.announced = !a.ReadOnly()
+		a.conv.announced = modeUnknown
 	default:
-		a.conv.announced = false
+		a.conv.announced = ModeYolo
 	}
 }
 
@@ -375,15 +429,12 @@ func (a *Agent) changesBlock() (llm.Block, bool) {
 }
 
 func (a *Agent) modeBlock() (llm.Block, bool) {
-	ro := a.ReadOnly()
-	if ro == a.conv.announced {
+	m := a.Mode()
+	if m == a.conv.announced {
 		return llm.Block{}, false
 	}
-	a.conv.announced = ro
-	if ro {
-		return llm.Block{Type: llm.BlockText, Text: readOnlyNote}, true
-	}
-	return llm.Block{Type: llm.BlockText, Text: yoloNote}, true
+	a.conv.announced = m
+	return llm.Block{Type: llm.BlockText, Text: modeNotes[m]}, true
 }
 
 func (a *Agent) appendMsg(m llm.Message, u *llm.Usage) {

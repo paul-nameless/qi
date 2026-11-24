@@ -62,6 +62,8 @@ type SubagentFunc func(ctx context.Context, task SubagentTask, progress func(str
 type Env struct {
 	Cwd         string
 	ReadOnly    func() bool
+	Project     func() bool
+	Writable    []string
 	Allow       []string
 	BashTimeout int
 	SpillDir    string
@@ -74,6 +76,10 @@ type Env struct {
 
 func (e *Env) readOnly() bool {
 	return e.ReadOnly != nil && e.ReadOnly()
+}
+
+func (e *Env) project() bool {
+	return e.Project != nil && e.Project()
 }
 
 func (e *Env) resolve(p string) string {

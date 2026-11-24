@@ -138,7 +138,7 @@ func findSandbox() sandboxSpec {
 	}
 	tmp, _ := filepath.EvalSymlinks(os.TempDir())
 	for _, isolate := range []bool{true, false} {
-		if exec.Command(path, bwrapArgs("true", tmp, execDenied(), isolate)...).Run() == nil {
+		if exec.Command(path, bwrapArgs("true", []string{tmp}, execDenied(), isolate)...).Run() == nil {
 			return sandboxSpec{path, isolate}
 		}
 	}
@@ -153,7 +153,7 @@ func sandboxCmd(ctx context.Context, command, tmp string) *exec.Cmd {
 	case runtime.GOOS == "darwin":
 		return exec.CommandContext(ctx, sb.path, "-D", "TMP="+tmp, "-p", sandboxProfile, "bash", "-c", command)
 	}
-	return exec.CommandContext(ctx, sb.path, bwrapArgs(command, tmp, execDenied(), sb.isolateNet)...)
+	return exec.CommandContext(ctx, sb.path, bwrapArgs(command, []string{tmp}, execDenied(), sb.isolateNet)...)
 }
 
 var deniedExecs = []string{
@@ -187,8 +187,11 @@ func deniedPaths(dirs, names []string) []string {
 	return out
 }
 
-func bwrapArgs(command, tmp string, denied []string, isolateNet bool) []string {
-	args := []string{"--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--bind", tmp, tmp}
+func bwrapArgs(command string, writable, denied []string, isolateNet bool) []string {
+	args := []string{"--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc"}
+	for _, w := range writable {
+		args = append(args, "--bind", w, w)
+	}
 	if isolateNet {
 		args = append(args, "--unshare-net")
 	}
@@ -215,8 +218,11 @@ func readOnlyEnv() []string {
 
 func bashCmd(ctx context.Context, env *Env, command string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, "bash", "-c", command)
-	if env.readOnly() {
+	switch {
+	case env.readOnly():
 		cmd = readOnlySandbox(ctx, command)
+	case env.project():
+		cmd = projectSandbox(ctx, command, env.writableRoots())
 	}
 	cmd.Dir = env.Cwd
 	cmd.Env = append(os.Environ(), "PAGER=cat", "GIT_PAGER=cat", "GIT_TERMINAL_PROMPT=0", "TERM=dumb", "NO_COLOR=1", "CLICOLOR=0")

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/paul-nameless/qi/internal/agent"
 	"github.com/paul-nameless/qi/internal/config"
 	"github.com/paul-nameless/qi/internal/llm"
 	"github.com/paul-nameless/qi/internal/mcp"
@@ -39,20 +40,25 @@ func devNullPrinter(t *testing.T) *ui.Printer {
 func TestReadOnlyWiring(t *testing.T) {
 	display := devNullPrinter(t)
 	a, runner := buildAgent(config.Config{Model: "m"}, options{}, t.TempDir(), nopProvider{}, display, true, false)
-	if a.ReadOnly() || runner.ReadOnly() {
+	if a.ReadOnly() || runner.Mode() != agent.ModeYolo {
 		t.Fatal("read-only on by default")
 	}
 	a.SetReadOnly(true)
-	if !runner.ReadOnly() {
+	if runner.Mode() != agent.ModeReadOnly {
 		t.Error("subagent runner does not follow the agent's read-only mode")
 	}
 	a2, _ := buildAgent(config.Config{Model: "m"}, options{readOnly: true}, t.TempDir(), nopProvider{}, display, true, false)
 	if !a2.ReadOnly() {
 		t.Error("-read-only flag not applied")
 	}
-	a3, _ := buildAgent(config.Config{Model: "m", ReadOnly: true}, options{}, t.TempDir(), nopProvider{}, display, true, false)
+	a3, _ := buildAgent(config.Config{Model: "m", ReadOnly: true, Mode: "project"}, options{}, t.TempDir(), nopProvider{}, display, true, false)
 	if !a3.ReadOnly() {
-		t.Error("read_only: true in config not applied")
+		t.Error("read_only: true in config not applied, or lost to mode")
+	}
+	a4, _ := buildAgent(config.Config{Model: "m", Mode: "project"}, options{}, t.TempDir(), nopProvider{}, display, true, false)
+	a5, _ := buildAgent(config.Config{Model: "m"}, options{project: true}, t.TempDir(), nopProvider{}, display, true, false)
+	if a4.Mode() != agent.ModeProject || a5.Mode() != agent.ModeProject {
+		t.Errorf("project from config %v, from -project %v", a4.Mode(), a5.Mode())
 	}
 }
 
@@ -110,9 +116,13 @@ func TestSubagentModeIsFixedAtLaunch(t *testing.T) {
 	display := devNullPrinter(t)
 	a, runner := buildAgent(config.Config{Model: "m"}, options{}, t.TempDir(), nopProvider{}, display, true, false)
 	r := &repl{agent: a, display: display, runner: runner}
-	r.toggleMode()
-	if !runner.ReadOnly() {
-		t.Error("subagents launched after switching to read-only would not get -read-only")
+	var seen []string
+	for range 3 {
+		r.toggleMode()
+		seen = append(seen, runner.Mode().String())
+	}
+	if strings.Join(seen, ",") != "project,read-only,yolo" {
+		t.Errorf("shift+tab cycle as seen by subagents: %v", seen)
 	}
 }
 
@@ -342,8 +352,11 @@ func TestMalformedHookFileFailsStartup(t *testing.T) {
 
 func TestNoSandboxWarning(t *testing.T) {
 	display, out := capturePrinter(t)
-	warnNoSandbox(display)
-	if got := out.String(); tools.HasSandbox() == strings.Contains(got, noSandboxNote) {
+	warnNoSandbox(display, agent.ModeReadOnly)
+	warnNoSandbox(display, agent.ModeProject)
+	warnNoSandbox(display, agent.ModeYolo)
+	got := out.String()
+	if tools.HasSandbox() == strings.Contains(got, noSandboxNote) || tools.HasSandbox() == strings.Contains(got, noProjectSandboxNote) {
 		t.Errorf("sandbox %v, output %q", tools.HasSandbox(), got)
 	}
 }

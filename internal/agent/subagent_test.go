@@ -54,7 +54,7 @@ func TestSubagentReadsJSONEntries(t *testing.T) {
 		session.Entry{Type: "message", Message: &llm.Message{Role: llm.RoleUser, Blocks: []llm.Block{{Type: llm.BlockToolResult, ToolUseID: "c1", Text: "a\nb"}}}},
 		session.Entry{Type: "message", Message: &llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: " There are 2 files. "}}}},
 	) + "not json\n"
-	r := &SubagentRunner{ReadOnly: func() bool { return false }, Cwd: t.TempDir(), Exe: fakeChild(t, stream, "progress noise\n", 0)}
+	r := &SubagentRunner{Mode: func() Mode { return ModeYolo }, Cwd: t.TempDir(), Exe: fakeChild(t, stream, "progress noise\n", 0)}
 	r.Label = func(b llm.Block) string { return tools.Bash().Label(nil, b.Input) }
 	var progress []string
 	answer, err := r.Run(context.Background(), tools.SubagentTask{Prompt: "count files", Model: "m"}, func(s string) { progress = append(progress, s) })
@@ -76,7 +76,7 @@ func TestSubagentFailureReportsFatalError(t *testing.T) {
 		{"", "exit status 1"},
 		{long + "\n", "exit status 1: " + strutil.CutStart(long, maxCause) + "…"},
 	}
-	r := &SubagentRunner{ReadOnly: func() bool { return false }, Label: func(b llm.Block) string { return b.Name }, Cwd: t.TempDir()}
+	r := &SubagentRunner{Mode: func() Mode { return ModeYolo }, Label: func(b llm.Block) string { return b.Name }, Cwd: t.TempDir()}
 	for _, c := range cases {
 		r.Exe = fakeChild(t, "", c.stderr, 1)
 		_, err := r.Run(context.Background(), tools.SubagentTask{Prompt: "x", Model: "m"}, func(string) {})
@@ -100,7 +100,7 @@ func TestSubagentCancelWithGrandchildHoldingStdout(t *testing.T) {
 	if err := os.WriteFile(script, []byte(body), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	r := &SubagentRunner{ReadOnly: func() bool { return false }, Label: func(b llm.Block) string { return b.Name }, Cwd: dir, Exe: script}
+	r := &SubagentRunner{Mode: func() Mode { return ModeYolo }, Label: func(b llm.Block) string { return b.Name }, Cwd: dir, Exe: script}
 	ctx, cancel := context.WithCancel(context.Background())
 	time.AfterFunc(200*time.Millisecond, cancel)
 	start := time.Now()

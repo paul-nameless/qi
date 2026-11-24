@@ -266,7 +266,7 @@ func TestBwrapExecDenyList(t *testing.T) {
 	if !slices.Equal(got, []string{filepath.Join(real, "sudo"), filepath.Join(real, "real-open")}) {
 		t.Errorf("denied %q: want sudo and the alternatives target, not busybox, no duplicates", got)
 	}
-	args := strings.Join(bwrapArgs("ls", "/tmp/x", []string{"/usr/bin/sudo"}, true), " ")
+	args := strings.Join(bwrapArgs("ls", []string{"/tmp/x"}, []string{"/usr/bin/sudo"}, true), " ")
 	if args != "--ro-bind / / --dev /dev --proc /proc --bind /tmp/x /tmp/x --unshare-net --ro-bind /dev/null /usr/bin/sudo --die-with-parent bash -c ls" {
 		t.Errorf("bwrap args: %s", args)
 	}

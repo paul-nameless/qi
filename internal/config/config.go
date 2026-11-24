@@ -61,6 +61,8 @@ type Config struct {
 	RunCode          *bool     `json:"run_code"`
 	ReadOnly         bool      `json:"read_only"`
 	ReadOnlyAllow    []string  `json:"read_only_allow"`
+	ProjectWritable  []string  `json:"project_writable"`
+	Mode             string    `json:"mode"`
 	BashTimeout      int       `json:"bash_timeout"`
 	SystemPromptFile string    `json:"system_prompt_file"`
 	SystemPrompt     string    `json:"-"`
@@ -476,6 +478,16 @@ func isOpenRouter(baseURL string) bool {
 	}
 	host := strings.ToLower(u.Hostname())
 	return host == "openrouter.ai" || strings.HasSuffix(host, ".openrouter.ai")
+}
+
+func (c Config) StartMode() string {
+	if c.ReadOnly {
+		return "read-only"
+	}
+	if c.Mode == "" {
+		return "yolo"
+	}
+	return c.Mode
 }
 
 func (c *Config) DefaultCacheTTL(headless bool) {

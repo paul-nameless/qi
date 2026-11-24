@@ -28,6 +28,7 @@ type options struct {
 	effort           string
 	systemPromptFile string
 	readOnly         bool
+	project          bool
 	sessionID        string
 	pickSession      bool
 	resumeID         string
@@ -96,7 +97,7 @@ func run(o options) error {
 	defer a.KillJobs()
 	skills, sys := agent.LoadPrompt(cwd, cfg, agent.ScratchDir(a.Session().ID))
 	a.SetSystem(sys)
-	hooks.Session, hooks.SessionID, hooks.ReadOnly = a.Session().Path, a.Session().ID, a.ReadOnly
+	hooks.Session, hooks.SessionID, hooks.Mode = a.Session().Path, a.Session().ID, a.Mode
 	if !hooks.Empty() {
 		var stop agent.StopHook
 		if !isSub {
@@ -109,9 +110,7 @@ func run(o options) error {
 	}
 
 	if headless {
-		if a.ReadOnly() {
-			warnNoSandbox(display)
-		}
+		warnNoSandbox(display, a.Mode())
 		prompt, err := headlessPrompt(o.query, stdinPiped)
 		if err != nil {
 			return err
@@ -248,8 +247,18 @@ func submitPrompt(ctx context.Context, a *agent.Agent, display notifier, hooks *
 	return blocks, nil
 }
 
+func startMode(o options, cfg config.Config) agent.Mode {
+	switch {
+	case o.readOnly:
+		return agent.ModeReadOnly
+	case o.project:
+		return agent.ModeProject
+	}
+	return agent.ParseMode(cfg.StartMode())
+}
+
 func buildAgent(cfg config.Config, o options, cwd string, p llm.Provider, display agent.Display, headless, isSub bool, extra ...*tools.Function) (*agent.Agent, *agent.SubagentRunner) {
-	opts := agent.Options{Config: cfg, Cwd: cwd, Provider: p, UI: display, Headless: headless, ReadOnly: o.readOnly || cfg.ReadOnly}
+	opts := agent.Options{Config: cfg, Cwd: cwd, Provider: p, UI: display, Headless: headless, Mode: startMode(o, cfg)}
 	funcs := []*tools.Function{tools.Read(), tools.Write(), tools.Edit(), tools.Bash(), tools.JobsFunc()}
 	var runner *agent.SubagentRunner
 	if !isSub {
@@ -261,7 +270,7 @@ func buildAgent(cfg config.Config, o options, cwd string, p llm.Provider, displa
 	opts.Tool = tools.Run(funcs...)
 	a := agent.New(opts)
 	if runner != nil {
-		runner.ReadOnly = a.ReadOnly
+		runner.Mode = a.Mode
 		runner.SessionID = func() string {
 			if s := a.Session(); s != nil {
 				return s.ID

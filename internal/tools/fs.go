@@ -256,6 +256,9 @@ func Write() *Function {
 			if err != nil {
 				return errResult("%v", err)
 			}
+			if err := env.checkWritable(a.FilePath); err != nil {
+				return deniedResult("%v", err)
+			}
 			if a.FilePath == "" {
 				return errResult("file_path is required")
 			}
@@ -314,6 +317,9 @@ func Edit() *Function {
 			a, err := decode[editArgs](in)
 			if err != nil {
 				return errResult("%v", err)
+			}
+			if err := env.checkWritable(a.FilePath); err != nil {
+				return deniedResult("%v", err)
 			}
 			path := env.resolve(a.FilePath)
 			if st, err := os.Stat(path); err != nil {

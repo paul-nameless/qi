@@ -10,6 +10,7 @@ var (
 	apis      = []string{"openai", "responses", "anthropic"}
 	efforts   = []string{"none", "minimal", "low", "medium", "high", "xhigh", "max"}
 	cacheTTLs = []string{"5m", "1h"}
+	modes     = []string{"yolo", "project", "read-only"}
 )
 
 func (c Config) validate() error {
@@ -17,6 +18,7 @@ func (c Config) validate() error {
 		oneOf("api", c.API, apis),
 		oneOf("cache_ttl", c.CacheTTL, cacheTTLs),
 		oneOf("reasoning_effort", c.ReasoningEffort, efforts),
+		oneOf("mode", c.Mode, modes),
 		atLeast("max_tokens", c.MaxTokens, 1),
 		atLeast("bash_timeout", c.BashTimeout, 1),
 		atLeast("max_rounds", c.MaxRounds, 0),

@@ -45,7 +45,7 @@ type Hooks struct {
 	Cwd        string
 	SessionID  string
 	Session    string
-	ReadOnly   func() bool
+	Mode       func() Mode
 	SkipPrompt bool
 	Info       func(string)
 }
@@ -204,8 +204,13 @@ func (h *Hooks) run(ctx context.Context, event string, names []string, payload m
 		return nil
 	}
 	mode := "bypassPermissions"
-	if h.ReadOnly != nil && h.ReadOnly() {
-		mode = "plan"
+	if h.Mode != nil {
+		switch h.Mode() {
+		case ModeReadOnly:
+			mode = "plan"
+		case ModeProject:
+			mode = "acceptEdits"
+		}
 	}
 	payload["session_id"] = h.SessionID
 	payload["transcript_path"] = h.Session

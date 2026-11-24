@@ -48,27 +48,32 @@ type repl struct {
 }
 
 func (r *repl) prompt() string {
-	if r.agent.ReadOnly() {
+	switch r.agent.Mode() {
+	case agent.ModeReadOnly:
 		return r.display.Color(ui.Yellow, "read-only") + r.display.Color(ui.Cyan, " ❯ ")
+	case agent.ModeProject:
+		return r.display.Color(ui.Green, "project") + r.display.Color(ui.Cyan, " ❯ ")
 	}
 	return r.display.Color(ui.Cyan, "❯ ")
 }
 
 func (r *repl) toggleMode() {
-	ro := !r.agent.ReadOnly()
-	r.agent.SetReadOnly(ro)
-	if ro {
-		warnNoSandbox(r.display)
-	}
+	m := r.agent.Mode().Next()
+	r.agent.SetMode(m)
+	warnNoSandbox(r.display, m)
 }
 
 const (
-	noSandboxNote = "no usable OS sandbox (bubblewrap missing, or user namespaces blocked): read-only relies on the command allowlist only"
-	noNetworkNote = "the OS sandbox can't isolate the network here (bwrap --unshare-net failed): read-only commands can still reach it"
+	noSandboxNote        = "no usable OS sandbox (bubblewrap missing, or user namespaces blocked): read-only relies on the command allowlist only"
+	noNetworkNote        = "the OS sandbox can't isolate the network here (bwrap --unshare-net failed): read-only commands can still reach it"
+	noProjectSandboxNote = "no usable OS sandbox (bubblewrap missing, or user namespaces blocked): project mode only limits write and edit, bash can still write anywhere"
 )
 
-func warnNoSandbox(display notifier) {
+func warnNoSandbox(display notifier, m agent.Mode) {
 	switch {
+	case m == agent.ModeProject && !tools.HasSandbox():
+		display.Info(noProjectSandboxNote)
+	case m != agent.ModeReadOnly:
 	case !tools.HasSandbox():
 		display.Info(noSandboxNote)
 	case !tools.SandboxIsolatesNetwork():
@@ -77,10 +82,7 @@ func warnNoSandbox(display notifier) {
 }
 
 func (r *repl) modeName() string {
-	if r.agent.ReadOnly() {
-		return "read-only"
-	}
-	return "yolo"
+	return r.agent.Mode().String()
 }
 
 func (r *repl) run() error {
@@ -113,9 +115,7 @@ func (r *repl) run() error {
 	r.handleSignals()
 	r.handleResize()
 	r.banner()
-	if r.agent.ReadOnly() {
-		warnNoSandbox(r.display)
-	}
+	warnNoSandbox(r.display, r.agent.Mode())
 
 	draft := ""
 	for {

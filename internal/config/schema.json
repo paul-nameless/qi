@@ -83,8 +83,18 @@
       "type": "boolean"
     },
     "read_only": {
-      "description": "Start in read-only mode (no write or edit, bash limited to an allowlist). shift+tab toggles it. Default: false.",
+      "description": "Start in read-only mode (no write or edit, bash limited to an allowlist); the same as \"mode\": \"read-only\" and wins over mode. Default: false.",
       "type": "boolean"
+    },
+    "mode": {
+      "description": "Mode to start in: yolo (no limits), project (files can only change inside the working directory plus temp and build caches; bash runs in an OS sandbox with the network on), or read-only. shift+tab cycles yolo, project, read-only. Default: yolo.",
+      "type": "string",
+      "enum": ["yolo", "project", "read-only"]
+    },
+    "project_writable": {
+      "description": "Extra directories that stay writable in project mode, e.g. [\"~/.gradle\"]. Temp, the user cache dir, ~/.npm, ~/go/pkg/mod and ~/.cargo/{registry,git} always are.",
+      "type": "array",
+      "items": { "type": "string" }
     },
     "read_only_allow": {
       "description": "Extra command prefixes bash may run in read-only mode, e.g. [\"make lint\", \"go test\"].",
