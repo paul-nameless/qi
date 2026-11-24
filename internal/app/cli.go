@@ -18,6 +18,9 @@ type cliArgs struct {
 }
 
 func Main(args []string, version string) int {
+	if len(args) > 0 && args[0] == "pick" {
+		return pickMain(args[1:], os.Stdin, os.Stdout)
+	}
 	c, err := parseArgs(args, os.Stderr)
 	if errors.Is(err, flag.ErrHelp) {
 		return 0

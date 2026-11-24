@@ -8,13 +8,20 @@ import (
 )
 
 type PickItem struct {
-	Name string
-	Desc string
+	Name  string
+	Desc  string
+	Color string
+}
+
+type PickList struct {
+	Prompt string
+	Items  []PickItem
 }
 
 type PickOptions struct {
 	SearchDesc bool
-	OnPick     func(i int) (items []PickItem, stay bool)
+	OnPick     func(i int) *PickList
+	OnBack     func() *PickList
 }
 
 type match struct {
@@ -36,12 +43,12 @@ type pickState struct {
 
 const pickNameMax = 24
 
-func (e *Editor) Pick(prompt string, items []PickItem, opts PickOptions) (int, bool) {
-	if len(items) == 0 {
+func (e *Editor) Pick(list PickList, opts PickOptions) (int, bool) {
+	if len(list.Items) == 0 && opts.OnBack == nil {
 		return -1, false
 	}
-	st := &pickState{prompt: prompt, opts: opts}
-	st.setItems(items)
+	st := &pickState{opts: opts}
+	st.show(&list)
 	old, oldFinal := e.P.SwapPrompt(func(width, height int) Frame { return st.frame(e.P, width, height) }, nil)
 	defer e.P.SwapPrompt(old, oldFinal)
 	drain(e.Interrupt)
@@ -55,19 +62,27 @@ func (e *Editor) Pick(prompt string, items []PickItem, opts PickOptions) (int, b
 		switch k.Kind {
 		case KeyEsc, KeyEOF:
 			return -1, false
-		case KeyEnter:
+		case KeyEnter, KeyTab:
 			i, ok := st.selected()
 			if !ok {
 				continue
 			}
-			if st.opts.OnPick == nil {
+			if k.Kind == KeyTab || st.opts.OnPick == nil {
 				return i, true
 			}
-			next, stay := st.opts.OnPick(i)
-			if !stay {
+			next := st.opts.OnPick(i)
+			if next == nil {
 				return i, true
 			}
-			e.P.Locked(func() { st.setItems(next) })
+			e.P.Locked(func() { st.show(next) })
+		case KeyLeft, KeyBackspace:
+			if st.opts.OnBack == nil || (k.Kind == KeyBackspace && len(st.query) > 0) {
+				e.P.Locked(func() { st.key(k) })
+				break
+			}
+			if next := st.opts.OnBack(); next != nil {
+				e.P.Locked(func() { st.show(next) })
+			}
 		default:
 			e.P.Locked(func() { st.key(k) })
 		}
@@ -75,7 +90,11 @@ func (e *Editor) Pick(prompt string, items []PickItem, opts PickOptions) (int, b
 	}
 }
 
-func (st *pickState) setItems(items []PickItem) {
+func (st *pickState) show(list *PickList) {
+	if list.Prompt != st.prompt {
+		st.prompt, st.query, st.cur, st.top = list.Prompt, nil, 0, 0
+	}
+	items := list.Items
 	st.items = items
 	st.nameW = 0
 	for _, it := range items {
@@ -207,7 +226,11 @@ func (st *pickState) row(p *Printer, m match, current bool) string {
 		b.WriteString(s)
 		n++
 	}
-	name := b.String() + strings.Repeat(" ", max(st.nameW-displayWidth(it.Name), 0))
+	name := b.String()
+	if it.Color != "" {
+		name = it.Color + strings.ReplaceAll(name, Reset, Reset+it.Color) + Reset
+	}
+	name += strings.Repeat(" ", max(st.nameW-displayWidth(it.Name), 0))
 	mark := "  "
 	if current {
 		mark = p.Color(Cyan, "▌ ")

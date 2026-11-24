@@ -39,6 +39,7 @@ const (
 	KeyPaste
 	KeyClear
 	KeyHistory
+	KeyTab
 	keyFocusIn
 	keyFocusOut
 	keyDeviceAttrs
@@ -79,7 +80,11 @@ func IsTerminal(f *os.File) bool {
 }
 
 func OpenTerminal() (*Terminal, error) {
-	fd := int(os.Stdin.Fd())
+	return OpenTerminalOn(os.Stdin, os.Stdout)
+}
+
+func OpenTerminalOn(in, out *os.File) (*Terminal, error) {
+	fd := int(in.Fd())
 	orig, err := unix.IoctlGetTermios(fd, ioctlGetTermios)
 	if err != nil {
 		return nil, err
@@ -89,7 +94,7 @@ func OpenTerminal() (*Terminal, error) {
 		return nil, err
 	}
 	_ = unix.SetNonblock(p[0], true)
-	t := &Terminal{fd: fd, out: os.Stdout, wakeR: p[0], wakeW: p[1], wake: make(chan struct{}, 1), orig: orig, Keys: make(chan Key, 256), raw: make(chan []byte, 64), pauseAck: make(chan struct{}, 1), synced: make(chan struct{}, 1)}
+	t := &Terminal{fd: fd, out: out, wakeR: p[0], wakeW: p[1], wake: make(chan struct{}, 1), orig: orig, Keys: make(chan Key, 256), raw: make(chan []byte, 64), pauseAck: make(chan struct{}, 1), synced: make(chan struct{}, 1)}
 	if err := t.applyMode(); err != nil {
 		t.closeWake()
 		return nil, err
@@ -358,6 +363,8 @@ func decodeKey(b []byte) (Key, int) {
 		return Key{Kind: KeyClear}, 1
 	case 0x12:
 		return Key{Kind: KeyHistory}, 1
+	case 0x09:
+		return Key{Kind: KeyTab}, 1
 	case 0x10:
 		return Key{Kind: KeyUp}, 1
 	case 0x0e:

@@ -37,7 +37,7 @@ func pick(run runner, ed *ui.Editor, command, picker, prompt string, items []pic
 		if ed == nil {
 			return "", false
 		}
-		i, ok := ed.Pick(prompt, uiItems(items), ui.PickOptions{SearchDesc: searchDesc})
+		i, ok := ed.Pick(ui.PickList{Prompt: prompt, Items: uiItems(items)}, ui.PickOptions{SearchDesc: searchDesc})
 		if !ok {
 			return "", false
 		}
@@ -64,16 +64,12 @@ func (r *repl) pickWith(command, prompt string, items []pickItem) (string, bool)
 }
 
 func (r *repl) filePicker() (string, bool) {
-	if cfg := r.agent.Config(); isBuiltin(cfg.FilePicker, cfg.Picker) {
-		var items []pickItem
-		for _, f := range listFiles(r.agent.Cwd(), fileListLimit) {
-			items = append(items, pickItem{name: f})
-		}
-		name, ok := r.pickWith(cfg.FilePicker, "@ ", items)
+	if cfg := r.agent.Config(); isBuiltin(cfg.FilePicker, cfg.Picker) && r.editor != nil {
+		path, ok := browseFiles(r.editor, r.agent.Cwd())
 		if !ok {
 			return "", false
 		}
-		return quotePath(relPath(r.agent.Cwd(), name)) + " ", true
+		return quotePath(path) + " ", true
 	}
 	files := strings.Join(listFiles(r.agent.Cwd(), fileListLimit), "\n") + "\n"
 	lines, ok := choose(r.runTTY, r.agent.Config().FilePicker, r.agent.Config().Picker, "@ ", strings.NewReader(files))

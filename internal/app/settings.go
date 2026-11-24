@@ -68,11 +68,12 @@ func (r *repl) configCmd(args string) {
 	for _, s := range settings {
 		before[s.key] = s.get(cfg)
 	}
-	r.editor.Pick("config ", uiItems(r.settingItems()), ui.PickOptions{OnPick: func(i int) ([]ui.PickItem, bool) {
+	list := func() *ui.PickList { return &ui.PickList{Prompt: "config ", Items: uiItems(r.settingItems())} }
+	r.editor.Pick(*list(), ui.PickOptions{OnPick: func(i int) *ui.PickList {
 		if _, err := r.switchSetting(settings[i].key); err != nil {
 			errs = append(errs, err)
 		}
-		return uiItems(r.settingItems()), true
+		return list()
 	}})
 	var changed []string
 	for _, s := range settings {
