@@ -309,8 +309,26 @@ func TestCancelledPromptIsKept(t *testing.T) {
 		t.Fatal(err)
 	}
 	last := llm.MergeConsecutive(p.requests[len(p.requests)-1])
-	if len(last) != 1 || lastText(last[0]) != "first|"+interruptedNote+"|second" {
+	if len(last) != 1 || lastText(last[0]) != "first|"+llm.Interrupted+"|second" {
 		t.Errorf("request after a cancelled prompt: %+v", last)
+	}
+}
+
+func TestRejectionAfterInterruptDropsTheInterruptedPrompt(t *testing.T) {
+	p := &fakeProvider{}
+	a := newAgent(t, p)
+	a.conv.messages = []llm.Message{llm.UserText("earlier"), {Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: "ok"}}}}
+	ctx, cancel := context.WithCancel(context.Background())
+	p.onCall = func(int) { cancel() }
+	if _, _, err := a.Turn(ctx, []llm.Block{{Type: llm.BlockText, Text: "huge image"}}); err != context.Canceled {
+		t.Fatalf("got %v", err)
+	}
+	a.live.provider = &rejectProvider{}
+	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "next"}}); err == nil {
+		t.Fatal("expected error")
+	}
+	if len(a.conv.messages) != 2 || a.conv.messages[1].Text() != "ok" {
+		t.Errorf("history after a rejection that followed an interrupt: %+v", a.conv.messages)
 	}
 }
 

@@ -86,9 +86,8 @@ func New(o Options) *Agent {
 }
 
 const (
-	readOnlyNote    = "<mode>Read-only mode is on: write and edit are refused, and bash only runs allowlisted read-only commands.</mode>"
-	yoloNote        = "<mode>Read-only mode is off: all tools are available again.</mode>"
-	interruptedNote = "[Request interrupted by user]"
+	readOnlyNote = "<mode>Read-only mode is on: write and edit are refused, and bash only runs allowlisted read-only commands.</mode>"
+	yoloNote     = "<mode>Read-only mode is off: all tools are available again.</mode>"
 )
 
 func (a *Agent) ReadOnly() bool { return a.readOnly.Load() }
@@ -512,11 +511,12 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 		}
 		if err != nil {
 			if ctx.Err() != nil {
-				a.appendMsg(llm.Message{Role: llm.RoleUser, Blocks: []llm.Block{{Type: llm.BlockText, Text: interruptedNote}}}, nil)
+				a.appendMsg(llm.Message{Role: llm.RoleUser, Blocks: []llm.Block{{Type: llm.BlockText, Text: llm.Interrupted}}}, nil)
 				return "", stats, context.Canceled
 			}
 			if round == 0 && rejected(err) {
 				a.dropLast()
+				a.dropInterrupted()
 				undo()
 			}
 			return "", stats, err
@@ -635,6 +635,19 @@ func (a *Agent) dropLast() {
 			a.ui.Error("session: " + err.Error())
 		}
 	}
+}
+
+func (a *Agent) dropInterrupted() {
+	n := len(a.conv.messages)
+	if n < 2 || a.conv.messages[n-1].Text() != llm.Interrupted || hasToolResults(a.conv.messages[n-2]) {
+		return
+	}
+	a.dropLast()
+	a.dropLast()
+}
+
+func hasToolResults(m llm.Message) bool {
+	return slices.ContainsFunc(m.Blocks, func(b llm.Block) bool { return b.Type == llm.BlockToolResult })
 }
 
 func (a *Agent) EstimateTokens() int {

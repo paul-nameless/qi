@@ -4,6 +4,7 @@ import "strings"
 
 const (
 	QueuedLead       = "The user sent this while you were working:"
+	Interrupted      = "[Request interrupted by user]"
 	hookContextOpen  = "<hook-context>"
 	hookContextClose = "</hook-context>"
 	imageNoteOpen    = "<attached-image>"
@@ -23,5 +24,5 @@ func IsAttachment(text string) bool {
 }
 
 func IsInBand(text string) bool {
-	return strings.HasPrefix(text, "<") || strings.HasPrefix(text, QueuedLead)
+	return strings.HasPrefix(text, "<") || strings.HasPrefix(text, QueuedLead) || text == Interrupted
 }

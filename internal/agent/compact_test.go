@@ -403,7 +403,7 @@ func TestClipKeepsPreviousSummary(t *testing.T) {
 }
 
 func TestClipKeepsCodeHeadAndTail(t *testing.T) {
-	code := "const first = 1\n" + strings.Repeat("x", 3*clipToolResult) + "\nreturn last"
+	code := "const first = 1\n" + strings.Repeat("a && <b>", clipToolResult) + "\nreturn last"
 	in, _ := json.Marshal(map[string]any{"code": code, "timeout": 30})
 	b := clipBlock(llm.Block{Type: llm.BlockToolUse, Input: in})
 	var got struct {
@@ -413,7 +413,7 @@ func TestClipKeepsCodeHeadAndTail(t *testing.T) {
 	if err := json.Unmarshal(b.Input, &got); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(got.Code, "const first") || !strings.HasSuffix(got.Code, "return last") || !strings.Contains(got.Code, "shortened for compaction") || len(got.Code) > 2*clipToolResult || got.Timeout != 30 {
+	if strings.Contains(string(b.Input), `\u0026`) || !strings.HasPrefix(got.Code, "const first") || !strings.HasSuffix(got.Code, "return last") || !strings.Contains(got.Code, "shortened for compaction") || len(got.Code) > 2*clipToolResult || got.Timeout != 30 {
 		t.Errorf("clipped input %d bytes: %s", len(b.Input), b.Input)
 	}
 	small := json.RawMessage(`{"code":"1+1"}`)

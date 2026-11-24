@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -117,11 +118,13 @@ func clipInput(in json.RawMessage) json.RawMessage {
 			fields[k] = clip(s, clipToolResult)
 		}
 	}
-	out, err := json.Marshal(fields)
-	if err != nil || len(out) > 4*clipToolResult {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if enc.Encode(fields) != nil || buf.Len() > 4*clipToolResult {
 		return json.RawMessage("{}")
 	}
-	return out
+	return bytes.TrimSuffix(buf.Bytes(), []byte("\n"))
 }
 
 func clipHistory(msgs []llm.Message) []llm.Message {
