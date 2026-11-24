@@ -333,3 +333,12 @@ func TestReadServesEmbeddedFiles(t *testing.T) {
 		t.Errorf("an unknown qi: path should list the built-in files: %+v", res[1])
 	}
 }
+
+func TestSpillGoesToTheSessionScratch(t *testing.T) {
+	scratch := t.TempDir()
+	env := &Env{Scratch: func() string { return scratch }}
+	path, err := env.spill("big output")
+	if err != nil || !strings.HasPrefix(path, filepath.Join(scratch, "out")+string(filepath.Separator)) {
+		t.Errorf("spill went to %q: %v", path, err)
+	}
+}

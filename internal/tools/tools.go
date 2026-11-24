@@ -310,11 +310,10 @@ func (e *Env) outDir() string {
 	if e.SpillDir != "" {
 		return e.SpillDir
 	}
-	base, err := os.UserCacheDir()
-	if err != nil {
-		base = os.TempDir()
+	if s := e.scratch(); s != "" {
+		return filepath.Join(s, "out")
 	}
-	return filepath.Join(base, "qi", "out")
+	return filepath.Join(os.TempDir(), fmt.Sprintf("qi-%d", os.Getuid()), "out")
 }
 
 func (e *Env) spill(out string) (string, error) {

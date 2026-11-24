@@ -133,7 +133,7 @@ func TestHandleInput(t *testing.T) {
 		{"/compact", "", false, "nothing to compact"},
 		{"/mcp", "", false, "no MCP servers configured"},
 		{"/context", "", false, "compacts at"},
-		{"/model", "", false, "model: m"},
+		{"/profile", "", false, "model: m"},
 		{"/deploy web prod", "deploy web to prod", false, ""},
 	}
 	for _, c := range cases {

@@ -195,29 +195,6 @@ func (r *repl) skillItems() []pickItem {
 	return items
 }
 
-func (r *repl) modelItems() []pickItem {
-	cfg := r.agent.Config()
-	items := []pickItem{{cfg.Model, "current"}}
-	seen := map[string]bool{cfg.Model: true}
-	add := func(name, desc string) {
-		if !seen[name] {
-			seen[name] = true
-			items = append(items, pickItem{name, desc})
-		}
-	}
-	for _, m := range cfg.SubagentModels {
-		add(m.Name, m.Model+" · "+m.UseFor)
-	}
-	for _, p := range cfg.ProfileNames() {
-		if pc, err := r.resolve(p); err == nil {
-			for _, m := range pc.SubagentModels {
-				add(m.Name, m.Model+" · "+m.UseFor)
-			}
-		}
-	}
-	return items
-}
-
 func (r *repl) profileItems() []pickItem {
 	var items []pickItem
 	for _, p := range r.agent.Config().ProfileNames() {

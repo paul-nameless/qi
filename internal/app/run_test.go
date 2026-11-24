@@ -98,15 +98,6 @@ func TestModelSwitchKeepsSubagentsOnProfileProvider(t *testing.T) {
 	if saved, err := config.Resolve(config.Options{Path: path}); err != nil || saved.Profile != "p" {
 		t.Errorf("/profile p not saved as default: %q, %v", saved.Profile, err)
 	}
-	if err := r.switchModel("haiku"); err != nil {
-		t.Fatal(err)
-	}
-	if a.Config().Provider != "anth" || runner.Provider != "or" {
-		t.Errorf("after /model haiku: agent provider %q, subagent default %q", a.Config().Provider, runner.Provider)
-	}
-	if err := r.switchModel("some-raw-model"); err != nil {
-		t.Fatal(err)
-	}
 	if a.Config().Provider != "or" {
 		t.Errorf("CLI -provider came back after /profile: %q", a.Config().Provider)
 	}

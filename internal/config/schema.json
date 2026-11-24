@@ -63,7 +63,7 @@
     },
     "context_window": {
       "$ref": "#/$defs/tokens",
-      "description": "Context window of this model, used for % thresholds and the context display. Dropped when /model switches models. Known for Claude, GPT-6 and Gemini; 200k is assumed otherwise."
+      "description": "Context window of this model, used for % thresholds and the context display. Dropped when -model overrides the model. Known for Claude, GPT-6 and Gemini; 200k is assumed otherwise."
     },
     "max_rounds": {
       "description": "Stop a turn after this many model requests. 0 means no limit interactively and 200 with -q.",
@@ -111,7 +111,7 @@
       "type": "string"
     },
     "subagent_models": {
-      "description": "Models the agent can pick for a subagent; /model <name> also switches to one.",
+      "description": "Models the agent can pick for a subagent.",
       "type": "array",
       "items": { "$ref": "#/$defs/subagent_model" }
     },
@@ -246,7 +246,7 @@
       "required": ["name", "model"],
       "properties": {
         "name": {
-          "description": "Short name the agent and /model use.",
+          "description": "Short name the agent uses.",
           "type": "string"
         },
         "model": {

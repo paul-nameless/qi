@@ -555,36 +555,6 @@ func sameMCP(a, b map[string]config.MCPServer) bool {
 	return len(a) == 0 && len(b) == 0 || reflect.DeepEqual(a, b)
 }
 
-func (r *repl) switchModel(name string) error {
-	cfg, err := r.resolve(r.agent.Config().Profile)
-	if err != nil {
-		return err
-	}
-	base := cfg.Provider
-	menus := [][]config.SubagentModel{cfg.SubagentModels}
-	for _, p := range cfg.ProfileNames() {
-		if pc, err := config.Load(r.opts.configPath, p); err == nil {
-			menus = append(menus, withProvider(pc.SubagentModels, pc.Provider))
-		}
-	}
-	for _, menu := range menus {
-		for _, m := range menu {
-			if m.Name != name {
-				continue
-			}
-			if m.Provider != "" {
-				if err := cfg.UseProvider(m.Provider); err != nil {
-					return err
-				}
-			}
-			cfg.SetModel(m.Model)
-			return r.apply(cfg, base)
-		}
-	}
-	cfg.SetModel(name)
-	return r.apply(cfg, base)
-}
-
 var efforts = []pickItem{
 	{"default", "the model's own default"},
 	{"none", "thinking off (Haiku and some others; Opus can't)"},
@@ -641,7 +611,7 @@ func (r *repl) apply(cfg config.Config, baseProvider string) error {
 	return nil
 }
 
-func (r *repl) modelList() string {
+func (r *repl) profileInfo() string {
 	cfg := r.agent.Config()
 	var b strings.Builder
 	fmt.Fprintf(&b, "model: %s", cfg.Model)
@@ -651,9 +621,6 @@ func (r *repl) modelList() string {
 	fmt.Fprintf(&b, " · effort %s", effortName(cfg.ReasoningEffort))
 	if cfg.Profile != "" {
 		fmt.Fprintf(&b, " · profile %s", cfg.Profile)
-	}
-	for _, m := range cfg.SubagentModels {
-		fmt.Fprintf(&b, "\n  /model %-10s %s", m.Name, m.Model)
 	}
 	for _, p := range cfg.ProfileNames() {
 		fmt.Fprintf(&b, "\n  /profile %s", p)

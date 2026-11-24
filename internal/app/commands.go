@@ -56,7 +56,6 @@ func init() {
 		{name: "resume", args: "[id]", help: "switch to another session of this directory (picker without id)", short: "switch to another session", run: func(r *repl, args string) { r.report(r.resume(args)) }},
 		{name: "history", help: "open the whole conversation in the pager", short: "open the conversation in the pager", run: func(r *repl, _ string) { r.report(r.showHistory()) }},
 		{name: "copy", args: "[answer|code|id]", help: "copy the last answer, its last code block or the session id (alt+c) to the clipboard", short: "copy the answer, code or session id", run: func(r *repl, args string) { r.report(r.copyAnswer(args)) }, pickArg: func(r *repl) (string, bool) { return r.pickArg("copy", copyItems) }},
-		{name: "model", args: "[name]", help: "show or switch the model (switching loses the prompt cache)", short: "switch the model", run: (*repl).model, pickArg: func(r *repl) (string, bool) { return r.pickArg("model", r.modelItems()) }},
 		{name: "profile", args: "[name]", help: "show or switch the profile", short: "switch the profile", run: (*repl).profile, pickArg: (*repl).pickProfile},
 		{name: "effort", args: "[level]", help: "show or switch the reasoning effort (default, none, low, medium, high, xhigh, max)", short: "switch the reasoning effort", run: (*repl).effort, pickArg: func(r *repl) (string, bool) { return r.pickArg("effort", r.effortItems()) }},
 		{name: "skills", help: "list skills (/<skill-name> [args] runs one)", short: "pick a skill", run: func(r *repl, _ string) { r.display.Info(r.skillList()) }, pickArg: (*repl).pickSkill},
@@ -163,9 +162,7 @@ func (r *repl) switchThen(args string, switchTo func(string) error, show func() 
 	r.display.Info(summary)
 }
 
-func (r *repl) model(args string) { r.switchThen(args, r.switchModel, r.modelList) }
-
-func (r *repl) profile(args string) { r.switchThen(args, r.switchProfile, r.modelList) }
+func (r *repl) profile(args string) { r.switchThen(args, r.switchProfile, r.profileInfo) }
 
 func (r *repl) effort(args string) {
 	r.switchThen(args, r.setEffort, func() string { return "effort: " + effortName(r.agent.Config().ReasoningEffort) })

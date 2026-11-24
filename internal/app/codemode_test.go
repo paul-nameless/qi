@@ -271,9 +271,6 @@ func TestToggleSavesWhereTheSettingIsDefined(t *testing.T) {
 	if err := r.switchProfile("quiet"); err != nil || !r.agent.Config().RunCodeOn() {
 		t.Errorf("quiet keeps its saved run_code: %v %v", r.agent.Config().RunCodeOn(), err)
 	}
-	if err := r.switchModel("other"); err != nil || !r.agent.Config().RunCodeOn() {
-		t.Errorf("/model keeps the saved value: %v %v", r.agent.Config().RunCodeOn(), err)
-	}
 	saved, _ := os.ReadFile(path)
 	for _, part := range []string{`"run_code": false,`, `"quiet": {"run_code": true}`, `"loud": {"show_reasoning": false}`} {
 		if !strings.Contains(string(saved), part) {
