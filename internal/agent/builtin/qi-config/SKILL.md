@@ -13,7 +13,7 @@ qi is the agent you are running in. Its settings are JSON files.
 - Profiles live under `profiles` in the config (selected with `-p name`, `default_profile` or `/profile name`).
 - `system_prompt_file` (top level or in a profile; relative to the config directory) replaces the built-in base prompt; instruction files, skills and the environment block are still added.
 - Related files that are not JSON config: hooks in `~/.config/qi/settings.json` (Claude Code settings format), skills in `~/.config/qi/skills/<name>/SKILL.md`, commands in `~/.config/qi/commands/*.md`.
-- `schema.json` next to this file is the JSON Schema (draft 2020-12) for every key: types, allowed values, defaults and what each key does. Read it before adding a key you are not sure about.
+- `qi:skills/qi-config/schema.json` (read it with read(); it lives inside qi, not on disk) is the JSON Schema (draft 2020-12) for every key: types, allowed values, defaults and what each key does. Read it before adding a key you are not sure about.
 
 ## Format
 

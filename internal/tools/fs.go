@@ -73,6 +73,9 @@ func Read() *Function {
 			if a.FilePath == "" {
 				return errResult("file_path is required")
 			}
+			if res, ok := readEmbedded(a.FilePath, a.Offset, a.Limit); ok {
+				return res
+			}
 			path := env.resolve(a.FilePath)
 			res, file := readFile(path, a.Offset, a.Limit, a.Crop)
 			switch {

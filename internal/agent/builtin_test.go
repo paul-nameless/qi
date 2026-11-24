@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/paul-nameless/qi/internal/config"
+	"github.com/paul-nameless/qi/internal/tools"
 )
 
 func isolateHome(t *testing.T) string {
@@ -34,11 +35,16 @@ func TestBuiltinSkillInStaticPrompt(t *testing.T) {
 	if static != b.Text[:b.Static] || strings.Contains(static, projA) {
 		t.Error("static part depends on the directory")
 	}
-	dir := filepath.Dir(skills[0].Path)
-	for name, want := range map[string][]byte{"SKILL.md": configSkill, "schema.json": config.Schema} {
-		if got, err := os.ReadFile(filepath.Join(dir, name)); err != nil || !bytes.Equal(got, want) {
-			t.Errorf("%s not written: %v", name, err)
+	if skills[0].Path != "qi:skills/qi-config/SKILL.md" {
+		t.Errorf("built-in skill path %q", skills[0].Path)
+	}
+	for path, want := range map[string][]byte{configSkillPath: configSkill, configSchemaPath: config.Schema} {
+		if got, ok := tools.Embedded(path); !ok || !bytes.Equal(got, want) {
+			t.Errorf("%s not served from memory", path)
 		}
+	}
+	if entries, _ := os.ReadDir(filepath.Join(os.Getenv("HOME"), ".cache")); len(entries) != 0 {
+		t.Errorf("nothing should be written to the cache dir: %v", entries)
 	}
 	meta, body := ParseFrontmatter(string(configSkill))
 	if meta.Name != "qi-config" || !strings.Contains(body, "schema.json") || !strings.Contains(body, "builtin_skills") {

@@ -316,3 +316,19 @@ func TestSpillFailureIsReported(t *testing.T) {
 		t.Errorf("saveImage returned %q", p)
 	}
 }
+
+func TestReadServesEmbeddedFiles(t *testing.T) {
+	Embed("qi:test/hello.md", []byte("line one\nline two\n"))
+	env := &Env{Cwd: t.TempDir()}
+	r := newFuncSet(Read())
+	res := r.Execute(context.Background(), env, []llm.Block{
+		{ID: "ok", Name: "read", Input: json.RawMessage(`{"file_path":"qi:test/hello.md","offset":2}`)},
+		{ID: "missing", Name: "read", Input: json.RawMessage(`{"file_path":"qi:test/nope.md"}`)},
+	}, nopUI{})
+	if res[0].IsError || !strings.Contains(res[0].Text, "line two") || strings.Contains(res[0].Text, "line one") {
+		t.Errorf("embedded read: %+v", res[0])
+	}
+	if !res[1].IsError || !strings.Contains(res[1].Text, "qi:test/hello.md") {
+		t.Errorf("an unknown qi: path should list the built-in files: %+v", res[1])
+	}
+}

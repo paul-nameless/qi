@@ -316,9 +316,12 @@ func (r *repl) expand(name, args string) (string, error) {
 }
 
 func readBody(path string) (string, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
+	data, ok := tools.Embedded(path)
+	if !ok {
+		var err error
+		if data, err = os.ReadFile(path); err != nil {
+			return "", err
+		}
 	}
 	_, body := agent.ParseFrontmatter(string(data))
 	return strings.TrimSpace(body), nil

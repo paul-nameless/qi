@@ -103,12 +103,7 @@ func pinConfig(t *testing.T, dir, provider string) config.Config {
 }
 
 func normalizeBody(t *testing.T, body []byte, cwd string) []byte {
-	skills, err := agent.BuiltinSkillDir()
-	if err != nil {
-		t.Fatal(err)
-	}
 	r := strings.NewReplacer(
-		skills, "<skills>",
 		cwd, "<cwd>",
 		"Platform: "+runtime.GOOS, "Platform: <os>",
 		"Date: "+time.Now().Format("2006-01-02"), "Date: <date>",

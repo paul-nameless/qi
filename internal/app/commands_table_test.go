@@ -3,6 +3,9 @@ package app
 import (
 	"strings"
 	"testing"
+
+	"github.com/paul-nameless/qi/internal/agent"
+	"github.com/paul-nameless/qi/internal/config"
 )
 
 func TestCommandTable(t *testing.T) {
@@ -25,5 +28,14 @@ func TestCommandTable(t *testing.T) {
 	}
 	if findCommand("nope") != nil {
 		t.Error("unknown command found")
+	}
+}
+
+func TestBuiltinSkillExpandsFromMemory(t *testing.T) {
+	r, _ := testRepl(t, config.Config{Model: "m"}, scripted())
+	r.skills = agent.BuiltinSkills()
+	text, err := r.expand("qi-config", "add a profile")
+	if err != nil || !strings.Contains(text, "<skill name=\"qi-config\">") || !strings.Contains(text, "qi:skills/qi-config/schema.json") || !strings.Contains(text, "add a profile") {
+		t.Errorf("expand: %v\n%s", err, text)
 	}
 }
