@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-const EmbeddedPrefix = "qi:"
+const EmbeddedPrefix = "qi://"
 
 var embedded = map[string][]byte{}
 

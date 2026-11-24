@@ -35,7 +35,7 @@ func TestBuiltinSkillExpandsFromMemory(t *testing.T) {
 	r, _ := testRepl(t, config.Config{Model: "m"}, scripted())
 	r.skills = agent.BuiltinSkills()
 	text, err := r.expand("qi-config", "add a profile")
-	if err != nil || !strings.Contains(text, "<skill name=\"qi-config\">") || !strings.Contains(text, "qi:skills/qi-config/schema.json") || !strings.Contains(text, "add a profile") {
+	if err != nil || !strings.Contains(text, "<skill name=\"qi-config\">") || !strings.Contains(text, "qi://skills/qi-config/schema.json") || !strings.Contains(text, "add a profile") {
 		t.Errorf("expand: %v\n%s", err, text)
 	}
 }

@@ -38,7 +38,7 @@ func TestBuiltinSkillInStaticPrompt(t *testing.T) {
 	if static != b.Text[:b.Static] || strings.Contains(static, projA) {
 		t.Error("static part depends on the directory")
 	}
-	if skills[0].Path != "qi:skills/qi-config/SKILL.md" {
+	if skills[0].Path != "qi://skills/qi-config/SKILL.md" {
 		t.Errorf("built-in skill path %q", skills[0].Path)
 	}
 	for path, want := range map[string][]byte{configSkillPath: configSkill, configSchemaPath: config.Schema} {
@@ -53,7 +53,7 @@ func TestBuiltinSkillInStaticPrompt(t *testing.T) {
 	}
 	env := &tools.Env{Cwd: t.TempDir()}
 	run := tools.Run(tools.Read(), tools.Write())
-	res := run.Execute(context.Background(), env, []llm.Block{{ID: "r", Name: "run", Input: json.RawMessage(`{"code":"const s = await read('qi:skills/qi-config/SKILL.md'); const j = JSON.parse(await read('qi:skills/qi-config/schema.json')); let w = ''; try { await write('qi:skills/qi-config/SKILL.md', 'x') } catch (e) { w = e.message } return [s.includes('qi-config'), typeof j.properties, w].join('|')"}`)}}, nopDisplay{})
+	res := run.Execute(context.Background(), env, []llm.Block{{ID: "r", Name: "run", Input: json.RawMessage(`{"code":"const s = await read('qi://skills/qi-config/SKILL.md'); const j = JSON.parse(await read('qi://skills/qi-config/schema.json')); let w = ''; try { await write('qi://skills/qi-config/SKILL.md', 'x') } catch (e) { w = e.message } return [s.includes('qi-config'), typeof j.properties, w].join('|')"}`)}}, nopDisplay{})
 	if len(res) != 1 || !strings.Contains(res[0].Text, "true|object|") || !strings.Contains(res[0].Text, "read-only") {
 		t.Errorf("reading the real built-in paths: %+v", res)
 	}

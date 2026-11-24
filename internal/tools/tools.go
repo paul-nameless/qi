@@ -91,6 +91,9 @@ func (e *Env) project() bool {
 }
 
 func (e *Env) resolve(p string) string {
+	if strings.HasPrefix(p, EmbeddedPrefix) {
+		return p
+	}
 	p = config.ExpandHome(p)
 	if !filepath.IsAbs(p) {
 		p = filepath.Join(e.Cwd, p)
