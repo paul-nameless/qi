@@ -402,6 +402,26 @@ func TestClipKeepsPreviousSummary(t *testing.T) {
 	}
 }
 
+func TestClipKeepsCodeHeadAndTail(t *testing.T) {
+	code := "const first = 1\n" + strings.Repeat("x", 3*clipToolResult) + "\nreturn last"
+	in, _ := json.Marshal(map[string]any{"code": code, "timeout": 30})
+	b := clipBlock(llm.Block{Type: llm.BlockToolUse, Input: in})
+	var got struct {
+		Code    string `json:"code"`
+		Timeout int    `json:"timeout"`
+	}
+	if err := json.Unmarshal(b.Input, &got); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(got.Code, "const first") || !strings.HasSuffix(got.Code, "return last") || !strings.Contains(got.Code, "shortened for compaction") || len(got.Code) > 2*clipToolResult || got.Timeout != 30 {
+		t.Errorf("clipped input %d bytes: %s", len(b.Input), b.Input)
+	}
+	small := json.RawMessage(`{"code":"1+1"}`)
+	if b := clipBlock(llm.Block{Type: llm.BlockToolUse, Input: small}); string(b.Input) != string(small) {
+		t.Errorf("short input changed: %s", b.Input)
+	}
+}
+
 func TestThrashPauseFromMeasuredUsage(t *testing.T) {
 	p := &fakeProvider{replies: []llm.Message{assistantText("SUMMARY")}, usage: llm.Usage{Input: 5000}}
 	a := newAgent(t, p)
@@ -444,7 +464,7 @@ func TestClipHistory(t *testing.T) {
 		toolResult("w", big),
 	}
 	out := clipHistory(msgs)
-	if len(out[0].Blocks[0].Text) > clipText+100 || string(out[1].Blocks[0].Input) != "{}" || len(out[2].Blocks[0].Text) > clipToolResult+100 {
+	if len(out[0].Blocks[0].Text) > clipText+100 || len(out[1].Blocks[0].Input) > clipToolResult+100 || len(out[2].Blocks[0].Text) > clipToolResult+100 {
 		t.Errorf("clipped sizes: %d %d %d", len(out[0].Blocks[0].Text), len(out[1].Blocks[0].Input), len(out[2].Blocks[0].Text))
 	}
 	if len(msgs[0].Blocks[0].Text) != 50000 || len(msgs[1].Blocks[0].Input) != len(in) {

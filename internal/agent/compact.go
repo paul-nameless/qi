@@ -99,11 +99,29 @@ func clipBlock(b llm.Block) llm.Block {
 	case llm.BlockText:
 		b.Text = clip(b.Text, clipText)
 	case llm.BlockToolUse:
-		if len(b.Input) > clipToolResult {
-			b.Input = json.RawMessage("{}")
-		}
+		b.Input = clipInput(b.Input)
 	}
 	return b
+}
+
+func clipInput(in json.RawMessage) json.RawMessage {
+	if len(in) <= clipToolResult {
+		return in
+	}
+	var fields map[string]any
+	if json.Unmarshal(in, &fields) != nil {
+		return json.RawMessage("{}")
+	}
+	for k, v := range fields {
+		if s, ok := v.(string); ok {
+			fields[k] = clip(s, clipToolResult)
+		}
+	}
+	out, err := json.Marshal(fields)
+	if err != nil || len(out) > 4*clipToolResult {
+		return json.RawMessage("{}")
+	}
+	return out
 }
 
 func clipHistory(msgs []llm.Message) []llm.Message {
