@@ -94,6 +94,10 @@ func TestExecOffsets(t *testing.T) {
 		{`€+x`, "", "€€x", 0, []int{0, 3}},
 		{`😀+`, "u", "😀😀a", 0, []int{0, 4}},
 		{`(😀+)😀`, "u", "😀😀😀", 0, []int{0, 6, 0, 4}},
+		{`é+`, "", "\xed\xa0\x80éé", 0, []int{1, 3}},
+		{`é+`, "", "\xffé\xc3", 0, []int{1, 2}},
+		{`é+`, "y", "aéé", 1, []int{1, 3}},
+		{`\uFFFD+`, "", "\xff\xfe", 0, []int{0, 2}},
 	}
 	for _, c := range cases {
 		for _, eng := range []int{EngineAuto, EngineBacktrack, EngineRE2} {
