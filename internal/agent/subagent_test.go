@@ -9,7 +9,9 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -33,16 +35,21 @@ func entryLines(t *testing.T, entries ...session.Entry) string {
 }
 
 func fakeChild(t *testing.T, stdout, stderr string, code int) string {
-	dir := t.TempDir()
-	out, errf := filepath.Join(dir, "out"), filepath.Join(dir, "err")
-	os.WriteFile(out, []byte(stdout), 0o600)
-	os.WriteFile(errf, []byte(stderr), 0o600)
-	script := filepath.Join(dir, "qi")
-	body := "#!/bin/sh\ncase \" $* \" in *\" -json \"*) ;; *) echo 'no -json' >&2; exit 3;; esac\ncat " + out + "\ncat " + errf + " >&2\nexit " + string(rune('0'+code)) + "\n"
+	script := filepath.Join(t.TempDir(), "qi")
+	body := "#!/bin/sh\ncase \" $* \" in *\" -json \"*) ;; *) echo 'no -json' >&2; exit 3;; esac\ncat \"$0.out\"\ncat \"$0.err\" >&2\nexit $(cat \"$0.code\")\n"
 	if err := os.WriteFile(script, []byte(body), 0o700); err != nil {
 		t.Fatal(err)
 	}
+	setChild(t, script, stdout, stderr, code)
 	return script
+}
+
+func setChild(t *testing.T, script, stdout, stderr string, code int) {
+	for ext, data := range map[string]string{".out": stdout, ".err": stderr, ".code": strconv.Itoa(code)} {
+		if err := os.WriteFile(script+ext, []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
 }
 
 func TestSubagentReadsJSONEntries(t *testing.T) {
@@ -78,15 +85,15 @@ func TestSubagentFailureReportsFatalError(t *testing.T) {
 		{"", "exit status 1"},
 		{long + "\n", "exit status 1: " + strutil.CutStart(long, maxCause) + "…"},
 	}
-	r := &SubagentRunner{Mode: func() Mode { return ModeYolo }, Label: func(b llm.Block) string { return b.Name }, Cwd: t.TempDir()}
+	r := &SubagentRunner{Mode: func() Mode { return ModeYolo }, Label: func(b llm.Block) string { return b.Name }, Cwd: t.TempDir(), Exe: fakeChild(t, "", "", 1)}
 	for _, c := range cases {
-		r.Exe = fakeChild(t, "", c.stderr, 1)
+		setChild(t, r.Exe, "", c.stderr, 1)
 		_, err := r.Run(context.Background(), tools.SubagentTask{Prompt: "x", Model: "m"}, func(string) {})
 		if err == nil || err.Error() != c.want || !utf8.ValidString(err.Error()) {
 			t.Errorf("stderr %q:\ngot  %v\nwant %s", c.stderr, err, c.want)
 		}
 	}
-	r.Exe = fakeChild(t, entryLines(t, session.Entry{Type: "meta"}), "", 0)
+	setChild(t, r.Exe, entryLines(t, session.Entry{Type: "meta"}), "", 0)
 	if answer, err := r.Run(context.Background(), tools.SubagentTask{Prompt: "x", Model: "m"}, func(string) {}); err != nil || answer != "(the subagent returned no answer)" {
 		t.Errorf("no answer: %q %v", answer, err)
 	}
@@ -97,22 +104,40 @@ func TestSubagentCancelWithGrandchildHoldingStdout(t *testing.T) {
 		t.Skip("perl not installed")
 	}
 	dir := t.TempDir()
-	script := filepath.Join(dir, "qi")
-	body := "#!/bin/sh\nperl -MPOSIX -e 'fork and exit; POSIX::setsid(); sleep 30' &\necho started >&2\nexec sleep 30\n"
+	script, marker := filepath.Join(dir, "qi"), filepath.Join(dir, "grandchild")
+	body := "#!/bin/sh\nperl -MPOSIX -e 'fork and exit; POSIX::setsid(); open(my $f, \">\", \"$ARGV[0].tmp\") or die; print $f $$; close $f; rename(\"$ARGV[0].tmp\", $ARGV[0]); sleep 30' '" + marker + "' &\necho started >&2\nexec sleep 30\n"
 	if err := os.WriteFile(script, []byte(body), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	r := &SubagentRunner{Mode: func() Mode { return ModeYolo }, Label: func(b llm.Block) string { return b.Name }, Cwd: dir, Exe: script}
+	r := &SubagentRunner{Mode: func() Mode { return ModeYolo }, Label: func(b llm.Block) string { return b.Name }, Cwd: dir, Exe: script, Grace: 100 * time.Millisecond}
 	ctx, cancel := context.WithCancel(context.Background())
-	time.AfterFunc(200*time.Millisecond, cancel)
+	go func() {
+		if pid := waitPid(marker); pid > 0 {
+			t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
+		} else {
+			t.Error("the grandchild never started")
+		}
+		cancel()
+	}()
 	start := time.Now()
 	_, err := r.Run(ctx, tools.SubagentTask{Prompt: "x", Model: "m"}, func(string) {})
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("err %v", err)
 	}
-	if d := time.Since(start); d > subagentGrace+3*time.Second {
+	if d := time.Since(start); d > r.Grace+3*time.Second {
 		t.Errorf("cancel took %v", d)
 	}
+}
+
+func waitPid(path string) int {
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+		if data, err := os.ReadFile(path); err == nil {
+			if pid, err := strconv.Atoi(string(data)); err == nil {
+				return pid
+			}
+		}
+	}
+	return 0
 }
 
 func TestSubagentEnvCarriesParentSession(t *testing.T) {

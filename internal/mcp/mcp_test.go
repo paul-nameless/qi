@@ -166,6 +166,7 @@ func TestManagerStartRetriesFailedServer(t *testing.T) {
 func TestColdServerDoesNotBlockOthers(t *testing.T) {
 	fake, _ := fakeServer(t, config.MCPServer{})
 	m := NewManager(map[string]config.MCPServer{"fake": fake, "slow": {Command: "sleep", Args: []string{"30"}}})
+	m.CloseGrace = 100 * time.Millisecond
 	defer m.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()

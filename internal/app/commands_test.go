@@ -65,6 +65,7 @@ func TestStartMCPReportsTimeoutsAndErrors(t *testing.T) {
 		"broken": {Command: "/nonexistent/mcp-server"},
 		"slow":   {Command: "sleep", Args: []string{"30"}},
 	})
+	m.CloseGrace = 100 * time.Millisecond
 	defer m.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()

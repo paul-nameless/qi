@@ -138,7 +138,7 @@ func (c *cell) formatBounded(v jsvm.Value, lateStop bool) string {
 	if lateStop {
 		base = context.WithoutCancel(c.parent)
 	}
-	ctx, cancel := context.WithTimeout(base, formatTimeout)
+	ctx, cancel := context.WithTimeout(base, formatSeconds*c.r.unit())
 	defer cancel()
 	stop := c.watch(ctx.Done())
 	defer c.vm.ClearInterrupt()

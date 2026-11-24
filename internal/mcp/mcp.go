@@ -69,6 +69,7 @@ type client struct {
 	done    chan struct{}
 	tools   []Tool
 	hidden  int
+	grace   time.Duration
 }
 
 func start(name string, srv config.MCPServer) (*client, error) {
@@ -245,18 +246,19 @@ func (c *client) close() {
 	c.stdin.Close()
 	select {
 	case <-c.done:
-	case <-time.After(500 * time.Millisecond):
+	case <-time.After(c.grace / 2):
 	}
-	_ = proc.Stop(c.cmd, closeGrace)
+	_ = proc.Stop(c.cmd, c.grace)
 }
 
 type Manager struct {
-	servers map[string]config.MCPServer
-	starts  map[string]*sync.Mutex
-	mu      sync.Mutex
-	clients map[string]*client
-	errs    map[string]error
-	closed  bool
+	servers    map[string]config.MCPServer
+	starts     map[string]*sync.Mutex
+	mu         sync.Mutex
+	clients    map[string]*client
+	errs       map[string]error
+	closed     bool
+	CloseGrace time.Duration
 }
 
 func NewManager(servers map[string]config.MCPServer) *Manager {
@@ -299,7 +301,7 @@ func (m *Manager) get(ctx context.Context, name string) (*client, error) {
 	if c, err, ok := m.current(name); ok {
 		return c, err
 	}
-	c, err := launch(ctx, name, srv)
+	c, err := launch(ctx, name, srv, m.grace())
 	return m.store(ctx, name, c, err)
 }
 
@@ -319,11 +321,19 @@ func (m *Manager) current(name string) (*client, error, bool) {
 	return nil, err, failed
 }
 
-func launch(ctx context.Context, name string, srv config.MCPServer) (*client, error) {
+func (m *Manager) grace() time.Duration {
+	if m.CloseGrace > 0 {
+		return m.CloseGrace
+	}
+	return closeGrace
+}
+
+func launch(ctx context.Context, name string, srv config.MCPServer, grace time.Duration) (*client, error) {
 	c, err := start(name, srv)
 	if err != nil {
 		return nil, err
 	}
+	c.grace = grace
 	ictx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	if err := c.initialize(ictx); err != nil {

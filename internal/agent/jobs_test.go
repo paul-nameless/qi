@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -20,14 +23,25 @@ func bgCall(id, cmd string, daemon bool) llm.Message {
 	return runCall(id, "return await bash("+string(in)+")")
 }
 
+func gated(gate, then string) string {
+	return fmt.Sprintf("while [ ! -e %q ]; do sleep 0.01; done; %s", gate, then)
+}
+
+func openGate(t *testing.T, gate string) {
+	if err := os.WriteFile(gate, nil, 0o600); err != nil {
+		t.Error(err)
+	}
+}
+
 func textMsg(s string) llm.Message {
 	return llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: s}}}
 }
 
 func TestTurnWaitsForBackgroundJob(t *testing.T) {
 	t.Parallel()
-	p := &fakeProvider{replies: []llm.Message{bgCall("c1", "sleep 0.3; echo finished", false), textMsg("waiting for it")}}
-	a := newAgent(t, p)
+	gate := filepath.Join(t.TempDir(), "gate")
+	p := &fakeProvider{replies: []llm.Message{bgCall("c1", gated(gate, "echo finished"), false), textMsg("waiting for it")}}
+	a := newAgentUI(t, p, onJobWait(func() { openGate(t, gate) }))
 	t.Cleanup(a.KillJobs)
 	final, stats, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "go"}})
 	if err != nil || final != "done" || stats.Requests != 3 {
@@ -45,10 +59,9 @@ func TestTurnWaitsForBackgroundJob(t *testing.T) {
 func TestCancelWhileWaitingForJob(t *testing.T) {
 	t.Parallel()
 	p := &fakeProvider{replies: []llm.Message{bgCall("c1", "sleep 30", false), textMsg("waiting")}}
-	a := newAgent(t, p)
-	t.Cleanup(a.KillJobs)
 	ctx, cancel := context.WithCancel(context.Background())
-	time.AfterFunc(300*time.Millisecond, cancel)
+	a := newAgentUI(t, p, onJobWait(cancel))
+	t.Cleanup(a.KillJobs)
 	start := time.Now()
 	_, _, err := a.Turn(ctx, []llm.Block{{Type: llm.BlockText, Text: "go"}})
 	if !errors.Is(err, context.Canceled) || time.Since(start) > 5*time.Second {
@@ -80,12 +93,20 @@ func TestDaemonDoesNotHoldTurn(t *testing.T) {
 
 func TestSteeringWakesJobWait(t *testing.T) {
 	t.Parallel()
-	p := &fakeProvider{replies: []llm.Message{bgCall("c1", "sleep 1", false), textMsg("waiting")}}
-	a := newAgent(t, p)
+	gate := filepath.Join(t.TempDir(), "gate")
+	p := &fakeProvider{replies: []llm.Message{bgCall("c1", gated(gate, "true"), false), textMsg("waiting")}}
+	var a *Agent
+	asked := false
+	a = newAgentUI(t, p, onJobWait(func() {
+		if !asked {
+			asked = true
+			a.Queue([]llm.Block{{Type: llm.BlockText, Text: "status?"}})
+		}
+	}))
 	t.Cleanup(a.KillJobs)
 	p.onCall = func(n int) {
-		if n == 1 {
-			time.AfterFunc(200*time.Millisecond, func() { a.Queue([]llm.Block{{Type: llm.BlockText, Text: "status?"}}) })
+		if n == 2 {
+			openGate(t, gate)
 		}
 	}
 	final, stats, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "go"}})
@@ -102,15 +123,20 @@ func TestSteeringWakesJobWait(t *testing.T) {
 
 func TestNoticeOfIdleJobJoinsNextTurn(t *testing.T) {
 	t.Parallel()
-	p := &fakeProvider{replies: []llm.Message{bgCall("c1", "sleep 0.5; exit 4", false), textMsg("waiting")}}
-	a := newAgent(t, p)
-	t.Cleanup(a.KillJobs)
+	gate := filepath.Join(t.TempDir(), "gate")
+	p := &fakeProvider{replies: []llm.Message{bgCall("c1", gated(gate, "exit 4"), false), textMsg("waiting")}}
 	ctx, cancel := context.WithCancel(context.Background())
-	time.AfterFunc(100*time.Millisecond, cancel)
+	a := newAgentUI(t, p, onJobWait(cancel))
+	t.Cleanup(a.KillJobs)
 	_, _, _ = a.Turn(ctx, []llm.Block{{Type: llm.BlockText, Text: "go"}})
-	deadline := time.Now().Add(10 * time.Second)
-	for !a.env.Jobs.HasNotices() && time.Now().Before(deadline) {
-		time.Sleep(20 * time.Millisecond)
+	openGate(t, gate)
+	timeout := time.After(10 * time.Second)
+	for !a.env.Jobs.HasNotices() {
+		select {
+		case <-a.env.Jobs.Changed():
+		case <-timeout:
+			t.Fatal("the job never finished")
+		}
 	}
 	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "next"}}); err != nil {
 		t.Fatal(err)

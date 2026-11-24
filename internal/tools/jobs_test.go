@@ -125,10 +125,9 @@ func TestReadOnlyRefusesBackgroundWrite(t *testing.T) {
 func TestBackgroundTimeoutIsSeconds(t *testing.T) {
 	t.Parallel()
 	env := jobEnv(t)
-	runBash(context.Background(), env, bashIn(t, map[string]any{"command": "sleep 30", "background": true, "timeout": 1800}), nil)
-	time.Sleep(2500 * time.Millisecond)
-	if len(env.Jobs.Waiting()) != 1 || env.Jobs.HasNotices() {
-		t.Fatalf("timeout 1800 must mean seconds: %s", env.Jobs.Describe())
+	runBash(context.Background(), env, bashIn(t, map[string]any{"command": "sleep 30 > /dev/null 2>&1 & echo started", "background": true, "timeout": 1800}), nil)
+	if n := waitNotice(t, env.Jobs); n.Status != "exit 0" || !strings.Contains(n.Text, "until the job's 30m0s timeout") {
+		t.Fatalf("timeout 1800 must mean seconds: %+v", n)
 	}
 	if jobTimeout(bashArgs{Background: true}) != defaultJobTimeout || jobTimeout(bashArgs{Daemon: true}) != 0 || jobTimeout(bashArgs{Timeout: 999999}) != maxJobTimeout {
 		t.Fatal("job timeout defaults")

@@ -42,6 +42,7 @@ type SubagentRunner struct {
 	MCP              map[string]config.MCPServer
 	Label            func(llm.Block) string
 	Exe              string
+	Grace            time.Duration
 }
 
 func (r *SubagentRunner) Env() ([]string, error) {
@@ -139,8 +140,15 @@ func (r *SubagentRunner) command(ctx context.Context, task tools.SubagentTask) (
 	cmd := exec.CommandContext(ctx, exe, r.args(task)...)
 	cmd.Dir = r.Cwd
 	cmd.Env = env
-	proc.Setup(cmd, proc.Session, subagentGrace)
+	proc.Setup(cmd, proc.Session, r.grace())
 	return cmd, nil
+}
+
+func (r *SubagentRunner) grace() time.Duration {
+	if r.Grace > 0 {
+		return r.Grace
+	}
+	return subagentGrace
 }
 
 func (r *SubagentRunner) readEntries(rd io.Reader, progress func(string)) entriesResult {

@@ -257,20 +257,20 @@ func TestReadLine(t *testing.T) {
 
 func TestReadLineInterruptAndEOF(t *testing.T) {
 	e := testEditor(t)
-	e.T.Keys = make(chan Key, 64)
+	e.T.Keys = make(chan Key)
 	e.Interrupt = make(chan struct{}, 1)
 	done := make(chan error, 1)
 	go func() {
 		_, err := e.ReadLine("> ", "typed")
 		done <- err
 	}()
-	time.Sleep(20 * time.Millisecond)
+	e.T.Keys <- Key{Kind: KeyRune, Rune: 'x'}
 	e.Interrupt <- struct{}{}
-	time.Sleep(20 * time.Millisecond)
 	e.Interrupt <- struct{}{}
 	if err := <-done; !errors.Is(err, ErrInterrupt) {
 		t.Errorf("interrupt on an empty line: %v", err)
 	}
+	e.T.Keys = make(chan Key, 64)
 	sendKeys(e, Key{Kind: KeyEOF})
 	if _, err := e.ReadLine("> ", ""); !errors.Is(err, ErrEOF) {
 		t.Errorf("ctrl+d on an empty line: %v", err)
@@ -310,28 +310,16 @@ func TestCollect(t *testing.T) {
 	sendKeys(e, Key{Kind: KeyEnter}, Key{Kind: KeyEnter})
 	sendKeys(e, runes("foo bar")...)
 	sendKeys(e, Key{Kind: KeyKillWord}, Key{Kind: KeyBackspace}, Key{Kind: KeyPaste, Text: "!"}, Key{Kind: KeyNewline})
-	sendKeys(e, Key{Kind: KeyEsc}, Key{Kind: KeyModeToggle}, Key{Kind: KeyEOF})
+	sendKeys(e, Key{Kind: KeyEsc}, Key{Kind: KeyModeToggle}, Key{Kind: KeyEOF}, Key{Kind: KeyCopyID})
 	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		for len(e.T.Keys) > 0 {
-			time.Sleep(5 * time.Millisecond)
-		}
-		time.Sleep(20 * time.Millisecond)
-		cancel()
-	}()
+	e.OnCopyID = cancel
 	draft := e.Collect(ctx, "", s)
 	if !reflect.DeepEqual(queued, []string{"fix it"}) || draft != "foo!\n" || cancels != 1 || toggles != 1 {
 		t.Errorf("queued %q draft %q cancels %d toggles %d", queued, draft, cancels, toggles)
 	}
-	sendKeys(e, Key{Kind: KeyKillLine}, Key{Kind: KeyEOF})
+	sendKeys(e, Key{Kind: KeyKillLine}, Key{Kind: KeyEOF}, Key{Kind: KeyCopyID})
 	ctx, cancel = context.WithCancel(context.Background())
-	go func() {
-		for len(e.T.Keys) > 0 {
-			time.Sleep(5 * time.Millisecond)
-		}
-		time.Sleep(20 * time.Millisecond)
-		cancel()
-	}()
+	e.OnCopyID = cancel
 	if draft := e.Collect(ctx, "keep", s); draft != "" || cancels != 2 {
 		t.Errorf("ctrl+d on an emptied draft: %q cancels %d", draft, cancels)
 	}

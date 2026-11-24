@@ -53,8 +53,16 @@ func (k *cellKit) cell(code string) Result {
 }
 
 func (k *cellKit) cellCtx(ctx context.Context, code string, timeout int) Result {
+	return k.cellProgress(ctx, code, timeout, nil)
+}
+
+func (k *cellKit) cellProgress(ctx context.Context, code string, timeout int, progress func(string)) Result {
 	in, _ := json.Marshal(runArgs{Code: code, Timeout: timeout})
-	return k.run.r.run(ctx, k.env, in, nil)
+	return k.run.r.run(ctx, k.env, in, progress)
+}
+
+func (k *cellKit) second(d time.Duration) {
+	k.run.r.second = d
 }
 
 func (k *cellKit) want(code, want string) {
@@ -299,9 +307,9 @@ func TestCellNeverSettles(t *testing.T) {
 func TestCellBusyLoopStops(t *testing.T) {
 	t.Parallel()
 	k := newCellKit(t)
+	k.second(50 * time.Millisecond)
 	ctx, cancel := context.WithCancel(context.Background())
-	time.AfterFunc(200*time.Millisecond, cancel)
-	res := k.cellCtx(ctx, "globalThis.kept = 1; let i = 0; while (true) { i++ }", 0)
+	res := k.cellProgress(ctx, `globalThis.kept = 1; print("looping"); let i = 0; while (true) { i++ }`, 0, func(string) { cancel() })
 	if !res.IsError || !strings.Contains(res.Text, "interrupted by user") {
 		t.Errorf("cancel: %+v", res)
 	}
@@ -316,13 +324,13 @@ func TestCellStopsCallingAfterCancel(t *testing.T) {
 	t.Parallel()
 	k := newCellKit(t)
 	ctx, cancel := context.WithCancel(context.Background())
-	time.AfterFunc(300*time.Millisecond, cancel)
+	time.AfterFunc(100*time.Millisecond, cancel)
 	res := k.cellCtx(ctx, `globalThis.n = 0; while (true) { try { n++; await tick(); await bash("sleep 0.02") } catch {} }`, 0)
 	if !strings.Contains(res.Text, "interrupted by user") {
 		t.Fatalf("got %q", res.Text)
 	}
 	after := k.tick.Load()
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 	if k.tick.Load() != after || after == 0 {
 		t.Errorf("ticks %d then %d", after, k.tick.Load())
 	}
@@ -334,7 +342,8 @@ func TestCellStopsCallingAfterCancel(t *testing.T) {
 func TestCellTimeoutSparesFormatting(t *testing.T) {
 	t.Parallel()
 	k := newCellKit(t)
-	res := k.cellCtx(context.Background(), `return {toJSON() { const t = Date.now(); while (Date.now() - t < 1500) {} return "slow" }}`, 1)
+	k.second(100 * time.Millisecond)
+	res := k.cellCtx(context.Background(), `return {toJSON() { const t = Date.now(); while (Date.now() - t < 200) {} return "slow" }}`, 1)
 	if res.IsError || res.Text != `"slow"` {
 		t.Errorf("a value finished in time was cut by the cell timeout: %+v", res)
 	}
@@ -345,7 +354,7 @@ func TestCellTimeoutSparesFormatting(t *testing.T) {
 		if !strings.Contains(res.Text, "the value could not be shown") {
 			t.Errorf("endless toJSON: %q", res.Text)
 		}
-	case <-time.After(formatTimeout + 5*time.Second):
+	case <-time.After(formatSeconds*k.run.r.unit() + 5*time.Second):
 		t.Fatal("formatting an endless toJSON was not stopped")
 	}
 	k.want("1 + 1", "2")
@@ -370,6 +379,7 @@ func TestCellResultsNotCut(t *testing.T) {
 func TestCellInterruptThroughHostCalls(t *testing.T) {
 	t.Parallel()
 	k := newCellKit(t, Subagent("m", nil, nil))
+	k.second(100 * time.Millisecond)
 	cases := []string{
 		`while (true) { try { print({toJSON() { while (true) {} }}) } catch (e) {} }`,
 		`while (true) { try { await tick({toJSON() { while (true) {} }}) } catch (e) {} }`,
@@ -643,6 +653,7 @@ func TestCellSubagents(t *testing.T) {
 	t.Parallel()
 	menu := []config.SubagentModel{{Name: "fast", Model: "m-fast", Provider: "p1"}, {Name: "deep", Model: "m-deep"}}
 	k := newCellKit(t, Subagent("main", menu, []string{"low", "high"}))
+	k.second(100 * time.Millisecond)
 	var mu sync.Mutex
 	var tasks []SubagentTask
 	k.env.Subagent = func(ctx context.Context, task SubagentTask, progress func(string)) (string, error) {
@@ -651,7 +662,7 @@ func TestCellSubagents(t *testing.T) {
 		mu.Unlock()
 		if task.Prompt == "slow" {
 			select {
-			case <-time.After(1500 * time.Millisecond):
+			case <-time.After(300 * time.Millisecond):
 			case <-ctx.Done():
 				return "", ctx.Err()
 			}
@@ -675,6 +686,7 @@ func TestCellSubagents(t *testing.T) {
 func TestCellFailureSavesSubagentAnswers(t *testing.T) {
 	t.Parallel()
 	k := newCellKit(t, Subagent("m", nil, nil))
+	k.second(100 * time.Millisecond)
 	k.env.Subagent = func(ctx context.Context, task SubagentTask, progress func(string)) (string, error) {
 		switch task.Prompt {
 		case "fail":
@@ -837,13 +849,14 @@ func TestCellNoCallsAfterFinish(t *testing.T) {
 func TestCellTimersCancelledAfterSettle(t *testing.T) {
 	t.Parallel()
 	k := newCellKit(t)
+	k.second(100 * time.Millisecond)
 	start := time.Now()
 	k.want(`return (await Promise.race([bash("echo hi"), new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 60000))])).output`, "hi")
 	if d := time.Since(start); d > 5*time.Second {
 		t.Errorf("a pending guard timer held the result for %v", d)
 	}
-	k.want(`sleep(300).then(() => write("late.txt", "x")); "ok"`, "ok")
-	time.Sleep(500 * time.Millisecond)
+	k.want(`sleep(50).then(() => write("late.txt", "x")); "ok"`, "ok")
+	time.Sleep(150 * time.Millisecond)
 	if _, err := os.Stat(filepath.Join(k.dir, "late.txt")); err == nil {
 		t.Error("a sleep fired after the code finished")
 	}
@@ -852,7 +865,7 @@ func TestCellTimersCancelledAfterSettle(t *testing.T) {
 		t.Errorf("timeout while waiting for a late call: %+v", res)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	time.AfterFunc(300*time.Millisecond, cancel)
+	time.AfterFunc(100*time.Millisecond, cancel)
 	res = k.cellCtx(ctx, `bash("sleep 5"); ({a: 1})`, 0)
 	if res.IsError || !strings.HasPrefix(res.Text, "{\n \"a\": 1\n}\n") || !strings.Contains(res.Text, "stopped: interrupted by user") {
 		t.Errorf("interrupt while waiting for a late call: %+v", res)
@@ -886,6 +899,7 @@ func TestCellRedeclaredFunctions(t *testing.T) {
 func TestCellErrorKeptWhenWaitStops(t *testing.T) {
 	t.Parallel()
 	k := newCellKit(t)
+	k.second(200 * time.Millisecond)
 	res := k.cellCtx(context.Background(), `await Promise.all([bash("sleep 100", {timeout: 600}), read("nope")])`, 1)
 	for _, want := range []string{"ToolError: stat ", "Calls that completed:\n✗ read nope\nNote: the code failed while 1 call was still running. Failed:\nbash sleep 100: ", "Note: waiting for the calls still running stopped: timed out after 1s"} {
 		if !res.IsError || !strings.Contains(res.Text, want) {
@@ -896,7 +910,7 @@ func TestCellErrorKeptWhenWaitStops(t *testing.T) {
 		t.Errorf("timeout: %q", res.Text)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	time.AfterFunc(300*time.Millisecond, cancel)
+	time.AfterFunc(100*time.Millisecond, cancel)
 	res = k.cellCtx(ctx, `bash("sleep 100", {timeout: 600}); undefinedName`, 0)
 	if !res.IsError || !strings.HasPrefix(res.Text, "ReferenceError: undefinedName is not defined") || !strings.Contains(res.Text, "No variables are defined in this VM yet.") || !strings.HasSuffix(res.Text, "Note: waiting for the calls still running stopped: interrupted by user") {
 		t.Errorf("interrupt: %q", res.Text)
@@ -914,6 +928,7 @@ func TestRunDescriptionReservedNames(t *testing.T) {
 
 func TestCellFormatJobsDoNotLeak(t *testing.T) {
 	k := newCellKit(t)
+	k.second(100 * time.Millisecond)
 	k.want(`return {toJSON() { Promise.resolve().then(() => write("late.txt", "x")); Promise.resolve().then(() => console.log("job ran")); return 1 }}`, "job ran\n1")
 	res := k.cell(`await sleep(1); 2`)
 	if res.IsError || res.Text != "2" || len(res.Calls) != 0 {
@@ -924,7 +939,7 @@ func TestCellFormatJobsDoNotLeak(t *testing.T) {
 	}
 	start := time.Now()
 	k.want(`return {toJSON() { const spin = () => Promise.resolve().then(spin); spin(); return 3 }}`, "3")
-	if d := time.Since(start); d > 2*formatTimeout {
+	if d := time.Since(start); d > 2*formatSeconds*k.run.r.unit() {
 		t.Errorf("an endless job loop held the result for %v", d)
 	}
 	k.want(`await sleep(1); 4`, "4")

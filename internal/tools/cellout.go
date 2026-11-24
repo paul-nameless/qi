@@ -80,7 +80,7 @@ func (c *cell) result(end cellEnd, value, hint string) Result {
 func (c *cell) failure(end cellEnd) string {
 	switch {
 	case end.stopped && c.timedOut.Load():
-		return fmt.Sprintf("timed out after %ds", int(c.timeout/time.Second))
+		return fmt.Sprintf("timed out after %ds", int(c.timeout/c.r.unit()))
 	case end.stopped:
 		return "interrupted by user"
 	case end.err != nil:
@@ -214,7 +214,7 @@ func (c *cell) format(v jsvm.Value) string {
 	s, err := c.vm.CallValue(c.r.stringify, c.r.json, v, jsvm.Null(), jsvm.Number(1))
 	switch {
 	case errors.Is(err, jsvm.ErrInterrupted):
-		return fmt.Sprintf("[the value could not be shown: converting it took longer than %ds or was interrupted]", int(formatTimeout/time.Second))
+		return fmt.Sprintf("[the value could not be shown: converting it took longer than %ds or was interrupted]", formatSeconds)
 	case err == nil && s.Kind() == jsvm.KindString:
 		return jsvm.ToString(s)
 	}

@@ -115,7 +115,7 @@ func TestProjectModeSandboxesBash(t *testing.T) {
 	if !strings.Contains(out, "project mode:") {
 		t.Errorf("denials should carry the project-mode hint: %s", out)
 	}
-	if out := run(`sleep 30 & k=$!; kill $k; wait $k; echo "own child $?"; timeout 1 sleep 5; echo "timeout $?"`); !strings.Contains(out, "own child 143") || !strings.Contains(out, "timeout 124") {
+	if out := run(`sleep 30 & k=$!; kill $k; wait $k; echo "own child $?"; timeout 0.2 sleep 5; echo "timeout $?"`); !strings.Contains(out, "own child 143") || !strings.Contains(out, "timeout 124") {
 		t.Errorf("own processes and timeout must work: %s", out)
 	}
 	if runtime.GOOS == "darwin" {

@@ -25,7 +25,7 @@ const (
 	maxConsoleBytes    = 8 << 20
 	maxRecordInput     = 2048
 	maxTimerDelay      = 24 * time.Hour
-	formatTimeout      = 5 * time.Second
+	formatSeconds      = 5
 	codeFinished       = "the code has finished"
 	newVMNote          = "Note: this is a new VM; variables and functions from earlier run calls are gone."
 )
@@ -54,6 +54,7 @@ type runner struct {
 	log       jsvm.Value
 	note      bool
 	cur       *cell
+	second    time.Duration
 }
 
 func Run(funcs ...*Function) *Tool {
@@ -96,11 +97,18 @@ func (t *Tool) Reset(hadCells bool) {
 	r.note = hadCells
 }
 
-func cellTimeout(requested int) time.Duration {
+func (r *runner) unit() time.Duration {
+	if r.second > 0 {
+		return r.second
+	}
+	return time.Second
+}
+
+func (r *runner) cellTimeout(requested int) time.Duration {
 	if requested <= 0 {
 		requested = defaultCellTimeout
 	}
-	return time.Duration(min(requested, maxCellTimeout)) * time.Second
+	return time.Duration(min(requested, maxCellTimeout)) * r.unit()
 }
 
 func (r *runner) run(ctx context.Context, env *Env, in json.RawMessage, progress func(string)) Result {
@@ -119,7 +127,7 @@ func (r *runner) run(ctx context.Context, env *Env, in json.RawMessage, progress
 		}
 	}
 	r.bindFuncs()
-	c := newCell(ctx, r, env, progress, cellTimeout(a.Timeout))
+	c := newCell(ctx, r, env, progress, r.cellTimeout(a.Timeout))
 	if r.note {
 		c.note, r.note = newVMNote, false
 	}

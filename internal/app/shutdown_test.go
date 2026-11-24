@@ -22,6 +22,7 @@ func TestQuitStopsMCPServersThatIgnoreEOF(t *testing.T) {
 	}
 	pidFile := filepath.Join(t.TempDir(), "pid")
 	manager := mcp.NewManager(map[string]config.MCPServer{"fake": {Command: exe, Env: map[string]string{mcptest.Env: "1", mcptest.PidEnv: pidFile, mcptest.LingerEnv: "1"}}})
+	manager.CloseGrace = 100 * time.Millisecond
 	if err := manager.Start(context.Background(), "fake"); err != nil {
 		t.Fatal(err)
 	}

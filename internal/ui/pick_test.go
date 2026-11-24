@@ -3,7 +3,6 @@ package ui
 import (
 	"strings"
 	"testing"
-	"time"
 )
 
 func pickEditor(t *testing.T, keys ...Key) *Editor {
@@ -76,8 +75,9 @@ func TestPickMovesAndCancels(t *testing.T) {
 		t.Error("esc should cancel")
 	}
 	e = pickEditor(t)
+	e.T.Keys = make(chan Key)
 	go func() {
-		time.Sleep(20 * time.Millisecond)
+		e.T.Keys <- Key{Kind: KeyDown}
 		e.Interrupt <- struct{}{}
 	}()
 	if _, ok, _ := e.Pick(PickList{Items: items("a")}, PickOptions{}); ok {

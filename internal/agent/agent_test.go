@@ -51,6 +51,32 @@ func (nopDisplay) EndBlock()                     {}
 func (nopDisplay) Info(string)                   {}
 func (nopDisplay) Error(string)                  {}
 
+type hookDisplay struct {
+	nopDisplay
+	onInfo  func(string)
+	onStart func(id string)
+}
+
+func (d hookDisplay) Info(s string) {
+	if d.onInfo != nil {
+		d.onInfo(s)
+	}
+}
+
+func (d hookDisplay) ToolStart(id, _ string) {
+	if d.onStart != nil {
+		d.onStart(id)
+	}
+}
+
+func onJobWait(f func()) hookDisplay {
+	return hookDisplay{onInfo: func(s string) {
+		if strings.HasPrefix(s, "waiting for background") {
+			f()
+		}
+	}}
+}
+
 func runCall(id, code string) llm.Message {
 	in, _ := json.Marshal(map[string]string{"code": code})
 	return llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockToolUse, ID: id, Name: "run", Input: in}}}
@@ -62,11 +88,15 @@ func toolCall(id, cmd string) llm.Message {
 }
 
 func newAgent(t *testing.T, p *fakeProvider) *Agent {
+	return newAgentUI(t, p, nopDisplay{})
+}
+
+func newAgentUI(t *testing.T, p *fakeProvider, ui Display) *Agent {
 	return New(Options{
 		Config:   config.Config{CompactAt: config.Threshold{Tokens: 1 << 30}, Model: "m"},
 		Cwd:      t.TempDir(),
 		Provider: p,
-		UI:       nopDisplay{},
+		UI:       ui,
 		Tool:     tools.Run(tools.Bash(), tools.JobsFunc()),
 		SpillDir: t.TempDir(),
 	})
@@ -133,16 +163,12 @@ func TestModeNoteSentOnChangeOnly(t *testing.T) {
 func TestCancelDuringToolsKeepsLogValid(t *testing.T) {
 	t.Parallel()
 	p := &fakeProvider{replies: []llm.Message{toolCall("c1", "sleep 5")}}
-	a := newAgent(t, p)
 	ctx, cancel := context.WithCancel(context.Background())
-	p.onCall = func(n int) {
-		if n == 0 {
-			go func() {
-				time.Sleep(300 * time.Millisecond)
-				cancel()
-			}()
+	a := newAgentUI(t, p, hookDisplay{onStart: func(id string) {
+		if strings.Contains(id, ".") {
+			cancel()
 		}
-	}
+	}})
 	_, _, err := a.Turn(ctx, []llm.Block{{Type: llm.BlockText, Text: "go"}})
 	if err != context.Canceled {
 		t.Fatalf("err %v", err)

@@ -116,13 +116,21 @@ func TestBash(t *testing.T) {
 	}
 	var pid int
 	fmt.Sscanf(res.Text, "%d", &pid)
-	time.Sleep(100 * time.Millisecond)
-	if pid == 0 || alive(pid) {
+	if pid == 0 || !exits(pid) {
 		t.Errorf("background child %d survived the timeout", pid)
 	}
 	if res := runBash(context.Background(), env, json.RawMessage(`{"command":"  "}`), nil); !res.IsError {
 		t.Error("empty command accepted")
 	}
+}
+
+func exits(pid int) bool {
+	for deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		if !alive(pid) {
+			return true
+		}
+	}
+	return false
 }
 
 func alive(pid int) bool {
