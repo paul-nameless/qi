@@ -47,6 +47,7 @@ func solid(c color.RGBA) func(int, int) color.RGBA {
 }
 
 func TestPrepareImageScalesLargeImages(t *testing.T) {
+	t.Parallel()
 	data := testPNG(t, 2800, 1800, solid(color.RGBA{10, 120, 200, 255}))
 	img, err := prepareImage(data, "image/png", "shot.png", nil)
 	if err != nil {
@@ -84,6 +85,7 @@ func TestPrepareImageKeepsSmallImagesAsIs(t *testing.T) {
 }
 
 func TestPrepareImageCropsAtFullResolution(t *testing.T) {
+	t.Parallel()
 	data := testPNG(t, 2800, 1800, func(x, y int) color.RGBA {
 		if x >= 1000 {
 			return color.RGBA{255, 0, 0, 255}
@@ -129,6 +131,7 @@ func TestPrepareImageCropsAtFullResolution(t *testing.T) {
 }
 
 func TestPrepareImageKeepsJPEGAsJPEG(t *testing.T) {
+	t.Parallel()
 	src := image.NewRGBA(image.Rect(0, 0, 2000, 1000))
 	var buf bytes.Buffer
 	if err := jpeg.Encode(&buf, src, nil); err != nil {
@@ -159,6 +162,7 @@ func TestPrepareImagePassesUndecodableThrough(t *testing.T) {
 }
 
 func TestReadToolCropsImages(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	p := filepath.Join(dir, "shot.png")
 	if err := os.WriteFile(p, testPNG(t, 2000, 1000, solid(color.RGBA{0, 0, 0, 255})), 0o600); err != nil {
@@ -179,6 +183,7 @@ func TestReadToolCropsImages(t *testing.T) {
 }
 
 func TestMCPImagesGetAPath(t *testing.T) {
+	t.Parallel()
 	env := &Env{Cwd: t.TempDir(), SpillDir: t.TempDir()}
 	data := base64.StdEncoding.EncodeToString(testPNG(t, 3000, 1500, solid(color.RGBA{0, 0, 0, 255})))
 	img, err := mcpImage(env, "image/png", data)
