@@ -22,7 +22,7 @@ var upperSpecial = map[rune]string{
 }
 
 func init() {
-	for i := rune(0); i < 8; i++ {
+	for i := range rune(8) {
 		upperSpecial[0x1F80+i] = string(0x1F08+i) + "Ι"
 		upperSpecial[0x1F88+i] = string(0x1F08+i) + "Ι"
 		upperSpecial[0x1F90+i] = string(0x1F28+i) + "Ι"

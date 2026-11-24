@@ -306,9 +306,7 @@ func (c *cell) startTool(t *Function, input json.RawMessage, p *pendingCall) {
 	if subagent {
 		c.clock.pause()
 	}
-	c.wg.Add(1)
-	go func() {
-		defer c.wg.Done()
+	c.wg.Go(func() {
 		o := outcome{id: id}
 		defer func() {
 			if v := recover(); v != nil {
@@ -320,7 +318,7 @@ func (c *cell) startTool(t *Function, input json.RawMessage, p *pendingCall) {
 			c.outcomes <- o
 		}()
 		o = c.runTool(id, t, input)
-	}()
+	})
 }
 
 func (c *cell) runTool(id int, t *Function, input json.RawMessage) outcome {
@@ -371,9 +369,7 @@ func (c *cell) startTimer(p *pendingCall, d time.Duration) int {
 	id := c.add(p)
 	stop := make(chan struct{})
 	p.stop = stop
-	c.wg.Add(1)
-	go func() {
-		defer c.wg.Done()
+	c.wg.Go(func() {
 		t := time.NewTimer(d)
 		defer t.Stop()
 		select {
@@ -382,7 +378,7 @@ func (c *cell) startTimer(p *pendingCall, d time.Duration) int {
 		case <-c.ctx.Done():
 		}
 		c.outcomes <- outcome{id: id}
-	}()
+	})
 	return id
 }
 

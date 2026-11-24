@@ -177,7 +177,7 @@ func TestJobLogNamesAreUnique(t *testing.T) {
 func TestFinishedJobsArePruned(t *testing.T) {
 	t.Parallel()
 	env := jobEnv(t)
-	for i := 0; i < keepFinished+5; i++ {
+	for range keepFinished + 5 {
 		if res := runBash(context.Background(), env, bashIn(t, map[string]any{"command": "true", "background": true}), nil); res.IsError {
 			t.Fatal(res.Text)
 		}

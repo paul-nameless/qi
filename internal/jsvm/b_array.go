@@ -327,7 +327,7 @@ func (vm *VM) setupArray() {
 		n := len(a.arr)
 		vm.reserveValues(n)
 		out := make([]Value, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			if i >= len(a.arr) || (a.holes && a.arr[i].isHole()) {
 				out[i] = holeV
 				continue
@@ -358,7 +358,7 @@ func (vm *VM) setupArray() {
 			fn := vm.callback(arg(args, 0))
 			t := arg(args, 1)
 			n := len(a.arr)
-			for k := 0; k < n; k++ {
+			for k := range n {
 				i := k
 				if last {
 					i = n - 1 - k

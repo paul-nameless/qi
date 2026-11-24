@@ -10,7 +10,7 @@ const fuzzFlags = "gimsuy"
 
 func flagsFromByte(b byte) string {
 	var out []byte
-	for i := 0; i < len(fuzzFlags); i++ {
+	for i := range len(fuzzFlags) {
 		if b&(1<<i) != 0 {
 			out = append(out, fuzzFlags[i])
 		}

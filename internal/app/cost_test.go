@@ -17,11 +17,11 @@ func TestSpendString(t *testing.T) {
 		want  string
 	}{
 		{nil, "no requests"},
-		{[]llm.Usage{{Input: 1000, CacheRead: 750, Output: 20, Cost: usd(0.5)}, {Input: 1000, CacheRead: 750, Output: 30, Cost: usd(0.25)}}, "$0.75 · 2 requests · input 2.0k (75% cached) · output 50"},
-		{[]llm.Usage{{Input: 7000, CacheWrite: 6900, Output: 120, Cost: usd(0.00093)}}, "$0.0009 · 1 request · input 7.0k (0% cached) · output 120 · cache write 6.9k"},
-		{[]llm.Usage{{Input: 300, Output: 3, Cost: usd(0)}}, "$0.0000 · 1 request · input 300 (0% cached) · output 3"},
+		{[]llm.Usage{{Input: 1000, CacheRead: 750, Output: 20, Cost: new(0.5)}, {Input: 1000, CacheRead: 750, Output: 30, Cost: new(0.25)}}, "$0.75 · 2 requests · input 2.0k (75% cached) · output 50"},
+		{[]llm.Usage{{Input: 7000, CacheWrite: 6900, Output: 120, Cost: new(0.00093)}}, "$0.0009 · 1 request · input 7.0k (0% cached) · output 120 · cache write 6.9k"},
+		{[]llm.Usage{{Input: 300, Output: 3, Cost: new(0.0)}}, "$0.0000 · 1 request · input 300 (0% cached) · output 3"},
 		{[]llm.Usage{{Input: 5000, Output: 10}}, "not reported by the provider · 1 request · input 5.0k (0% cached) · output 10"},
-		{[]llm.Usage{{Input: 100, Cost: usd(0.0009)}, {Input: 100, CacheWrite: 90}}, "$0.0009 for 1 of 2 requests (the rest not reported) · 2 requests · input 200 (0% cached) · output 0 · cache write 90"},
+		{[]llm.Usage{{Input: 100, Cost: new(0.0009)}, {Input: 100, CacheWrite: 90}}, "$0.0009 for 1 of 2 requests (the rest not reported) · 2 requests · input 200 (0% cached) · output 0 · cache write 90"},
 	}
 	for _, c := range cases {
 		var s spend
@@ -38,8 +38,8 @@ func TestCostReportCountsSubagentsAndCompaction(t *testing.T) {
 	r, _ := testRepl(t, config.Config{Model: "m"}, scripted())
 	s := r.agent.Session()
 	_ = s.Message(llm.UserText("hi"), "m", nil)
-	_ = s.Message(llm.Message{Role: llm.RoleAssistant}, "m", &llm.Usage{Input: 1000, CacheRead: 500, Output: 10, Cost: usd(0.02)})
-	_ = s.Compaction("sum", nil, "m", &llm.Usage{Input: 1000, Output: 100, Cost: usd(0.03)})
+	_ = s.Message(llm.Message{Role: llm.RoleAssistant}, "m", &llm.Usage{Input: 1000, CacheRead: 500, Output: 10, Cost: new(0.02)})
+	_ = s.Compaction("sum", nil, "m", &llm.Usage{Input: 1000, Output: 100, Cost: new(0.03)})
 	if got, _ := r.costReport(); got != "cost  $0.05 · 2 requests · input 2.0k (25% cached) · output 110" {
 		t.Errorf("own session: %s", got)
 	}
@@ -47,10 +47,10 @@ func TestCostReportCountsSubagentsAndCompaction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = child.Message(llm.Message{Role: llm.RoleAssistant}, "m", &llm.Usage{Input: 400, Output: 4, Cost: usd(0.01)})
+	_ = child.Message(llm.Message{Role: llm.RoleAssistant}, "m", &llm.Usage{Input: 400, Output: 4, Cost: new(0.01)})
 	child.Close()
 	other, _ := session.Create(session.CreateOptions{Cwd: r.agent.Cwd(), Model: "m", Subagent: true, ParentSession: "someone-else"})
-	_ = other.Message(llm.Message{Role: llm.RoleAssistant}, "m", &llm.Usage{Input: 9999, Cost: usd(9)})
+	_ = other.Message(llm.Message{Role: llm.RoleAssistant}, "m", &llm.Usage{Input: 9999, Cost: new(9.0)})
 	other.Close()
 	got, err := r.costReport()
 	if err != nil {
@@ -62,8 +62,6 @@ func TestCostReportCountsSubagentsAndCompaction(t *testing.T) {
 		}
 	}
 }
-
-func usd(v float64) *float64 { return &v }
 
 func TestMetaParentIgnoresBadFiles(t *testing.T) {
 	dir := t.TempDir()

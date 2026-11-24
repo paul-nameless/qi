@@ -17,15 +17,15 @@ func ParseFrontmatter(data string) (skillMeta, string) {
 		return m, data
 	}
 	rest := strings.TrimLeft(data[3:], "\r\n")
-	end := strings.Index(rest, "\n---")
-	if end < 0 {
+	before, after, ok := strings.Cut(rest, "\n---")
+	if !ok {
 		return m, data
 	}
-	fields := frontmatterFields(rest[:end])
+	fields := frontmatterFields(before)
 	m.Name = fields["name"]
 	m.Description = fields["description"]
 	m.DisableModelInvocation = strings.EqualFold(fields["disable-model-invocation"], "true")
-	body := rest[end+4:]
+	body := after
 	if i := strings.IndexByte(body, '\n'); i >= 0 {
 		body = body[i+1:]
 	} else {

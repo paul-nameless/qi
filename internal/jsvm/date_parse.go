@@ -23,7 +23,7 @@ func (sc *scanner) digits(n int) (int, bool) {
 		return 0, false
 	}
 	v := 0
-	for k := 0; k < n; k++ {
+	for k := range n {
 		c := sc.s[sc.i+k]
 		if c < '0' || c > '9' {
 			return 0, false

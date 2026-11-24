@@ -26,7 +26,7 @@ func imageRound(i int) []llm.Message {
 func TestEvictImagesDropsOldestPastTheLimit(t *testing.T) {
 	t.Parallel()
 	a := newAgent(t, &fakeProvider{})
-	for i := 0; i < maxImages; i++ {
+	for i := range maxImages {
 		a.conv.messages = append(a.conv.messages, imageRound(i)...)
 	}
 	a.evictImages()
@@ -98,7 +98,7 @@ func TestEvictImagesKeepsTheNewestMessage(t *testing.T) {
 	a := newAgent(t, &fakeProvider{})
 	big := strings.Repeat("A", 6<<20)
 	var imgs []llm.Block
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		imgs = append(imgs, llm.Block{Type: llm.BlockImage, Data: big, Source: fmt.Sprintf("b%d.webp", i)})
 	}
 	a.conv.messages = []llm.Message{
@@ -114,7 +114,7 @@ func TestEvictImagesKeepsTheNewestMessage(t *testing.T) {
 func TestEvictImagesBySize(t *testing.T) {
 	t.Parallel()
 	a := newAgent(t, &fakeProvider{})
-	for i := 0; i < 30; i++ {
+	for i := range 30 {
 		r := imageRound(i)
 		r[1].Blocks[0].Images[0].Data = strings.Repeat("A", 1<<20)
 		a.conv.messages = append(a.conv.messages, r...)
@@ -130,7 +130,7 @@ func TestCompactionEvictsImagesFirst(t *testing.T) {
 	t.Parallel()
 	p := &fakeProvider{replies: []llm.Message{{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: "summary"}}}}}
 	a := newAgent(t, p)
-	for i := 0; i < 130; i++ {
+	for i := range 130 {
 		a.conv.messages = append(a.conv.messages, imageRound(i)...)
 	}
 	a.conv.messages = append(a.conv.messages, llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: "ok"}}})

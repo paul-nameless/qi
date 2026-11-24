@@ -198,8 +198,7 @@ func contextTooLong(err error) bool {
 		return false
 	}
 	body := err.Error()
-	var apiErr *llm.APIError
-	if errors.As(err, &apiErr) {
+	if apiErr, ok := errors.AsType[*llm.APIError](err); ok {
 		if apiErr.Status == 413 {
 			return true
 		}

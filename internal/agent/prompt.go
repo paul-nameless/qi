@@ -159,8 +159,8 @@ func LoadCommands(roots []string) []Command {
 	var out []Command
 	seen := map[string]bool{}
 	var dirs []string
-	for i := len(roots) - 1; i >= 0; i-- {
-		dirs = append(dirs, filepath.Join(roots[i], ".claude", "commands"))
+	for _, root := range slices.Backward(roots) {
+		dirs = append(dirs, filepath.Join(root, ".claude", "commands"))
 	}
 	dirs = append(dirs, config.ExpandHome("~/.claude/commands"), filepath.Join(config.Dir(), "commands"))
 	for _, root := range dirs {

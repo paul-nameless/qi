@@ -1,6 +1,7 @@
 package regex
 
 import (
+	"slices"
 	"strings"
 	"unicode/utf8"
 )
@@ -557,12 +558,7 @@ func (m *machine) sameFold(a, b rune) bool {
 		return true
 	}
 	cls := foldClass(a, m.re.f.unicode)
-	for _, c := range cls {
-		if c == b {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(cls, b)
 }
 
 func (m *machine) matchOne(set *charset, pos int) int {
@@ -644,7 +640,7 @@ func (m *machine) repeat(pc int, in *inst, pos int) (int, bool) {
 }
 
 func (m *machine) advance(set *charset, pos, k int) (int, bool) {
-	for i := 0; i < k; i++ {
+	for range k {
 		w := m.matchOne(set, pos)
 		if w == 0 {
 			return 0, false
@@ -731,7 +727,7 @@ func (m *machine) repeatBack(pc int, in *inst, pos int) (int, bool) {
 }
 
 func (m *machine) retreat(set *charset, pos, k int) (int, bool) {
-	for i := 0; i < k; i++ {
+	for range k {
 		w := m.matchOneBack(set, pos)
 		if w == 0 {
 			return 0, false

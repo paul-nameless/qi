@@ -41,7 +41,7 @@ func toolAvailable(command, picker string) bool {
 }
 
 func firstCommand(command string) string {
-	for _, f := range strings.Fields(command) {
+	for f := range strings.FieldsSeq(command) {
 		f = strings.TrimLeft(f, "(")
 		if f == "" || (strings.Contains(f, "=") && !strings.ContainsAny(f[:strings.Index(f, "=")], "/'\"")) {
 			continue
@@ -209,7 +209,7 @@ func choose(run runner, command, picker, prompt string, stdin io.Reader) ([]stri
 		out.Write(data)
 	}
 	var lines []string
-	for _, l := range strings.Split(out.String(), "\n") {
+	for l := range strings.SplitSeq(out.String(), "\n") {
 		if l = strings.TrimRight(l, "\r"); l != "" {
 			lines = append(lines, l)
 		}

@@ -307,7 +307,7 @@ func TestCorpusParse(t *testing.T) {
 	}
 	vm := New(Options{})
 	n, bad := 0, 0
-	for _, line := range strings.Split(string(b), "\n") {
+	for line := range strings.SplitSeq(string(b), "\n") {
 		if line == "" {
 			continue
 		}

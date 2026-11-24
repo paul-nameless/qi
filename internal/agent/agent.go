@@ -393,8 +393,8 @@ func (a *Agent) DrainQueue() []llm.Block {
 }
 
 func lastModeNote(msgs []llm.Message) (Mode, bool) {
-	for i := len(msgs) - 1; i >= 0; i-- {
-		for _, b := range msgs[i].Blocks {
+	for _, msg := range slices.Backward(msgs) {
+		for _, b := range msg.Blocks {
 			if b.Text == legacyYoloNote {
 				return ModeYolo, true
 			}

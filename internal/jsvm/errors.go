@@ -23,15 +23,9 @@ func newSource(name, src string) *source {
 }
 
 func (s *source) position(pos int) (int, int) {
-	line := sort.Search(len(s.lines), func(i int) bool { return s.lines[i] > pos }) - 1
-	if line < 0 {
-		line = 0
-	}
+	line := max(sort.Search(len(s.lines), func(i int) bool { return s.lines[i] > pos })-1, 0)
 	start := s.lines[line]
-	end := pos
-	if end > len(s.src) {
-		end = len(s.src)
-	}
+	end := min(pos, len(s.src))
 	col := utf16Len(s.src[start:end]) + 1
 	return line + 1, col
 }

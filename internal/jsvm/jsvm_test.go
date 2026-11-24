@@ -375,10 +375,8 @@ func TestZeroAllocLoop(t *testing.T) {
 func TestConcurrentVMs(t *testing.T) {
 	t.Parallel()
 	var wg sync.WaitGroup
-	for i := 0; i < 8; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 8 {
+		wg.Go(func() {
 			vm := New(Options{})
 			v, err := vm.RunCell("cell.js", "const o = JSON.parse('[{\"a\":1},{\"a\":2}]'); const r = await Promise.all(o.map(async x => x.a * 2)); r.join()")
 			if err != nil {
@@ -390,7 +388,7 @@ func TestConcurrentVMs(t *testing.T) {
 				t.Errorf("got %v %s", st, ToString(r))
 			}
 			vm.Close()
-		}()
+		})
 	}
 	wg.Wait()
 }

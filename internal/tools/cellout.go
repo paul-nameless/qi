@@ -90,8 +90,7 @@ func (c *cell) failure(end cellEnd) string {
 }
 
 func errText(err error) string {
-	var ex *jsvm.Exception
-	if errors.As(err, &ex) {
+	if ex, ok := errors.AsType[*jsvm.Exception](err); ok {
 		return ex.Error()
 	}
 	return err.Error()

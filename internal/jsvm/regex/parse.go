@@ -673,7 +673,7 @@ func (p *parser) parseControl(inClass bool) rune {
 
 func (p *parser) parseOctal() rune {
 	v := rune(0)
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		c := p.peek()
 		if c < '0' || c > '7' || v*8+(c-'0') > 0377 {
 			break
@@ -686,7 +686,7 @@ func (p *parser) parseOctal() rune {
 
 func (p *parser) parseHex(n int) (rune, bool) {
 	v := rune(0)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		d := hexVal(p.peekAt(i))
 		if d < 0 {
 			return 0, false

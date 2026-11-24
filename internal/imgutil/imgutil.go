@@ -46,7 +46,7 @@ func Resize(img image.Image, region image.Rectangle, w, h int) *image.RGBA {
 	var free [][]float32
 	dst := image.NewRGBA(image.Rect(0, 0, w, h))
 	y0 := 0
-	for sy := 0; sy < sh; sy++ {
+	for sy := range sh {
 		clear(row.Pix)
 		draw.Draw(row, row.Rect, img, image.Pt(b.Min.X, b.Min.Y+sy), draw.Src)
 		clear(hrow)

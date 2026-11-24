@@ -382,10 +382,7 @@ func (s *jstr) lastIndexOf(sub string, from int) int {
 		if !isASCIIString(sub) {
 			return -1
 		}
-		end := from + len(sub)
-		if end > len(str) {
-			end = len(str)
-		}
+		end := min(from+len(sub), len(str))
 		return strings.LastIndex(str[:end], sub)
 	}
 	end := from + utf16Len(sub)

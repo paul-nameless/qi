@@ -80,7 +80,7 @@ func TestCapOutput(t *testing.T) {
 		t.Error("short output changed")
 	}
 	var b strings.Builder
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		fmt.Fprintf(&b, "line %d é\n", i)
 	}
 	long := b.String()
@@ -88,8 +88,11 @@ func TestCapOutput(t *testing.T) {
 	if len(out) > maxOutBytes+500 || !strings.Contains(out, "line 0 ") || !strings.Contains(out, "line 999") || !utf8.ValidString(out) {
 		t.Fatalf("bad cap: %d bytes", len(out))
 	}
-	i := strings.Index(out, "Full output: ")
-	path := strings.Fields(out[i+len("Full output: "):])[0]
+	_, after, ok := strings.Cut(out, "Full output: ")
+	if !ok || len(strings.Fields(after)) == 0 {
+		t.Fatalf("no spill path in capped output: %q", out[len(out)-200:])
+	}
+	path := strings.Fields(after)[0]
 	data, err := os.ReadFile(path)
 	if err != nil || string(data) != long {
 		t.Errorf("spill file mismatch: %v", err)

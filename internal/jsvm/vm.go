@@ -85,10 +85,7 @@ type VM struct {
 
 func (vm *VM) alloc(n int) []Value {
 	if vm.sp+n > len(vm.stack) {
-		size := len(vm.stack) * 2
-		if size < vm.sp+n+64 {
-			size = vm.sp + n + 64
-		}
+		size := max(len(vm.stack)*2, vm.sp+n+64)
 		vm.stack = make([]Value, size)
 	}
 	s := vm.stack[vm.sp : vm.sp+n : vm.sp+n]

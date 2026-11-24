@@ -397,7 +397,7 @@ func (o *object) ownKeys(enumOnly bool) []propKey {
 	}
 	if o.class == classString {
 		n := o.inner.(*jstr).length()
-		for i := 0; i < n; i++ {
+		for i := range n {
 			keys = append(keys, propKey(strconv.Itoa(i)))
 		}
 	}

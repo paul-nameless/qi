@@ -1,6 +1,7 @@
 package jsvm
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -419,7 +420,7 @@ func (vm *VM) copyDataProps(dst *object, src Value, exclude []propKey) {
 		}
 	case *jstr:
 		n := r.length()
-		for i := 0; i < n; i++ {
+		for i := range n {
 			k := strKey(strconv.Itoa(i))
 			if !containsKey(exclude, k) {
 				vm.defineOwn(dst, k, r.substr(i, i+1))
@@ -438,12 +439,7 @@ func allDefault(s *hclass) bool {
 }
 
 func containsKey(keys []propKey, k propKey) bool {
-	for _, x := range keys {
-		if x == k {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(keys, k)
 }
 
 func (vm *VM) forInKeys(o *object) []propKey {

@@ -95,7 +95,7 @@ func TestExceptionInterruptSafe(t *testing.T) {
 func TestSharedStringsNoRace(t *testing.T) {
 	t.Parallel()
 	done := make(chan bool)
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		go func() {
 			vm := New(Options{})
 			v, err := vm.RunCell("cell.js", "['a' < '😀', 'b'.lastIndexOf('é'), typeof 1 < '😀', (-0).toFixed(2), JSON.parse('{\"a\":1,\"b\":2}', function (k, v) { if (k === 'a') this.b = 5; return v }).b]")
@@ -107,7 +107,7 @@ func TestSharedStringsNoRace(t *testing.T) {
 			done <- true
 		}()
 	}
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		<-done
 	}
 }

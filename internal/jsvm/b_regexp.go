@@ -238,7 +238,7 @@ func (vm *VM) matchArray(re *jsRegex, s *jstr, m []int) Value {
 	a.addProp(strKey("groups"), vm.groupsObject(re, vals), fDefault)
 	if re.eng.HasIndices() {
 		ind := make([]Value, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			if m[2*i] < 0 {
 				ind[i] = undefined
 			} else {
@@ -467,7 +467,7 @@ func (vm *VM) regexReplace(s *jstr, o *object, re *jsRegex, fn *object, isFn boo
 func (vm *VM) callReplacer(fn *object, re *jsRegex, s *jstr, m []int) string {
 	n := len(m) / 2
 	args := make([]Value, 0, n+3)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		args = append(args, vm.group(s, m, i))
 	}
 	args = append(args, intV(m[0]), strVal(s))

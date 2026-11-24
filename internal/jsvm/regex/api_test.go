@@ -186,7 +186,7 @@ func TestConcurrentExec(t *testing.T) {
 	re, _ := Compile(`(\w+)@(\w+)\.com`, "g")
 	s := strings.Repeat("x a@b.com y ", 1000)
 	done := make(chan int)
-	for g := 0; g < 8; g++ {
+	for range 8 {
 		go func() {
 			n := 0
 			for pos := 0; ; {
@@ -200,7 +200,7 @@ func TestConcurrentExec(t *testing.T) {
 			done <- n
 		}()
 	}
-	for g := 0; g < 8; g++ {
+	for range 8 {
 		if n := <-done; n != 1000 {
 			t.Errorf("goroutine saw %d matches", n)
 		}

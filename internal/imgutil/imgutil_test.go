@@ -9,7 +9,7 @@ import (
 
 func TestResizeAreaAveragesStripes(t *testing.T) {
 	src := image.NewRGBA(image.Rect(0, 0, 4, 1))
-	for x := 0; x < 4; x++ {
+	for x := range 4 {
 		v := uint8(0)
 		if x%2 == 1 {
 			v = 200
@@ -17,7 +17,7 @@ func TestResizeAreaAveragesStripes(t *testing.T) {
 		src.SetRGBA(x, 0, color.RGBA{v, v, v, 255})
 	}
 	dst := Resize(src, src.Rect, 2, 1)
-	for x := 0; x < 2; x++ {
+	for x := range 2 {
 		if c := dst.RGBAAt(x, 0); c.R != 100 || c.A != 255 {
 			t.Errorf("pixel %d = %v, want grey 100", x, c)
 		}

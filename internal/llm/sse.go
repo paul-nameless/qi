@@ -101,7 +101,7 @@ func postStreamCtx(ctx context.Context, url string, headers map[string]string, b
 	}
 	var lastErr error
 	var wait time.Duration
-	for attempt := 0; attempt < requestAttempts; attempt++ {
+	for attempt := range requestAttempts {
 		if attempt > 0 {
 			if err := Sleep(ctx, max(wait, requestBackoff(attempt))); err != nil {
 				return nil, err
@@ -112,8 +112,7 @@ func postStreamCtx(ctx context.Context, url string, headers map[string]string, b
 			return resp, nil
 		}
 		lastErr, wait = err, 0
-		var apiErr *APIError
-		if errors.As(err, &apiErr) {
+		if apiErr, ok := errors.AsType[*APIError](err); ok {
 			wait = apiErr.RetryAfter
 		}
 		if ctx.Err() != nil || !Retryable(err) {

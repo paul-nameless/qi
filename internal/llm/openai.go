@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -358,8 +359,7 @@ func findSlot(slots []*callSlot, index *int, id string) *callSlot {
 		}
 		return nil
 	}
-	for i := len(slots) - 1; i >= 0; i-- {
-		s := slots[i]
+	for _, s := range slices.Backward(slots) {
 		if s.index != *index {
 			continue
 		}

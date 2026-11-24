@@ -1,6 +1,7 @@
 package regex
 
 import (
+	"slices"
 	"strings"
 	"unicode/utf8"
 )
@@ -140,8 +141,8 @@ func encodeUnit(r rune) string {
 
 func (c *compiler) seq(subs []*node, back, atEnd bool) {
 	if back {
-		for i := len(subs) - 1; i >= 0; i-- {
-			c.node(subs[i], true, false)
+		for _, sub := range slices.Backward(subs) {
+			c.node(sub, true, false)
 		}
 		return
 	}

@@ -229,12 +229,10 @@ func (h *Hooks) run(ctx context.Context, event string, names []string, payload m
 	out := make([]hookOutcome, len(waited))
 	var wg sync.WaitGroup
 	for i, c := range waited {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			defer ui.CleanupOnPanic()
 			out[i] = h.exec(ctx, c, input)
-		}()
+		})
 	}
 	wg.Wait()
 	return out
@@ -285,8 +283,7 @@ func (h *Hooks) exec(ctx context.Context, c hookCmd, input []byte) hookOutcome {
 }
 
 func exitCode(err error) int {
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 		return exitErr.ExitCode()
 	}
 	if err != nil {

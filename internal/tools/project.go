@@ -110,7 +110,7 @@ var goDirs = sync.OnceValue(func() []string {
 		return []string{filepath.Join(config.Home(), "go", "pkg", "mod")}
 	}
 	var dirs []string
-	for _, d := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+	for d := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
 		if d = strings.TrimSpace(d); filepath.IsAbs(d) {
 			dirs = append(dirs, d)
 		}
@@ -161,7 +161,7 @@ func (e *Env) gitDirs() []string {
 		if err != nil {
 			return
 		}
-		for _, d := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		for d := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
 			if d = strings.TrimSpace(d); !filepath.IsAbs(d) {
 				continue
 			}

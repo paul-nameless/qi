@@ -446,7 +446,7 @@ func localeCompare(a, b string) int {
 	if a == b {
 		return 0
 	}
-	for level := 0; level < 3; level++ {
+	for level := range 3 {
 		if c := compareLevel(a, b, level); c != 0 {
 			return c
 		}

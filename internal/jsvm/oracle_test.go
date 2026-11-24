@@ -38,7 +38,7 @@ func runOracleFile(t *testing.T, file string) {
 		case c.Err != "":
 			if err == nil {
 				t.Errorf("%s\n  want %s, got output %q", c.Code, c.Err, out)
-			} else if name := strings.SplitN(err.Error(), ":", 2)[0]; name != c.Err {
+			} else if name, _, _ := strings.Cut(err.Error(), ":"); name != c.Err {
 				t.Errorf("%s\n  want %s, got %v", c.Code, c.Err, err)
 			}
 		case err != nil:

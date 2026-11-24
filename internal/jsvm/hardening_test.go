@@ -7,8 +7,7 @@ import (
 )
 
 func errName(err error) string {
-	var ex *Exception
-	if errors.As(err, &ex) {
+	if ex, ok := errors.AsType[*Exception](err); ok {
 		return ex.Name
 	}
 	if err == nil {

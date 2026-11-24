@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -101,12 +102,12 @@ func historyItems(entries []string) ([]pickItem, map[string]string) {
 	shown := strings.NewReplacer("\r\n", "⏎", "\n", "⏎", "\r", "⏎", "\t", " ")
 	back := map[string]string{}
 	var items []pickItem
-	for i := len(entries) - 1; i >= 0; i-- {
-		name := shown.Replace(entries[i])
+	for _, entry := range slices.Backward(entries) {
+		name := shown.Replace(entry)
 		if _, dup := back[name]; dup || strings.TrimSpace(name) == "" {
 			continue
 		}
-		back[name] = entries[i]
+		back[name] = entry
 		items = append(items, pickItem{name: name})
 	}
 	return items, back

@@ -249,7 +249,7 @@ func callSite(vm *jsvm.VM) string {
 		return ""
 	}
 	var lines []string
-	for _, l := range strings.Split(jsvm.ToString(st), "\n") {
+	for l := range strings.SplitSeq(jsvm.ToString(st), "\n") {
 		if strings.HasPrefix(l, "    at") {
 			lines = append(lines, l)
 		}

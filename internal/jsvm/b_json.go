@@ -600,7 +600,7 @@ func (w *jsonWriter) value(v Value, holder *object, key propKey) bool {
 
 func (w *jsonWriter) newline(depth int) {
 	w.b = append(w.b, '\n')
-	for i := 0; i < depth; i++ {
+	for range depth {
 		w.b = append(w.b, w.indent...)
 	}
 }

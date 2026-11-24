@@ -3,17 +3,18 @@ package app
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/paul-nameless/qi/internal/llm"
 )
 
 func lastCodeBlock(msgs []llm.Message) string {
-	for i := len(msgs) - 1; i >= 0; i-- {
-		if msgs[i].Role != llm.RoleAssistant {
+	for _, msg := range slices.Backward(msgs) {
+		if msg.Role != llm.RoleAssistant {
 			continue
 		}
-		if code, ok := lastFence(msgs[i].Text()); ok {
+		if code, ok := lastFence(msg.Text()); ok {
 			return code
 		}
 	}
@@ -24,7 +25,7 @@ func lastFence(text string) (string, bool) {
 	var block []string
 	var last string
 	found, open := false, ""
-	for _, line := range strings.Split(text, "\n") {
+	for line := range strings.SplitSeq(text, "\n") {
 		t := strings.TrimSpace(line)
 		mark := fenceMark(t)
 		switch {
@@ -91,8 +92,8 @@ func (r *repl) copyAnswer(args string) error {
 }
 
 func lastAnswer(msgs []llm.Message) string {
-	for i := len(msgs) - 1; i >= 0; i-- {
-		if t := strings.TrimSpace(msgs[i].Text()); msgs[i].Role == llm.RoleAssistant && t != "" {
+	for _, msg := range slices.Backward(msgs) {
+		if t := strings.TrimSpace(msg.Text()); msg.Role == llm.RoleAssistant && t != "" {
 			return t
 		}
 	}

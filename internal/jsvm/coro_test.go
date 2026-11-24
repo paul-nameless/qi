@@ -9,7 +9,7 @@ import (
 func settleGoroutines(t *testing.T, vm *VM, want int) int {
 	t.Helper()
 	n := 0
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		runtime.GC()
 		vm.RunJobs()
 		if n = runtime.NumGoroutine(); n <= want {
@@ -26,7 +26,7 @@ func TestParkedCoroutinesReleased(t *testing.T) {
 		t.Fatal(err)
 	}
 	base := settleGoroutines(t, vm, 0)
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		p, err := vm.RunCell("cell.js", "globalThis.n = (globalThis.n || 0) + 1; await new Promise(() => {}); globalThis.after = 1")
 		if err != nil {
 			t.Fatal(err)
@@ -70,7 +70,7 @@ func TestParkedCoroutinesReleased(t *testing.T) {
 }
 
 func gcSettle() {
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		runtime.GC()
 		time.Sleep(5 * time.Millisecond)
 	}
@@ -277,7 +277,7 @@ func TestJobsQueuedBeforeThrowStayQueued(t *testing.T) {
 func TestInterruptAfterStopLeavesNoLateInterrupt(t *testing.T) {
 	t.Parallel()
 	vm := New(Options{})
-	for i := 0; i < 2000; i++ {
+	for i := range 2000 {
 		stop := vm.InterruptAfter(time.Duration(i%50) * time.Microsecond)
 		stop()
 		stop()

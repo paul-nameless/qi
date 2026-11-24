@@ -92,7 +92,7 @@ func parseTrustLine(line string) trustEntry {
 		return trustEntry{dir: strings.TrimSpace(line)}
 	}
 	e := trustEntry{dir: strings.Join(parts[:n-2], "\t"), fingerprint: parts[n-2], pairs: map[string]bool{}, ids: map[string]bool{}}
-	for _, p := range strings.Split(parts[n-1], ",") {
+	for p := range strings.SplitSeq(parts[n-1], ",") {
 		if id, _, ok := strings.Cut(p, ":"); ok {
 			e.pairs[p], e.ids[id] = true, true
 		}

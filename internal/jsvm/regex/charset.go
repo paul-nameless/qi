@@ -302,13 +302,7 @@ func foldClosure(rs []rune, unicodeMode bool) []rune {
 	set := newCharset(rs)
 	out := slices.Clone(rs)
 	for _, cls := range getFoldTable(unicodeMode).classes {
-		hit := false
-		for _, m := range cls {
-			if set.has(m) {
-				hit = true
-				break
-			}
-		}
+		hit := slices.ContainsFunc(cls, set.has)
 		if !hit {
 			continue
 		}

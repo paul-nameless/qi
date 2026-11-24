@@ -320,7 +320,7 @@ func (t *Terminal) Away() bool {
 func normalizePaste(s string) string {
 	out := make([]rune, 0, len(s))
 	rs := []rune(s)
-	for i := 0; i < len(rs); i++ {
+	for i := range rs {
 		r := rs[i]
 		if r == '\r' {
 			if i+1 < len(rs) && rs[i+1] == '\n' {
