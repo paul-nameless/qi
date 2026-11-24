@@ -204,11 +204,14 @@ func (a *Agent) toolDefs() []llm.ToolDef {
 }
 
 func (a *Agent) execute(ctx context.Context, calls []llm.Block) []llm.Block {
-	t := a.conv.tool
-	if t == nil {
-		t = tools.Run()
+	if a.conv.tool != nil {
+		return a.conv.tool.Execute(ctx, a.env, calls, a.ui)
 	}
-	return t.Execute(ctx, a.env, calls, a.ui)
+	out := make([]llm.Block, len(calls))
+	for i, c := range calls {
+		out[i] = llm.Block{Type: llm.BlockToolResult, ToolUseID: c.ID, Text: fmt.Sprintf("unknown tool %q", c.Name), IsError: true}
+	}
+	return out
 }
 
 func (a *Agent) SetHooks(pre tools.Hook, post tools.PostHook, stop StopHook) {

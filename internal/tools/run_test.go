@@ -408,6 +408,25 @@ func TestCellReset(t *testing.T) {
 	k.want("1", "1")
 }
 
+func TestRunPanicAndReplaceThroughExecute(t *testing.T) {
+	boom := &Function{Name: "boom", Code: CodeSpec{Name: "boom"}, Run: func(context.Context, *Env, json.RawMessage, func(string)) Result {
+		panic("boom")
+	}}
+	k := newCellKit(t, boom)
+	exec := func(code string) llm.Block {
+		return k.run.Execute(k.ctx, k.env, []llm.Block{{ID: "1", Name: "run", Input: mustJSON(t, runArgs{Code: code})}}, nopUI{})[0]
+	}
+	if b := exec(`try { await boom() } catch (e) { return e.message }`); b.IsError || !strings.Contains(b.Text, "tool boom panicked: boom") {
+		t.Errorf("panicking function: %+v", b)
+	}
+	k.run.Replace(&Function{Name: "tick", Code: CodeSpec{Name: "tick"}, Run: func(context.Context, *Env, json.RawMessage, func(string)) Result {
+		return Result{Text: "tock", Value: json.RawMessage(`"tock"`)}
+	}})
+	if b := exec(`return await tick()`); b.IsError || !strings.HasPrefix(b.Text, "tock") {
+		t.Errorf("replaced function not called: %+v", b)
+	}
+}
+
 func TestRunReplaceAndHint(t *testing.T) {
 	sub := func(model string) *Function { return Subagent(model, nil, []string{"low"}) }
 	build := func() *Tool {
