@@ -22,6 +22,7 @@ const keysText = `Keys:
   ctrl+g             edit the prompt in $EDITOR
   ctrl+r             pick a prompt from history
   @                  pick files to insert (at the start of a word)
+  alt+c              copy the session id
   alt+enter, ctrl+j  newline
   ctrl+c, esc        cancel the running turn (ctrl+c twice at the prompt quits)
   typing during a turn queues a message that is sent after the next tool results`
@@ -37,6 +38,8 @@ type command struct {
 	pickArg func(r *repl) (text string, submit bool)
 }
 
+var copyItems = []pickItem{{"answer", "the last answer"}, {"code", "its last code block"}, {"id", "the session id"}}
+
 var commandList []command
 
 func init() {
@@ -51,7 +54,7 @@ func init() {
 		{name: "compact", args: "[focus]", help: "summarize the conversation to free context (optional focus for the summary)", short: "summarize the conversation to free context", run: (*repl).compact},
 		{name: "resume", args: "[id]", help: "switch to another session of this directory (picker without id)", short: "switch to another session", run: func(r *repl, args string) { r.report(r.resume(args)) }},
 		{name: "history", help: "open the whole conversation in the pager", short: "open the conversation in the pager", run: func(r *repl, _ string) { r.report(r.showHistory()) }},
-		{name: "copy", args: "[code]", help: "copy the last answer (or its last code block) to the clipboard", short: "copy the last answer to the clipboard", run: func(r *repl, args string) { r.report(r.copyAnswer(args)) }},
+		{name: "copy", args: "[answer|code|id]", help: "copy the last answer, its last code block or the session id (alt+c) to the clipboard", short: "copy the answer, code or session id", run: func(r *repl, args string) { r.report(r.copyAnswer(args)) }, pickArg: func(r *repl) (string, bool) { return r.pickArg("copy", copyItems) }},
 		{name: "model", args: "[name]", help: "show or switch the model (switching loses the prompt cache)", short: "switch the model", run: (*repl).model, pickArg: func(r *repl) (string, bool) { return r.pickArg("model", r.modelItems()) }},
 		{name: "profile", args: "[name]", help: "show or switch the profile", short: "switch the profile", run: (*repl).profile, pickArg: (*repl).pickProfile},
 		{name: "effort", args: "[level]", help: "show or switch the reasoning effort (default, none, low, medium, high, xhigh, max)", short: "switch the reasoning effort", run: (*repl).effort, pickArg: func(r *repl) (string, bool) { return r.pickArg("effort", r.effortItems()) }},

@@ -109,6 +109,7 @@ func (r *repl) run() error {
 	if r.toolOn(r.agent.Config().FilePicker) {
 		r.editor.OnAt = r.filePicker
 	}
+	r.editor.OnCopyID = func() { r.report(r.copyAnswer("id")) }
 	r.handleSignals()
 	r.handleResize()
 	r.banner()

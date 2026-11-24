@@ -105,11 +105,11 @@ Keys: shift+tab toggles read-only, ctrl+g opens `$EDITOR`, ctrl+r searches past 
 
 Images: local PNG, JPEG and GIF files whose paths appear in the final answer of a turn are drawn after it (up to 4) in terminals with the kitty graphics protocol (Ghostty, kitty), not inside tmux or screen. `"terminal_images": false` turns this off, globally or in a profile.
 
-Commands: `/help`, `/keys`, `/status`, `/config`, `/clear`, `/context`, `/compact`, `/reload`, `/resume`, `/history`, `/copy`, `/model`, `/profile`, `/effort`, `/skills`, `/mcp`, `/exit`, plus `/<skill or command>`. `/` on an empty line opens the picker. `/config` shows the config file, the external tools and the settings `run_code`, `show_reasoning` and `terminal_images`, then opens the picker: Enter switches the highlighted setting and saves it to the config file (into the active profile when the profile sets it), Esc closes. `/config run_code` does it without the picker.
+Commands: `/help`, `/keys`, `/status`, `/config`, `/clear`, `/context`, `/compact`, `/reload`, `/resume`, `/history`, `/copy`, `/model`, `/profile`, `/effort`, `/skills`, `/mcp`, `/exit`, plus `/<skill or command>`. `/` on an empty line opens the picker. `/config` shows the config file, the external tools and the settings `run_code`, `show_reasoning` and `terminal_images`, then opens the picker: Enter switches the highlighted setting and saves it to the config file (into the active profile when the profile sets it), Esc closes. `/config run_code` does it without the picker. `/copy` copies the last answer, `/copy code` its last code block and `/copy id` (or alt+c) the session id.
 
 ## External tools
 
-Whenever qi needs you to pick something, it opens its built-in picker: type to filter (fuzzy; a capital letter makes it case-sensitive), up/down to move, Enter to pick, Esc to close.
+Whenever qi needs you to pick something, it opens its built-in picker: type to filter (fuzzy; a capital letter makes it case-sensitive), up/down to move, Enter to pick, Tab to complete the highlighted item into the input line without running it (`/` then `comp` Tab gives `/compact ` for adding a focus), Esc to close.
 
 | You press | You get |
 |---|---|

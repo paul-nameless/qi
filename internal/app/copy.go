@@ -56,12 +56,17 @@ func fenceMark(line string) string {
 func (r *repl) copyAnswer(args string) error {
 	var text, what string
 	switch args {
-	case "":
+	case "", "answer":
 		text, what = lastAnswer(r.agent.Messages()), "answer"
 	case "code":
 		text, what = lastCodeBlock(r.agent.Messages()), "code block"
+	case "id":
+		if s := r.agent.Session(); s != nil {
+			text = s.ID
+		}
+		what = "session id"
 	default:
-		return errors.New("usage: /copy or /copy code")
+		return errors.New("usage: /copy [answer|code|id]")
 	}
 	if text == "" {
 		return errors.New("no " + what + " to copy")
@@ -72,6 +77,10 @@ func (r *repl) copyAnswer(args string) error {
 	}
 	if _, err := runQuiet(cmd, r.agent.Config().Picker, nil, text); err != nil {
 		return fmt.Errorf("copy_cmd: %w", err)
+	}
+	if args == "id" {
+		r.display.Info("copied session id " + text)
+		return nil
 	}
 	r.display.Info(fmt.Sprintf("copied %s (%d lines)", what, strings.Count(text, "\n")+1))
 	return nil

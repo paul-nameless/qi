@@ -40,6 +40,7 @@ const (
 	KeyClear
 	KeyHistory
 	KeyTab
+	KeyCopyID
 	keyFocusIn
 	keyFocusOut
 	keyDeviceAttrs
@@ -432,6 +433,8 @@ func decodeEscape(b []byte) (Key, int) {
 		return Key{Kind: KeyKillWord}, 2
 	case 'd':
 		return Key{Kind: KeyKillWordRight}, 2
+	case 'c':
+		return Key{Kind: KeyCopyID}, 2
 	case 0x1b:
 		return Key{Kind: KeyEsc}, 1
 	}

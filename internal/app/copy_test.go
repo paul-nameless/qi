@@ -8,6 +8,7 @@ import (
 
 	"github.com/paul-nameless/qi/internal/config"
 	"github.com/paul-nameless/qi/internal/llm"
+	"github.com/paul-nameless/qi/internal/ui"
 )
 
 func TestCopy(t *testing.T) {
@@ -23,6 +24,7 @@ func TestCopy(t *testing.T) {
 	})
 	cases := []struct{ args, want string }{
 		{"", "text\n```go\nfunc a() {}\n\n```\nmid\n~~~\nlast ``` inside\n~~~\nend"},
+		{"answer", "text\n```go\nfunc a() {}\n\n```\nmid\n~~~\nlast ``` inside\n~~~\nend"},
 		{"code", "last ``` inside"},
 	}
 	for _, c := range cases {
@@ -72,4 +74,55 @@ func TestLastFence(t *testing.T) {
 
 func answer(text string) llm.Message {
 	return llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: text}}}
+}
+
+func TestCopySessionID(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "clip")
+	r, shown := testRepl(t, config.Config{Model: "m", CopyCmd: "cat > " + out}, scripted())
+	r.editor.T.Keys <- ui.Key{Kind: ui.KeyCopyID}
+	r.editor.T.Keys <- ui.Key{Kind: ui.KeyEnter}
+	r.editor.OnCopyID = func() { r.report(r.copyAnswer("id")) }
+	if _, err := r.editor.ReadLine("❯ ", ""); err != nil {
+		t.Fatal(err)
+	}
+	id := r.agent.Session().ID
+	if data, _ := os.ReadFile(out); string(data) != id || !strings.Contains(shown.String(), "copied session id "+id) {
+		t.Errorf("alt+c copied %q, printed %q", data, shown.String())
+	}
+}
+
+func TestTabCompletesInsteadOfRunning(t *testing.T) {
+	r, _ := testRepl(t, config.Config{Model: "m", Picker: "builtin"}, scripted())
+	keys := func(s string, last ui.KeyKind) {
+		for _, c := range s {
+			r.editor.T.Keys <- ui.Key{Kind: ui.KeyRune, Rune: c}
+		}
+		r.editor.T.Keys <- ui.Key{Kind: last}
+	}
+	cases := []struct {
+		typed  string
+		last   ui.KeyKind
+		text   string
+		submit bool
+	}{
+		{"cfg", ui.KeyTab, "/config ", false},
+		{"cfg", ui.KeyEnter, "/config", true},
+		{"copy", ui.KeyTab, "/copy ", false},
+	}
+	for _, c := range cases {
+		keys(c.typed, c.last)
+		if text, submit := r.slashPicker(); text != c.text || submit != c.submit {
+			t.Errorf("%q then %v: got %q %v", c.typed, c.last, text, submit)
+		}
+	}
+	keys("copy", ui.KeyEnter)
+	keys("id", ui.KeyTab)
+	if text, submit := r.slashPicker(); text != "/copy id" || submit {
+		t.Errorf("tab in the argument picker: %q %v", text, submit)
+	}
+	keys("copy", ui.KeyEnter)
+	keys("id", ui.KeyEnter)
+	if text, submit := r.slashPicker(); text != "/copy id" || !submit {
+		t.Errorf("enter in the argument picker: %q %v", text, submit)
+	}
 }

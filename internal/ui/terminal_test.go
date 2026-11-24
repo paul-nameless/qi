@@ -23,6 +23,8 @@ func TestDecodeKey(t *testing.T) {
 		{"\x1b[A", KeyUp, 3},
 		{"\x1b[3~", KeyDelete, 4},
 		{"\x1bd", KeyKillWordRight, 2},
+		{"\x1bc", KeyCopyID, 2},
+		{"\t", KeyTab, 1},
 		{"\x1b[3;3~", KeyKillWordRight, 6},
 		{"\x1b[3;5~", KeyKillWordRight, 6},
 		{"\x12", KeyHistory, 1},

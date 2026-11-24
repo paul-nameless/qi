@@ -28,18 +28,23 @@ func uiItems(items []pickItem) []ui.PickItem {
 }
 
 func pick(run runner, ed *ui.Editor, command, picker, prompt string, items []pickItem, searchDesc bool) (string, bool) {
+	name, ok, _ := pickOrComplete(run, ed, command, picker, prompt, items, searchDesc)
+	return name, ok
+}
+
+func pickOrComplete(run runner, ed *ui.Editor, command, picker, prompt string, items []pickItem, searchDesc bool) (string, bool, bool) {
 	if len(items) == 0 {
-		return "", false
+		return "", false, false
 	}
 	if isBuiltin(command, picker) {
 		if ed == nil {
-			return "", false
+			return "", false, false
 		}
-		i, ok := ed.Pick(ui.PickList{Prompt: prompt, Items: uiItems(items)}, ui.PickOptions{SearchDesc: searchDesc})
+		i, ok, completed := ed.Pick(ui.PickList{Prompt: prompt, Items: uiItems(items)}, ui.PickOptions{SearchDesc: searchDesc})
 		if !ok {
-			return "", false
+			return "", false, false
 		}
-		return items[i].name, true
+		return items[i].name, true, completed
 	}
 	var in bytes.Buffer
 	for _, it := range items {
@@ -47,10 +52,10 @@ func pick(run runner, ed *ui.Editor, command, picker, prompt string, items []pic
 	}
 	lines, ok := choose(run, command, picker, prompt, &in)
 	if !ok {
-		return "", false
+		return "", false, false
 	}
 	name, _, _ := strings.Cut(lines[len(lines)-1], "\t")
-	return name, name != ""
+	return name, name != "", false
 }
 
 func (r *repl) pick(prompt string, items []pickItem) (string, bool) {
@@ -124,10 +129,18 @@ func quotePath(p string) string {
 	return "'" + p + "'"
 }
 
+func (r *repl) pickComplete(prompt string, items []pickItem) (string, bool, bool) {
+	cfg := r.agent.Config()
+	return pickOrComplete(r.runTTY, r.editor, cfg.Picker, cfg.Picker, prompt, items, false)
+}
+
 func (r *repl) slashPicker() (string, bool) {
-	name, ok := r.pick("/", pickerItems())
+	name, ok, completed := r.pickComplete("/", pickerItems())
 	if !ok {
 		return "/", false
+	}
+	if completed {
+		return "/" + name + " ", false
 	}
 	if c := findCommand(name); c != nil && c.pickArg != nil {
 		return c.pickArg(r)
@@ -157,8 +170,8 @@ func (r *repl) pickSkill() (string, bool) {
 }
 
 func (r *repl) pickArg(cmd string, items []pickItem) (string, bool) {
-	if v, ok := r.pick(cmd+" ", items); ok {
-		return "/" + cmd + " " + v, true
+	if v, ok, completed := r.pickComplete(cmd+" ", items); ok {
+		return "/" + cmd + " " + v, !completed
 	}
 	return "/" + cmd + " ", false
 }

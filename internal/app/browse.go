@@ -20,7 +20,7 @@ func browseFiles(ed *ui.Editor, cwd string) (string, bool) {
 		}
 		return &ui.PickList{Prompt: prompt, Items: items}
 	}
-	i, ok := ed.Pick(*list(), ui.PickOptions{
+	i, ok, _ := ed.Pick(*list(), ui.PickOptions{
 		OnPick: func(i int) *ui.PickList {
 			if !strings.HasSuffix(items[i].Name, "/") {
 				return nil

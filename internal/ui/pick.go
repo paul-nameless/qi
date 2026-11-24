@@ -44,9 +44,9 @@ type pickState struct {
 
 const pickNameMax = 24
 
-func (e *Editor) Pick(list PickList, opts PickOptions) (int, bool) {
+func (e *Editor) Pick(list PickList, opts PickOptions) (i int, ok, completed bool) {
 	if len(list.Items) == 0 && opts.OnBack == nil {
-		return -1, false
+		return -1, false, false
 	}
 	st := &pickState{opts: opts}
 	st.show(&list)
@@ -57,23 +57,23 @@ func (e *Editor) Pick(list PickList, opts PickOptions) (int, bool) {
 		var k Key
 		select {
 		case <-e.Interrupt:
-			return -1, false
+			return -1, false, false
 		case k = <-e.T.Keys:
 		}
 		switch k.Kind {
 		case KeyEsc, KeyEOF:
-			return -1, false
+			return -1, false, false
 		case KeyEnter, KeyTab:
 			i, ok := st.selected()
 			if !ok {
 				continue
 			}
 			if k.Kind == KeyTab || st.opts.OnPick == nil {
-				return i, true
+				return i, true, k.Kind == KeyTab
 			}
 			next := st.opts.OnPick(i)
 			if next == nil {
-				return i, true
+				return i, true, false
 			}
 			e.P.Locked(func() { st.show(next) })
 		case KeyLeft, KeyBackspace:

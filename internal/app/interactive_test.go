@@ -129,7 +129,7 @@ func TestHandleInput(t *testing.T) {
 		{"/effort bogus", "", false, `unknown effort "bogus"`},
 		{"/skills", "", false, "/deploy (command)"},
 		{"/copy", "", false, "no answer to copy"},
-		{"/copy x", "", false, "usage: /copy or /copy code"},
+		{"/copy x", "", false, "usage: /copy [answer|code|id]"},
 		{"/compact", "", false, "nothing to compact"},
 		{"/mcp", "", false, "no MCP servers configured"},
 		{"/context", "", false, "compacts at"},

@@ -60,7 +60,7 @@ func TestFuzzy(t *testing.T) {
 func TestPickFiltersAndRanks(t *testing.T) {
 	keys := append(typed("cfg"), Key{Kind: KeyEnter})
 	e := pickEditor(t, keys...)
-	i, ok := e.Pick(PickList{Prompt: "/", Items: items("help", "clear", "config", "context")}, PickOptions{})
+	i, ok, _ := e.Pick(PickList{Prompt: "/", Items: items("help", "clear", "config", "context")}, PickOptions{})
 	if !ok || i != 2 {
 		t.Errorf("got %d %v, want config (2)", i, ok)
 	}
@@ -68,11 +68,11 @@ func TestPickFiltersAndRanks(t *testing.T) {
 
 func TestPickMovesAndCancels(t *testing.T) {
 	e := pickEditor(t, Key{Kind: KeyDown}, Key{Kind: KeyDown}, Key{Kind: KeyUp}, Key{Kind: KeyEnter})
-	if i, ok := e.Pick(PickList{Items: items("a", "b", "c")}, PickOptions{}); !ok || i != 1 {
+	if i, ok, _ := e.Pick(PickList{Items: items("a", "b", "c")}, PickOptions{}); !ok || i != 1 {
 		t.Errorf("got %d %v, want 1", i, ok)
 	}
 	e = pickEditor(t, Key{Kind: KeyEsc})
-	if _, ok := e.Pick(PickList{Items: items("a")}, PickOptions{}); ok {
+	if _, ok, _ := e.Pick(PickList{Items: items("a")}, PickOptions{}); ok {
 		t.Error("esc should cancel")
 	}
 	e = pickEditor(t)
@@ -80,14 +80,14 @@ func TestPickMovesAndCancels(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 		e.Interrupt <- struct{}{}
 	}()
-	if _, ok := e.Pick(PickList{Items: items("a")}, PickOptions{}); ok {
+	if _, ok, _ := e.Pick(PickList{Items: items("a")}, PickOptions{}); ok {
 		t.Error("ctrl+c should cancel")
 	}
 	e = pickEditor(t, append(typed("zz"), Key{Kind: KeyEnter}, Key{Kind: KeyKillLine}, Key{Kind: KeyEnter})...)
-	if i, ok := e.Pick(PickList{Items: items("a", "b")}, PickOptions{}); !ok || i != 0 {
+	if i, ok, _ := e.Pick(PickList{Items: items("a", "b")}, PickOptions{}); !ok || i != 0 {
 		t.Errorf("enter without a match should wait: %d %v", i, ok)
 	}
-	if _, ok := pickEditor(t).Pick(PickList{}, PickOptions{}); ok {
+	if _, ok, _ := pickEditor(t).Pick(PickList{}, PickOptions{}); ok {
 		t.Error("no items should not open")
 	}
 }
@@ -95,7 +95,7 @@ func TestPickMovesAndCancels(t *testing.T) {
 func TestPickStaysOpenAndNavigates(t *testing.T) {
 	var picked []int
 	e := pickEditor(t, Key{Kind: KeyEnter}, Key{Kind: KeyDown}, Key{Kind: KeyEnter}, Key{Kind: KeyEsc})
-	e.Pick(PickList{Prompt: "config ", Items: items("a", "b")}, PickOptions{OnPick: func(i int) *PickList {
+	_, _, _ = e.Pick(PickList{Prompt: "config ", Items: items("a", "b")}, PickOptions{OnPick: func(i int) *PickList {
 		picked = append(picked, i)
 		return &PickList{Prompt: "config ", Items: items("a", "b")}
 	}})
@@ -112,7 +112,7 @@ func TestPickStaysOpenAndNavigates(t *testing.T) {
 	}
 	keys := append(typed("su"), Key{Kind: KeyEnter}, Key{Kind: KeyBackspace}, Key{Kind: KeyDown}, Key{Kind: KeyEnter})
 	e = pickEditor(t, keys...)
-	i, ok := e.Pick(*list(), PickOptions{
+	i, ok, _ := e.Pick(*list(), PickOptions{
 		OnPick: func(i int) *PickList {
 			if dir == "top" && i == 0 {
 				dir = "sub"
@@ -131,8 +131,8 @@ func TestPickStaysOpenAndNavigates(t *testing.T) {
 
 	e = pickEditor(t, Key{Kind: KeyTab})
 	opened := false
-	if i, ok := e.Pick(PickList{Items: items("sub/")}, PickOptions{OnPick: func(int) *PickList { opened = true; return nil }}); !ok || i != 0 || opened {
-		t.Errorf("tab picks without OnPick: %d %v %v", i, ok, opened)
+	if i, ok, completed := e.Pick(PickList{Items: items("sub/")}, PickOptions{OnPick: func(int) *PickList { opened = true; return nil }}); !ok || i != 0 || opened || !completed {
+		t.Errorf("tab completes without OnPick: %d %v %v %v", i, ok, opened, completed)
 	}
 }
 

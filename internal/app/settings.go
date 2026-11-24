@@ -63,7 +63,7 @@ func (r *repl) configCmd(args string) {
 		return
 	}
 	list := ui.PickList{Prompt: "config ", Items: uiItems(r.settingItems())}
-	r.editor.Pick(list, ui.PickOptions{OnPick: func(i int) *ui.PickList {
+	_, _, _ = r.editor.Pick(list, ui.PickOptions{OnPick: func(i int) *ui.PickList {
 		r.report(r.toggleSetting(settings[i].key))
 		list.Items = uiItems(r.settingItems())
 		return &list

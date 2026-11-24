@@ -114,7 +114,7 @@ func pickLine(ed *ui.Editor, lines []string, prompt string, desc, files bool) (s
 		name, d, _ := strings.Cut(l, "\t")
 		items[i] = ui.PickItem{Name: name, Desc: d}
 	}
-	i, ok := ed.Pick(ui.PickList{Prompt: prompt, Items: items}, ui.PickOptions{SearchDesc: desc})
+	i, ok, _ := ed.Pick(ui.PickList{Prompt: prompt, Items: items}, ui.PickOptions{SearchDesc: desc})
 	if !ok {
 		return "", false
 	}
