@@ -148,7 +148,7 @@ func resumePath(o options, cfg config.Config, cwd string, headless bool) (string
 		if headless {
 			return "", false, errors.New("-r needs a terminal")
 		}
-		path, err := pickSession(runPlain, cfg, cwd, "")
+		path, err := pickSession(runPlain, nil, cfg, cwd, "")
 		if err != nil || path == "" {
 			return "", true, err
 		}

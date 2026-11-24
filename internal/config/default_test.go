@@ -14,12 +14,12 @@ func TestSetTopLevelString(t *testing.T) {
 		{"{\"profiles\": {\"p\": {\"default_profile\": \"x\"}}, \"default_profile\": \"luna\"}", "{\"profiles\": {\"p\": {\"default_profile\": \"x\"}}, \"default_profile\": \"opus\"}"},
 	}
 	for _, c := range cases {
-		got, err := setTopLevelString([]byte(c.in), "default_profile", "opus")
+		got, err := setTopLevel([]byte(c.in), "default_profile", []byte(`"opus"`))
 		if err != nil || string(got) != c.want {
 			t.Errorf("in %q:\n got %q, %v\nwant %q", c.in, got, err, c.want)
 		}
 	}
-	if _, err := setTopLevelString([]byte("[1]"), "default_profile", "x"); err == nil {
+	if _, err := setTopLevel([]byte("[1]"), "default_profile", []byte(`"x"`)); err == nil {
 		t.Error("non-object accepted")
 	}
 }
@@ -39,5 +39,23 @@ func TestSetDefaultProfileKeepsFileValid(t *testing.T) {
 	}
 	if st, _ := os.Stat(path); st.Mode().Perm() != 0o640 {
 		t.Errorf("perm changed to %v", st.Mode().Perm())
+	}
+}
+
+func TestSetInWritesWhereTheKeyIsDefined(t *testing.T) {
+	in := "{\n  \"run_code\": true,\n  \"profiles\": {\n    \"a\": {\"model\": \"m\", \"run_code\": true},\n    \"b\": {\"model\": \"m\"}\n  }\n}\n"
+	cases := []struct {
+		profile, key, want string
+		inProfile          bool
+	}{
+		{"a", "run_code", "{\n  \"run_code\": true,\n  \"profiles\": {\n    \"a\": {\"model\": \"m\", \"run_code\": false},\n    \"b\": {\"model\": \"m\"}\n  }\n}\n", true},
+		{"b", "run_code", "{\n  \"run_code\": false,\n  \"profiles\": {\n    \"a\": {\"model\": \"m\", \"run_code\": true},\n    \"b\": {\"model\": \"m\"}\n  }\n}\n", false},
+		{"", "show_reasoning", "{\n  \"show_reasoning\": false,\n  \"run_code\": true,\n  \"profiles\": {\n    \"a\": {\"model\": \"m\", \"run_code\": true},\n    \"b\": {\"model\": \"m\"}\n  }\n}\n", false},
+	}
+	for _, c := range cases {
+		got, inProfile, err := setIn([]byte(in), c.profile, c.key, []byte("false"))
+		if err != nil || string(got) != c.want || inProfile != c.inProfile {
+			t.Errorf("%s/%s: inProfile=%v err=%v\n%s", c.profile, c.key, inProfile, err, got)
+		}
 	}
 }

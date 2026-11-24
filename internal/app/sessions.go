@@ -11,6 +11,7 @@ import (
 	"github.com/paul-nameless/qi/internal/agent"
 	"github.com/paul-nameless/qi/internal/config"
 	"github.com/paul-nameless/qi/internal/session"
+	"github.com/paul-nameless/qi/internal/ui"
 )
 
 const previewResultLines = 6
@@ -58,7 +59,7 @@ func sessionItems(cwd, current string) []pickItem {
 	return items
 }
 
-func pickSession(run runner, cfg config.Config, cwd, current string) (string, error) {
+func pickSession(run runner, ed *ui.Editor, cfg config.Config, cwd, current string) (string, error) {
 	if !toolAvailable(cfg.SessionPicker, cfg.Picker) {
 		return "", fmt.Errorf("session_picker is off (%s not found); pass a session id: /resume <id>, ids are in %s", missingTool(cfg.SessionPicker, cfg.Picker), session.Dir(cwd))
 	}
@@ -66,7 +67,7 @@ func pickSession(run runner, cfg config.Config, cwd, current string) (string, er
 	if len(items) == 0 {
 		return "", errors.New("no sessions with messages in " + cwd)
 	}
-	id, ok := pick(run, cfg.SessionPicker, cfg.Picker, "resume ", items)
+	id, ok := pick(run, ed, cfg.SessionPicker, cfg.Picker, "resume ", items, true)
 	if !ok {
 		return "", nil
 	}
@@ -101,5 +102,5 @@ func (r *repl) resumeTarget(ref string) (string, error) {
 	if ref != "" {
 		return sessionPath(r.agent.Cwd(), ref)
 	}
-	return pickSession(r.runTTY, r.agent.Config(), r.agent.Cwd(), r.agent.Session().ID)
+	return pickSession(r.runTTY, r.editor, r.agent.Config(), r.agent.Cwd(), r.agent.Session().ID)
 }

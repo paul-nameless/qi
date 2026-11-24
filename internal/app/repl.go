@@ -25,17 +25,16 @@ import (
 )
 
 type repl struct {
-	agent     *agent.Agent
-	display   *ui.Printer
-	editor    *ui.Editor
-	term      *ui.Terminal
-	skills    []agent.Skill
-	commands  []agent.Command
-	hooks     *agent.Hooks
-	runner    *agent.SubagentRunner
-	opts      options
-	mcp       *mcp.Manager
-	overrides map[string]bool
+	agent    *agent.Agent
+	display  *ui.Printer
+	editor   *ui.Editor
+	term     *ui.Terminal
+	skills   []agent.Skill
+	commands []agent.Command
+	hooks    *agent.Hooks
+	runner   *agent.SubagentRunner
+	opts     options
+	mcp      *mcp.Manager
 
 	mu            sync.Mutex
 	turnCancel    context.CancelFunc
@@ -615,7 +614,6 @@ func (r *repl) apply(cfg config.Config, baseProvider string) error {
 	if err != nil {
 		return err
 	}
-	r.keepSettings(&cfg)
 	r.agent.Reconfigure(cfg, newProvider(cfg, key))
 	if r.runner != nil {
 		r.runner.Profile, r.runner.Provider = cfg.Profile, baseProvider

@@ -81,11 +81,11 @@ func TestResume(t *testing.T) {
 func TestSessionErrors(t *testing.T) {
 	t.Setenv("QI_SESSION_DIR", t.TempDir())
 	a := newTestAgent(t, config.Config{SessionPicker: "cat"})
-	if _, err := pickSession(runPlain, a.Config(), a.Cwd(), ""); err == nil || !strings.Contains(err.Error(), "no sessions") {
+	if _, err := pickSession(runPlain, nil, a.Config(), a.Cwd(), ""); err == nil || !strings.Contains(err.Error(), "no sessions") {
 		t.Errorf("empty dir: %v", err)
 	}
 	editConfig(a, func(c *config.Config) { c.SessionPicker = "no-such-picker-xyz" })
-	if _, err := pickSession(runPlain, a.Config(), a.Cwd(), ""); err == nil || !strings.Contains(err.Error(), "/resume <id>") {
+	if _, err := pickSession(runPlain, nil, a.Config(), a.Cwd(), ""); err == nil || !strings.Contains(err.Error(), "/resume <id>") {
 		t.Errorf("picker off: %v", err)
 	}
 	if _, err := sessionPath(a.Cwd(), "ABC-123"); err == nil {

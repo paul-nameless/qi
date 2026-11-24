@@ -1,10 +1,12 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/paul-nameless/qi/internal/config"
+	"github.com/paul-nameless/qi/internal/ui"
 )
 
 type setting struct {
@@ -18,6 +20,7 @@ type setting struct {
 var settings = []setting{
 	{key: "run_code", on: "full", off: "compact", desc: "the code of each run call: all of it, or one line", get: config.Config.RunCodeOn, set: func(c *config.Config, v bool) { c.RunCode = &v }},
 	{key: "show_reasoning", on: "on", off: "off", desc: "print the model's reasoning", get: config.Config.ShowReasoningOn, set: func(c *config.Config, v bool) { c.ShowReasoning = &v }},
+	{key: "terminal_images", on: "on", off: "off", desc: "draw images named in the answer (Ghostty, kitty)", get: config.Config.TerminalImagesOn, set: func(c *config.Config, v bool) { c.TerminalImages = &v }},
 }
 
 func findSetting(key string) *setting {
@@ -50,43 +53,71 @@ func (r *repl) configCmd(args string) {
 		return
 	}
 	r.display.Info(r.configInfo())
-	if !r.toolOn(r.agent.Config().Picker) {
+	cfg := r.agent.Config()
+	if !r.toolOn(cfg.Picker) {
 		return
 	}
-	if key, ok := r.pick("config ", r.settingItems()); ok {
-		r.report(r.toggleSetting(key))
+	if !isBuiltin(cfg.Picker, cfg.Picker) || r.editor == nil {
+		if key, ok := r.pick("config ", r.settingItems()); ok {
+			r.report(r.toggleSetting(key))
+		}
+		return
 	}
+	var errs []error
+	before := map[string]bool{}
+	for _, s := range settings {
+		before[s.key] = s.get(cfg)
+	}
+	r.editor.Pick("config ", uiItems(r.settingItems()), ui.PickOptions{OnPick: func(i int) ([]ui.PickItem, bool) {
+		if _, err := r.switchSetting(settings[i].key); err != nil {
+			errs = append(errs, err)
+		}
+		return uiItems(r.settingItems()), true
+	}})
+	var changed []string
+	for _, s := range settings {
+		if v := s.get(r.agent.Config()); v != before[s.key] {
+			changed = append(changed, s.key+": "+s.value(v))
+		}
+	}
+	if len(changed) > 0 && len(errs) == 0 {
+		r.display.Info(strings.Join(changed, ", ") + " (saved)")
+	}
+	r.report(errors.Join(errs...))
 }
 
 func (r *repl) toggleSetting(key string) error {
-	s := findSetting(key)
-	if s == nil {
-		return fmt.Errorf("unknown setting %q (switchable: %s)", key, settingKeys())
+	msg, err := r.switchSetting(key)
+	if msg != "" {
+		r.display.Info(msg)
 	}
-	v := !s.get(r.agent.Config())
-	if r.overrides == nil {
-		r.overrides = map[string]bool{}
-	}
-	r.overrides[s.key] = v
-	r.agent.EditConfig(func(c *config.Config) { s.set(c, v) })
-	r.display.Info(fmt.Sprintf("%s: %s for this session", s.key, s.value(v)))
-	return nil
+	return err
 }
 
-func (r *repl) keepSettings(cfg *config.Config) {
-	for key, v := range r.overrides {
-		if s := findSetting(key); s != nil {
-			s.set(cfg, v)
-		}
+func (r *repl) switchSetting(key string) (string, error) {
+	s := findSetting(key)
+	if s == nil {
+		return "", fmt.Errorf("unknown setting %q (switchable: %s)", key, settingKeys())
 	}
+	cfg := r.agent.Config()
+	v := !s.get(cfg)
+	r.agent.EditConfig(func(c *config.Config) { s.set(c, v) })
+	inProfile, err := config.SetValue(r.opts.configPath, cfg.Profile, s.key, v)
+	if err != nil {
+		return fmt.Sprintf("%s: %s for this session", s.key, s.value(v)), fmt.Errorf("not saved: %w", err)
+	}
+	where := "saved"
+	if inProfile {
+		where = fmt.Sprintf("saved in profile %q", cfg.Profile)
+	}
+	return fmt.Sprintf("%s: %s (%s)", s.key, s.value(v), where), nil
 }
 
 func (r *repl) settingItems() []pickItem {
 	cfg := r.agent.Config()
 	items := make([]pickItem, len(settings))
 	for i, s := range settings {
-		on := s.get(cfg)
-		items[i] = pickItem{s.key, fmt.Sprintf("%s · %s · pick for %s", s.value(on), s.desc, s.value(!on))}
+		items[i] = pickItem{s.key, fmt.Sprintf("%-8s %s", s.value(s.get(cfg)), s.desc)}
 	}
 	return items
 }
@@ -94,7 +125,7 @@ func (r *repl) settingItems() []pickItem {
 func (r *repl) settingsInfo() string {
 	cfg := r.agent.Config()
 	var b strings.Builder
-	b.WriteString("Settings (/config <name> switches one for this session):")
+	b.WriteString("Settings (/config <name> switches one and saves it):")
 	for _, s := range settings {
 		fmt.Fprintf(&b, "\n  %-15s %-8s %s", s.key, s.value(s.get(cfg)), s.desc)
 	}

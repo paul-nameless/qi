@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/paul-nameless/qi/internal/config"
+	"github.com/paul-nameless/qi/internal/ui"
 )
 
 type pickItem struct {
@@ -14,9 +15,33 @@ type pickItem struct {
 	desc string
 }
 
-func pick(run runner, command, picker, prompt string, items []pickItem) (string, bool) {
+const builtinPicker = "builtin"
+
+func isBuiltin(command, picker string) bool {
+	return firstCommand(strings.ReplaceAll(command, "{picker}", picker)) == builtinPicker
+}
+
+func uiItems(items []pickItem) []ui.PickItem {
+	out := make([]ui.PickItem, len(items))
+	for i, it := range items {
+		out[i] = ui.PickItem{Name: it.name, Desc: it.desc}
+	}
+	return out
+}
+
+func pick(run runner, ed *ui.Editor, command, picker, prompt string, items []pickItem, searchDesc bool) (string, bool) {
 	if len(items) == 0 {
 		return "", false
+	}
+	if isBuiltin(command, picker) {
+		if ed == nil {
+			return "", false
+		}
+		i, ok := ed.Pick(prompt, uiItems(items), ui.PickOptions{SearchDesc: searchDesc})
+		if !ok {
+			return "", false
+		}
+		return items[i].name, true
 	}
 	var in bytes.Buffer
 	for _, it := range items {
@@ -35,10 +60,21 @@ func (r *repl) pick(prompt string, items []pickItem) (string, bool) {
 }
 
 func (r *repl) pickWith(command, prompt string, items []pickItem) (string, bool) {
-	return pick(r.runTTY, command, r.agent.Config().Picker, prompt, items)
+	return pick(r.runTTY, r.editor, command, r.agent.Config().Picker, prompt, items, false)
 }
 
 func (r *repl) filePicker() (string, bool) {
+	if cfg := r.agent.Config(); isBuiltin(cfg.FilePicker, cfg.Picker) {
+		var items []pickItem
+		for _, f := range listFiles(r.agent.Cwd(), fileListLimit) {
+			items = append(items, pickItem{name: f})
+		}
+		name, ok := r.pickWith(cfg.FilePicker, "@ ", items)
+		if !ok {
+			return "", false
+		}
+		return quotePath(relPath(r.agent.Cwd(), name)) + " ", true
+	}
 	files := strings.Join(listFiles(r.agent.Cwd(), fileListLimit), "\n") + "\n"
 	lines, ok := choose(r.runTTY, r.agent.Config().FilePicker, r.agent.Config().Picker, "@ ", strings.NewReader(files))
 	if !ok {

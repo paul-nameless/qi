@@ -33,7 +33,7 @@ func toolAvailable(command, picker string) bool {
 	if name == "" {
 		return false
 	}
-	if shellWords[name] {
+	if shellWords[name] || name == builtinPicker {
 		return true
 	}
 	_, err := exec.LookPath(name)

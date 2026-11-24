@@ -217,7 +217,7 @@ func TestConfigTogglesRunCode(t *testing.T) {
 	r.editor = nil
 	r.handleInput("/config")
 	r.editor = editor
-	if got := out.String()[len(full):]; !strings.Contains(got, "run_code        full ") || !strings.Contains(got, "run_code: compact for this session") || r.agent.Config().RunCodeOn() {
+	if got := out.String()[len(full):]; !strings.Contains(got, "run_code        full ") || !strings.Contains(got, "run_code: compact (saved)") || r.agent.Config().RunCodeOn() {
 		t.Fatalf("toggle printed %q, run_code %v", got, r.agent.Config().RunCodeOn())
 	}
 	before := len(out.String())
@@ -232,15 +232,15 @@ func TestConfigTogglesRunCode(t *testing.T) {
 	r.handleInput("/config run_code")
 	r.handleInput("/config show_reasoning")
 	r.handleInput("/config nope")
-	if got := out.String()[before:]; !strings.Contains(got, "run_code: full for this session") || !strings.Contains(got, "show_reasoning: off for this session") || !strings.Contains(got, `unknown setting "nope" (switchable: run_code, show_reasoning)`) || !r.agent.Config().RunCodeOn() || r.agent.Config().ShowReasoningOn() {
+	if got := out.String()[before:]; !strings.Contains(got, "run_code: full (saved)") || !strings.Contains(got, "show_reasoning: off (saved)") || !strings.Contains(got, `unknown setting "nope" (switchable: run_code, show_reasoning, terminal_images)`) || !r.agent.Config().RunCodeOn() || r.agent.Config().ShowReasoningOn() {
 		t.Errorf("typed toggle printed %q", got)
 	}
 }
 
-func TestRunCodeToggleSurvivesProfileSwitch(t *testing.T) {
+func TestToggleSavesWhereTheSettingIsDefined(t *testing.T) {
 	t.Setenv("QI_SESSION_DIR", t.TempDir())
 	path := filepath.Join(t.TempDir(), "config.json")
-	data := `{"api_key": "k", "model": "m", "profiles": {"quiet": {"run_code": false}, "loud": {"run_code": true, "show_reasoning": false}}}`
+	data := `{"api_key": "k", "model": "m", "profiles": {"quiet": {"run_code": false}, "loud": {"show_reasoning": false}}}`
 	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -257,17 +257,27 @@ func TestRunCodeToggleSurvivesProfileSwitch(t *testing.T) {
 	}
 	t.Cleanup(func() { r.closeResources() })
 	if err := r.switchProfile("quiet"); err != nil || r.agent.Config().RunCodeOn() {
-		t.Fatalf("without a toggle the profile's run_code applies: %v %v", r.agent.Config().RunCodeOn(), err)
+		t.Fatalf("the profile's run_code applies: %v %v", r.agent.Config().RunCodeOn(), err)
 	}
-	r.report(r.toggleSetting("run_code"))
-	if err := r.switchProfile("loud"); err != nil || !r.agent.Config().RunCodeOn() || r.agent.Config().ShowReasoningOn() {
-		t.Fatalf("after the switch: run_code %v show_reasoning %v %v", r.agent.Config().RunCodeOn(), r.agent.Config().ShowReasoningOn(), err)
+	if msg, err := r.switchSetting("run_code"); err != nil || msg != `run_code: full (saved in profile "quiet")` {
+		t.Fatalf("%q %v", msg, err)
 	}
-	r.report(r.toggleSetting("run_code"))
-	if err := r.switchProfile("loud"); err != nil || r.agent.Config().RunCodeOn() {
-		t.Errorf("the session toggle should win over the profile: %v %v", r.agent.Config().RunCodeOn(), err)
+	if err := r.switchProfile("loud"); err != nil || !r.agent.Config().RunCodeOn() {
+		t.Fatalf("loud has no run_code: %v %v", r.agent.Config().RunCodeOn(), err)
 	}
-	if err := r.switchModel("other"); err != nil || r.agent.Config().RunCodeOn() || r.agent.Model() != "other" {
-		t.Errorf("/model kept the toggle: %v %v", r.agent.Config().RunCodeOn(), err)
+	if msg, err := r.switchSetting("run_code"); err != nil || msg != "run_code: compact (saved)" {
+		t.Fatalf("%q %v", msg, err)
+	}
+	if err := r.switchProfile("quiet"); err != nil || !r.agent.Config().RunCodeOn() {
+		t.Errorf("quiet keeps its saved run_code: %v %v", r.agent.Config().RunCodeOn(), err)
+	}
+	if err := r.switchModel("other"); err != nil || !r.agent.Config().RunCodeOn() {
+		t.Errorf("/model keeps the saved value: %v %v", r.agent.Config().RunCodeOn(), err)
+	}
+	saved, _ := os.ReadFile(path)
+	for _, part := range []string{`"run_code": false,`, `"quiet": {"run_code": true}`, `"loud": {"show_reasoning": false}`} {
+		if !strings.Contains(string(saved), part) {
+			t.Errorf("file lacks %s:\n%s", part, saved)
+		}
 	}
 }

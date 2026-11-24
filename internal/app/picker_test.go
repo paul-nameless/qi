@@ -27,12 +27,12 @@ func TestPick(t *testing.T) {
 		{"sed -n 2p > {file}", "x", "beta", true},
 	}
 	for _, c := range cases {
-		got, ok := pick(runPlain, c.command, "cat", c.prompt, items)
+		got, ok := pick(runPlain, nil, c.command, "cat", c.prompt, items, false)
 		if got != c.want || ok != c.ok {
 			t.Errorf("pick(%q) = %q, %v; want %q, %v", c.command, got, ok, c.want, c.ok)
 		}
 	}
-	if _, ok := pick(runPlain, "cat", "cat", "x", nil); ok {
+	if _, ok := pick(runPlain, nil, "cat", "cat", "x", nil, false); ok {
 		t.Error("empty list should not run the picker")
 	}
 }
@@ -235,7 +235,7 @@ func TestMissingToolNamesTheResolvedCommand(t *testing.T) {
 	if got := r.configInfo(); !strings.Contains(got, "session_picker  off  no-such-fzf-xyz --height=40% --nth=1  (no-such-fzf-xyz not found)") {
 		t.Errorf("config info:\n%s", got)
 	}
-	if _, err := pickSession(runPlain, r.agent.Config(), t.TempDir(), ""); err == nil || !strings.Contains(err.Error(), "session_picker is off (no-such-fzf-xyz not found)") {
+	if _, err := pickSession(runPlain, nil, r.agent.Config(), t.TempDir(), ""); err == nil || !strings.Contains(err.Error(), "session_picker is off (no-such-fzf-xyz not found)") {
 		t.Errorf("session picker error: %v", err)
 	}
 }

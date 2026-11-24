@@ -38,7 +38,7 @@ type MCPServer struct {
 	ExcludeTools []string          `json:"exclude_tools"`
 }
 
-const DefaultPicker = `fzf --height=40% --reverse --no-multi --bind=ctrl-z:ignore --delimiter='\t' --nth=1 --tabstop=24 --prompt={prompt}`
+const DefaultPicker = "builtin"
 
 type Config struct {
 	Schema           string    `json:"$schema"`
@@ -385,7 +385,7 @@ func (c *Config) toolDefaults() {
 	mac := runtime.GOOS == "darwin"
 	setDefault(&c.NotifyCmd, pick(mac, "terminal-notifier -title {title} -message {msg}", "notify-send {title} {msg}"))
 	setDefault(&c.HistoryPicker, "{picker}")
-	setDefault(&c.SessionPicker, `{picker} --with-nth=2.. --nth=.. --preview '"$QI_BIN" -show {1}' --preview-window=right,60%`)
+	setDefault(&c.SessionPicker, pick(c.Picker == DefaultPicker, "{picker}", `{picker} --with-nth=2.. --nth=.. --preview '"$QI_BIN" -show {1}' --preview-window=right,60%`))
 	setDefault(&c.Pager, os.Getenv("PAGER"))
 	setDefault(&c.Pager, "less -R")
 	setDefault(&c.CopyCmd, pick(mac, "pbcopy", firstOnPath("wl-copy", "xclip -selection clipboard")))
