@@ -200,6 +200,7 @@ func TestCellSerializesCallsOnOnePath(t *testing.T) {
 	t.Parallel()
 	var mu sync.Mutex
 	active, overlap := map[string]int{}, false
+	running, peak := 0, 0
 	slow := &Function{
 		Name: "slow",
 		Code: CodeSpec{Name: "slow", Params: []string{"file_path"}, Required: 1},
@@ -208,25 +209,27 @@ func TestCellSerializesCallsOnOnePath(t *testing.T) {
 			p := pathKey(env, in)
 			mu.Lock()
 			active[p]++
+			running++
+			peak = max(peak, running)
 			overlap = overlap || active[p] > 1
 			mu.Unlock()
 			time.Sleep(100 * time.Millisecond)
 			mu.Lock()
 			active[p]--
+			running--
 			mu.Unlock()
 			return Result{Text: "done"}
 		},
 	}
 	k := newCellKit(t, slow)
-	start := time.Now()
 	if res := k.cell(`await Promise.all([slow("a.txt"), slow("b.txt"), slow("./a.txt")])`); res.IsError {
 		t.Fatal(res.Text)
 	}
 	if overlap {
 		t.Error("calls on the same path overlapped")
 	}
-	if d := time.Since(start); d > 280*time.Millisecond {
-		t.Errorf("calls on different paths did not run in parallel: %v", d)
+	if peak < 2 {
+		t.Error("calls on different paths did not run in parallel")
 	}
 }
 
@@ -346,8 +349,8 @@ func TestCellStopsCallingAfterCancel(t *testing.T) {
 func TestCellTimeoutSparesFormatting(t *testing.T) {
 	t.Parallel()
 	k := newCellKit(t)
-	k.second(100 * time.Millisecond)
-	res := k.cellCtx(context.Background(), `return {toJSON() { const t = Date.now(); while (Date.now() - t < 200) {} return "slow" }}`, 1)
+	k.second(300 * time.Millisecond)
+	res := k.cellCtx(context.Background(), `return {toJSON() { const t = Date.now(); while (Date.now() - t < 600) {} return "slow" }}`, 1)
 	if res.IsError || res.Text != `"slow"` {
 		t.Errorf("a value finished in time was cut by the cell timeout: %+v", res)
 	}
@@ -383,7 +386,7 @@ func TestCellResultsNotCut(t *testing.T) {
 func TestCellInterruptThroughHostCalls(t *testing.T) {
 	t.Parallel()
 	k := newCellKit(t, Subagent("m", nil, nil))
-	k.second(100 * time.Millisecond)
+	k.second(300 * time.Millisecond)
 	cases := []string{
 		`while (true) { try { print({toJSON() { while (true) {} }}) } catch (e) {} }`,
 		`while (true) { try { await tick({toJSON() { while (true) {} }}) } catch (e) {} }`,
@@ -657,7 +660,7 @@ func TestCellSubagents(t *testing.T) {
 	t.Parallel()
 	menu := []config.SubagentModel{{Name: "fast", Model: "m-fast", Provider: "p1"}, {Name: "deep", Model: "m-deep"}}
 	k := newCellKit(t, Subagent("main", menu, []string{"low", "high"}))
-	k.second(100 * time.Millisecond)
+	k.second(300 * time.Millisecond)
 	var mu sync.Mutex
 	var tasks []SubagentTask
 	k.env.Subagent = func(ctx context.Context, task SubagentTask, progress func(string)) (string, error) {
@@ -681,6 +684,9 @@ func TestCellSubagents(t *testing.T) {
 	if !strings.Contains(res.Text, "timed out after 1s") {
 		t.Errorf("the timeout was not re-armed after the subagent: %q", res.Text)
 	}
+	if len(tasks) < 2 {
+		t.Fatalf("tasks %+v", tasks)
+	}
 	if tasks[0].Model != "m-fast" || tasks[0].Provider != "p1" || tasks[0].Effort != "" || tasks[1].Model != "m-deep" || tasks[1].Effort != "high" {
 		t.Errorf("tasks %+v", tasks)
 	}
@@ -690,7 +696,7 @@ func TestCellSubagents(t *testing.T) {
 func TestCellFailureSavesSubagentAnswers(t *testing.T) {
 	t.Parallel()
 	k := newCellKit(t, Subagent("m", nil, nil))
-	k.second(100 * time.Millisecond)
+	k.second(300 * time.Millisecond)
 	k.env.Subagent = func(ctx context.Context, task SubagentTask, progress func(string)) (string, error) {
 		switch task.Prompt {
 		case "fail":
@@ -853,7 +859,7 @@ func TestCellNoCallsAfterFinish(t *testing.T) {
 func TestCellTimersCancelledAfterSettle(t *testing.T) {
 	t.Parallel()
 	k := newCellKit(t)
-	k.second(100 * time.Millisecond)
+	k.second(300 * time.Millisecond)
 	start := time.Now()
 	k.want(`return (await Promise.race([bash("echo hi"), new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 60000))])).output`, "hi")
 	if d := time.Since(start); d > 5*time.Second {
@@ -869,7 +875,7 @@ func TestCellTimersCancelledAfterSettle(t *testing.T) {
 		t.Errorf("timeout while waiting for a late call: %+v", res)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	time.AfterFunc(100*time.Millisecond, cancel)
+	time.AfterFunc(300*time.Millisecond, cancel)
 	res = k.cellCtx(ctx, `bash("sleep 5"); ({a: 1})`, 0)
 	if res.IsError || !strings.HasPrefix(res.Text, "{\n \"a\": 1\n}\n") || !strings.Contains(res.Text, "stopped: interrupted by user") {
 		t.Errorf("interrupt while waiting for a late call: %+v", res)
@@ -903,7 +909,7 @@ func TestCellRedeclaredFunctions(t *testing.T) {
 func TestCellErrorKeptWhenWaitStops(t *testing.T) {
 	t.Parallel()
 	k := newCellKit(t)
-	k.second(200 * time.Millisecond)
+	k.second(500 * time.Millisecond)
 	res := k.cellCtx(context.Background(), `await Promise.all([bash("sleep 100", {timeout: 600}), read("nope")])`, 1)
 	for _, want := range []string{"ToolError: stat ", "Calls that completed:\n✗ read nope\nNote: the code failed while 1 call was still running. Failed:\nbash sleep 100: ", "Note: waiting for the calls still running stopped: timed out after 1s"} {
 		if !res.IsError || !strings.Contains(res.Text, want) {
@@ -914,7 +920,7 @@ func TestCellErrorKeptWhenWaitStops(t *testing.T) {
 		t.Errorf("timeout: %q", res.Text)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	time.AfterFunc(100*time.Millisecond, cancel)
+	time.AfterFunc(300*time.Millisecond, cancel)
 	res = k.cellCtx(ctx, `bash("sleep 100", {timeout: 600}); undefinedName`, 0)
 	if !res.IsError || !strings.HasPrefix(res.Text, "ReferenceError: undefinedName is not defined") || !strings.Contains(res.Text, "No variables are defined in this VM yet.") || !strings.HasSuffix(res.Text, "Note: waiting for the calls still running stopped: interrupted by user") {
 		t.Errorf("interrupt: %q", res.Text)
@@ -932,7 +938,7 @@ func TestRunDescriptionReservedNames(t *testing.T) {
 
 func TestCellFormatJobsDoNotLeak(t *testing.T) {
 	k := newCellKit(t)
-	k.second(100 * time.Millisecond)
+	k.second(300 * time.Millisecond)
 	k.want(`return {toJSON() { Promise.resolve().then(() => write("late.txt", "x")); Promise.resolve().then(() => console.log("job ran")); return 1 }}`, "job ran\n1")
 	res := k.cell(`await sleep(1); 2`)
 	if res.IsError || res.Text != "2" || len(res.Calls) != 0 {

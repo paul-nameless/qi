@@ -28,7 +28,11 @@ func Detach(cmd *exec.Cmd, mode Mode) {
 func Setup(cmd *exec.Cmd, mode Mode, grace time.Duration) {
 	Detach(cmd, mode)
 	cmd.Cancel = func() error { return Terminate(cmd.Process.Pid, grace) }
-	cmd.WaitDelay = grace + min(grace, time.Second)
+	extra := time.Second
+	if grace > 0 && grace < extra {
+		extra = grace
+	}
+	cmd.WaitDelay = grace + extra
 }
 
 var escalations sync.WaitGroup
