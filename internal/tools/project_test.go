@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -14,7 +15,11 @@ import (
 )
 
 func outsideDir(t *testing.T) string {
-	dir, err := os.MkdirTemp("/private/tmp", "qi-outside-")
+	base := "/tmp"
+	if runtime.GOOS == "darwin" {
+		base = "/private/tmp"
+	}
+	dir, err := os.MkdirTemp(base, "qi-outside-")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +49,7 @@ func TestProjectModeWriteAndEditStayInside(t *testing.T) {
 	in := func(id, name, args string) llm.Block {
 		return llm.Block{ID: id, Name: name, Input: json.RawMessage(args)}
 	}
-	res := r.Execute(context.Background(), env, []llm.Block{
+	calls := []llm.Block{
 		in("ok", "write", `{"file_path":"src/new.txt","content":"hi"}`),
 		in("abs", "write", `{"file_path":"`+filepath.Join(outside, "x.txt")+`","content":"hi"}`),
 		in("dots", "write", `{"file_path":"`+relTo(proj, filepath.Join(outside, "y.txt"))+`","content":"hi"}`),
@@ -52,12 +57,15 @@ func TestProjectModeWriteAndEditStayInside(t *testing.T) {
 		in("dangle", "write", `{"file_path":"dangle","content":"hi"}`),
 		in("gitconfig", "write", `{"file_path":".git/config","content":"[core]\nfsmonitor = touch /tmp/pwned\n"}`),
 		in("githook", "write", `{"file_path":".git/hooks/pre-commit","content":"#!/bin/sh\n"}`),
-		in("gitcase", "write", `{"file_path":".GIT/CONFIG","content":"[core]\nfsmonitor = x\n"}`),
 		in("commondir", "write", `{"file_path":".git/commondir","content":"../evil"}`),
 		in("dotgit", "write", `{"file_path":".git","content":"gitdir: ../evil"}`),
 		in("edit", "edit", `{"file_path":"`+filepath.Join(outside, "o.txt")+`","old_string":"a","new_string":"b"}`),
 		in("tmp", "write", `{"file_path":"`+filepath.Join(env.scratch(), "t.txt")+`","content":"hi"}`),
-	}, nopUI{})
+	}
+	if runtime.GOOS == "darwin" {
+		calls = append(calls, in("gitcase", "write", `{"file_path":".GIT/CONFIG","content":"[core]\nfsmonitor = x\n"}`))
+	}
+	res := r.Execute(context.Background(), env, calls, nopUI{})
 	for _, b := range res {
 		allowed := b.ToolUseID == "ok" || b.ToolUseID == "tmp"
 		if b.IsError == allowed || (!allowed && !strings.Contains(b.Text, "project mode")) {
@@ -198,11 +206,14 @@ func TestProjectModeTrickyPaths(t *testing.T) {
 	in := func(id, name, args string) llm.Block {
 		return llm.Block{ID: id, Name: name, Input: json.RawMessage(args)}
 	}
-	res := r.Execute(context.Background(), env, []llm.Block{
-		in("chain", "write", `{"file_path":"s1/s2/s3/a/link","content":"x"}`),
-		in("ligature", "edit", `{"file_path":".git/con\ufb01g","old_string":"[core]","new_string":"[core]\nfsmonitor = x"}`),
-		in("longs", "write", `{"file_path":".git/hook\u017f/pre-commit","content":"#!/bin/sh"}`),
-	}, nopUI{})
+	calls := []llm.Block{in("chain", "write", `{"file_path":"s1/s2/s3/a/link","content":"x"}`)}
+	if runtime.GOOS == "darwin" {
+		calls = append(calls,
+			in("ligature", "edit", `{"file_path":".git/con\ufb01g","old_string":"[core]","new_string":"[core]\nfsmonitor = x"}`),
+			in("longs", "write", `{"file_path":".git/hook\u017f/pre-commit","content":"#!/bin/sh"}`),
+		)
+	}
+	res := r.Execute(context.Background(), env, calls, nopUI{})
 	for _, b := range res {
 		if !b.IsError || !strings.Contains(b.Text, "project mode") {
 			t.Errorf("%s: %+v", b.ToolUseID, b)
