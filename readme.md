@@ -8,7 +8,7 @@ A small coding agent for the terminal, built just because.
 
 - **Minimal.** One Go binary, about 20 MB of RAM, plain scrolling output instead of a fullscreen UI.
 - **One dependency**, vendored: `golang.org/x/sys` for the terminal. Everything else is the standard library.
-- **Reuse.** Every menu is fzf: the `/` command list, `@` file picker, ctrl+r prompt history and `/resume` sessions. qi just pipes lines into fzf and reads back the choice, so there's no picker, fuzzy matcher or preview pane to write and maintain. The same goes for `$EDITOR` (long prompts), `$PAGER` (history), `pbcopy` (copy) and `terminal-notifier` (notifications). See [External tools](#external-tools).
+- **Reuse.** One small built-in fuzzy picker serves every menu: the `/` command list, `@` files, ctrl+r prompt history, `/resume` sessions and `/config`; `qi pick` offers it to scripts, and fzf can replace it. `$EDITOR` (long prompts), `$PAGER` (history), `pbcopy` (copy) and `terminal-notifier` (notifications) do the rest. See [External tools](#external-tools).
 - **Claude Code compatible:** reads `CLAUDE.md`/`AGENTS.md`, skills, commands and hooks from the usual places.
 
 ## What it does
@@ -88,7 +88,7 @@ The agent finds MCP tools with `tool_search()` and calls them with `mcp()`, so t
 
 The model gets a single tool, `run`, which executes JavaScript in an in-process VM. The engine is qi's own (`internal/jsvm`): a subset of JavaScript in plain Go with no dependencies. Classes, generators, getters/setters, `Symbol` and `BigInt` are left out, and each fails with a `SyntaxError` naming it. On qi's benchmarks it is faster than goja and QuickJS in all 16 tests and adds 1.2 MB to the binary. It ran all 501 cells written by real models in testing. The functions `read`, `write`, `edit`, `bash`, `jobs`, `subagent`, `tool_search` and `mcp` are async JavaScript functions there; each call goes through read-only mode, the stale-file check and your PreToolUse/PostToolUse hooks under Claude Code's tool names (`Read`, `Write`, `Edit`, `Bash`, `Agent`/`Task`, `mcp__server__tool`; `jobs` and `tool_search` under their own), and shows as its own line under the `run` line. Variables stay defined between `run` calls; this state lives in memory only and is dropped on `/clear`, on resume and at exit (not on compaction). `run` itself fires no hooks, so a `*` matcher sees each call once.
 
-The terminal shows the whole code of each `run` call (dim, up to 200 lines) with its tool calls under it; `"run_code": false`, globally or in a profile, shows one line per call instead, and `/config` switches it for the session.
+The terminal shows the whole code of each `run` call (dim, up to 200 lines) with its tool calls under it; `"run_code": false`, globally or in a profile, shows one line per call instead, and `/config` switches it.
 
 ## Use
 
@@ -105,26 +105,28 @@ Keys: shift+tab toggles read-only, ctrl+g opens `$EDITOR`, ctrl+r searches past 
 
 Images: local PNG, JPEG and GIF files whose paths appear in the final answer of a turn are drawn after it (up to 4) in terminals with the kitty graphics protocol (Ghostty, kitty), not inside tmux or screen. `"terminal_images": false` turns this off, globally or in a profile.
 
-Commands: `/help`, `/keys`, `/status`, `/config`, `/clear`, `/context`, `/compact`, `/reload`, `/resume`, `/history`, `/copy`, `/model`, `/profile`, `/effort`, `/skills`, `/mcp`, `/exit`, plus `/<skill or command>`. `/` on an empty line opens the picker. `/config` shows the config file, the external tools and the settings `run_code` and `show_reasoning`, then opens the picker to switch one for this session (`/config run_code` does it without the picker); the switch is kept across `/profile` and `/model` and never written to the file.
+Commands: `/help`, `/keys`, `/status`, `/config`, `/clear`, `/context`, `/compact`, `/reload`, `/resume`, `/history`, `/copy`, `/model`, `/profile`, `/effort`, `/skills`, `/mcp`, `/exit`, plus `/<skill or command>`. `/` on an empty line opens the picker. `/config` shows the config file, the external tools and the settings `run_code`, `show_reasoning` and `terminal_images`, then opens the picker: Enter switches the highlighted setting and saves it to the config file (into the active profile when the profile sets it), Esc closes. `/config run_code` does it without the picker.
 
 ## External tools
 
-qi has no built-in menus or viewers. Whenever it needs you to pick something, it runs fzf with a list of lines on stdin and takes the line you choose. That one tool covers four features:
+Whenever qi needs you to pick something, it opens its built-in picker: type to filter (fuzzy; a capital letter makes it case-sensitive), up/down to move, Enter to pick, Esc to close.
 
-| You press | You get | fzf reads |
-|---|---|---|
-| `/` on an empty line | command menu | commands and skills with descriptions |
-| `@` | file picker | this directory's files, git files first |
-| ctrl+r | prompt history | your past prompts, newest first |
-| `/resume`, `qi -r` | session picker | sessions with a preview of each |
+| You press | You get |
+|---|---|
+| `/` on an empty line | command menu: commands and skills with descriptions |
+| `@` | file browser: every entry of a folder, folders first; Enter opens a folder, left (or backspace on an empty filter) goes up, tab picks the folder itself |
+| ctrl+r | prompt history, newest first |
+| `/resume`, `qi -r` | sessions, searchable by their first message |
+
+`qi pick` is the same picker for scripts: it reads lines on stdin (a tab splits a name from a description, `-d` searches descriptions too), prints the chosen line and exits 1 when cancelled; `qi pick -f` browses files instead, so `vim "$(qi pick -f)"` works.
 
 Other jobs go to the usual tools the same way: `$PAGER` (or `less -R`) for `/history`, `pbcopy`/`wl-copy`/`xclip` for `/copy`, and `terminal-notifier`/`notify-send` to tell you a turn finished while you were in another window.
 
-Each tool is a shell command in the config (`picker`, `file_picker`, `history_picker`, `session_picker`, `pager`, `copy_cmd`, `notify_cmd`), so you can swap in anything that reads lines and prints a choice, or a file manager for files:
+Each tool is a shell command in the config (`picker`, `file_picker`, `history_picker`, `session_picker`, `pager`, `copy_cmd`, `notify_cmd`), so you can swap in anything that reads lines and prints a choice, or a file manager for files. `"builtin"` is the default picker; with fzf, `/resume` shows a preview of each session but `/config` closes after one switch:
 
 ```json
 {
-  "picker": "fzf --height=40% --reverse",
+  "picker": "fzf --height=40% --reverse --delimiter='\t' --nth=1 --prompt={prompt}",
   "file_picker": "yazi --chooser-file={file}",
   "notify_cmd": "off"
 }

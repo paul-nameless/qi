@@ -11,11 +11,6 @@ import (
 	"path/filepath"
 )
 
-func SetDefaultProfile(path, name string) error {
-	_, err := SetValue(path, "", "default_profile", name)
-	return err
-}
-
 func SetValue(path, profile, key string, value any) (inProfile bool, err error) {
 	if path == "" {
 		path = DefaultPath()

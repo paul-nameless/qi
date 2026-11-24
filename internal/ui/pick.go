@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -49,8 +50,8 @@ func (e *Editor) Pick(list PickList, opts PickOptions) (int, bool) {
 	}
 	st := &pickState{opts: opts}
 	st.show(&list)
-	old, oldFinal := e.P.SwapPrompt(func(width, height int) Frame { return st.frame(e.P, width, height) }, nil)
-	defer e.P.SwapPrompt(old, oldFinal)
+	old, oldFinal := e.P.SetPrompt(func(width, height int) Frame { return st.frame(e.P, width, height) }, nil)
+	defer e.P.SetPrompt(old, oldFinal)
 	drain(e.Interrupt)
 	for {
 		var k Key
@@ -76,13 +77,13 @@ func (e *Editor) Pick(list PickList, opts PickOptions) (int, bool) {
 			}
 			e.P.Locked(func() { st.show(next) })
 		case KeyLeft, KeyBackspace:
-			if st.opts.OnBack == nil || (k.Kind == KeyBackspace && len(st.query) > 0) {
-				e.P.Locked(func() { st.key(k) })
+			if st.opts.OnBack != nil && len(st.query) == 0 {
+				if next := st.opts.OnBack(); next != nil {
+					e.P.Locked(func() { st.show(next) })
+				}
 				break
 			}
-			if next := st.opts.OnBack(); next != nil {
-				e.P.Locked(func() { st.show(next) })
-			}
+			fallthrough
 		default:
 			e.P.Locked(func() { st.key(k) })
 		}
@@ -94,10 +95,9 @@ func (st *pickState) show(list *PickList) {
 	if list.Prompt != st.prompt {
 		st.prompt, st.query, st.cur, st.top = list.Prompt, nil, 0, 0
 	}
-	items := list.Items
-	st.items = items
+	st.items = list.Items
 	st.nameW = 0
-	for _, it := range items {
+	for _, it := range st.items {
 		st.nameW = max(st.nameW, min(displayWidth(it.Name), pickNameMax))
 	}
 	st.filter()
@@ -114,20 +114,14 @@ func (st *pickState) key(k Key) {
 	switch k.Kind {
 	case KeyRune:
 		st.query = append(st.query, k.Rune)
-		st.cur, st.top = 0, 0
 	case KeyPaste:
 		st.query = append(st.query, []rune(strings.Join(strings.Fields(k.Text), " "))...)
-		st.cur, st.top = 0, 0
 	case KeyBackspace:
-		if len(st.query) > 0 {
-			st.query = st.query[:len(st.query)-1]
-			st.cur, st.top = 0, 0
-		}
+		st.query = st.query[:max(len(st.query)-1, 0)]
 	case KeyKillLine:
-		st.query, st.cur, st.top = nil, 0, 0
+		st.query = nil
 	case KeyKillWord:
 		st.query = st.query[:wordLeft(st.query, len(st.query))]
-		st.cur, st.top = 0, 0
 	case KeyUp:
 		st.cur = max(st.cur-1, 0)
 		return
@@ -137,6 +131,7 @@ func (st *pickState) key(k Key) {
 	default:
 		return
 	}
+	st.cur, st.top = 0, 0
 	st.filter()
 }
 
@@ -195,12 +190,7 @@ func fuzzy(query, text string) (int, []int, bool) {
 
 func (st *pickState) frame(p *Printer, width, height int) Frame {
 	list := max(min(len(st.found), height*2/5), min(len(st.found), 3))
-	if st.cur < st.top {
-		st.top = st.cur
-	}
-	if st.cur >= st.top+list {
-		st.top = st.cur - list + 1
-	}
+	st.top = scrollTop(st.top, st.cur, len(st.found), list)
 	head := st.prompt + string(st.query)
 	rows := []string{truncateVisible(head, width-1)}
 	rows = append(rows, p.Color(Dim, "  "+strconv.Itoa(len(st.found))+"/"+strconv.Itoa(len(st.items))))
@@ -212,30 +202,22 @@ func (st *pickState) frame(p *Printer, width, height int) Frame {
 
 func (st *pickState) row(p *Printer, m match, current bool) string {
 	it := st.items[m.idx]
-	hit := map[int]bool{}
-	for _, i := range m.pos {
-		hit[i] = true
+	base, mark := it.Color, "  "
+	if current {
+		base, mark = base+Bold, p.Color(Cyan, "▌ ")
 	}
 	var b strings.Builder
-	n := 0
-	for _, r := range it.Name {
-		s := string(r)
-		if hit[n] {
-			s = p.Color(Green, s)
+	for n, r := range []rune(it.Name) {
+		if !slices.Contains(m.pos, n) {
+			b.WriteRune(r)
+			continue
 		}
-		b.WriteString(s)
-		n++
+		b.WriteString(p.Color(Green, string(r)))
+		if p.TTY {
+			b.WriteString(base)
+		}
 	}
-	name := b.String()
-	if it.Color != "" {
-		name = it.Color + strings.ReplaceAll(name, Reset, Reset+it.Color) + Reset
-	}
-	name += strings.Repeat(" ", max(st.nameW-displayWidth(it.Name), 0))
-	mark := "  "
-	if current {
-		mark = p.Color(Cyan, "▌ ")
-		name = p.Color(Bold, name)
-	}
+	name := p.Color(base, b.String()) + strings.Repeat(" ", max(st.nameW-displayWidth(it.Name), 0))
 	if it.Desc == "" {
 		return mark + name
 	}

@@ -148,7 +148,16 @@ func resumePath(o options, cfg config.Config, cwd string, headless bool) (string
 		if headless {
 			return "", false, errors.New("-r needs a terminal")
 		}
-		path, err := pickSession(runPlain, nil, cfg, cwd, "")
+		var ed *ui.Editor
+		if isBuiltin(cfg.SessionPicker, cfg.Picker) {
+			e, done, err := ttyEditor()
+			if err != nil {
+				return "", false, err
+			}
+			defer done()
+			ed = e
+		}
+		path, err := pickSession(runPlain, ed, cfg, cwd, "")
 		if err != nil || path == "" {
 			return "", true, err
 		}

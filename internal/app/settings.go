@@ -1,7 +1,6 @@
 package app
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
@@ -63,55 +62,33 @@ func (r *repl) configCmd(args string) {
 		}
 		return
 	}
-	var errs []error
-	before := map[string]bool{}
-	for _, s := range settings {
-		before[s.key] = s.get(cfg)
-	}
-	list := func() *ui.PickList { return &ui.PickList{Prompt: "config ", Items: uiItems(r.settingItems())} }
-	r.editor.Pick(*list(), ui.PickOptions{OnPick: func(i int) *ui.PickList {
-		if _, err := r.switchSetting(settings[i].key); err != nil {
-			errs = append(errs, err)
-		}
-		return list()
+	list := ui.PickList{Prompt: "config ", Items: uiItems(r.settingItems())}
+	r.editor.Pick(list, ui.PickOptions{OnPick: func(i int) *ui.PickList {
+		r.report(r.toggleSetting(settings[i].key))
+		list.Items = uiItems(r.settingItems())
+		return &list
 	}})
-	var changed []string
-	for _, s := range settings {
-		if v := s.get(r.agent.Config()); v != before[s.key] {
-			changed = append(changed, s.key+": "+s.value(v))
-		}
-	}
-	if len(changed) > 0 && len(errs) == 0 {
-		r.display.Info(strings.Join(changed, ", ") + " (saved)")
-	}
-	r.report(errors.Join(errs...))
 }
 
 func (r *repl) toggleSetting(key string) error {
-	msg, err := r.switchSetting(key)
-	if msg != "" {
-		r.display.Info(msg)
-	}
-	return err
-}
-
-func (r *repl) switchSetting(key string) (string, error) {
 	s := findSetting(key)
 	if s == nil {
-		return "", fmt.Errorf("unknown setting %q (switchable: %s)", key, settingKeys())
+		return fmt.Errorf("unknown setting %q (switchable: %s)", key, settingKeys())
 	}
 	cfg := r.agent.Config()
 	v := !s.get(cfg)
 	r.agent.EditConfig(func(c *config.Config) { s.set(c, v) })
 	inProfile, err := config.SetValue(r.opts.configPath, cfg.Profile, s.key, v)
-	if err != nil {
-		return fmt.Sprintf("%s: %s for this session", s.key, s.value(v)), fmt.Errorf("not saved: %w", err)
+	switch {
+	case err != nil:
+		r.display.Info(fmt.Sprintf("%s: %s for this session", s.key, s.value(v)))
+		return fmt.Errorf("not saved: %w", err)
+	case inProfile:
+		r.display.Info(fmt.Sprintf("%s: %s (saved in profile %q)", s.key, s.value(v), cfg.Profile))
+	default:
+		r.display.Info(fmt.Sprintf("%s: %s (saved)", s.key, s.value(v)))
 	}
-	where := "saved"
-	if inProfile {
-		where = fmt.Sprintf("saved in profile %q", cfg.Profile)
-	}
-	return fmt.Sprintf("%s: %s (%s)", s.key, s.value(v), where), nil
+	return nil
 }
 
 func (r *repl) settingItems() []pickItem {

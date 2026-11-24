@@ -37,7 +37,7 @@ When a change takes effect in a running session:
 - Most keys, including `system_prompt_file`, `skill_dirs`, `instruction_files` and `builtin_skills`: after `/profile <name>`, which re-reads the file and rebuilds the system prompt.
 - Edits inside the system prompt file, skills, commands or CLAUDE.md files: `/reload`.
 - `mcp`, `hook_files`, `read_only`: only after restarting qi.
-- `run_code` and `show_reasoning`: the user can also switch them for the session with `/config`, which wins over the file until qi exits.
+- `run_code`, `show_reasoning` and `terminal_images`: the user can also switch them with `/config`, which saves the change to the file (into the active profile when the profile sets the key).
 
 ## MCP servers
 

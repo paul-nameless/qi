@@ -79,7 +79,7 @@
       "type": "boolean"
     },
     "run_code": {
-      "description": "Show the whole JavaScript of each run call in the terminal (dim, up to 200 lines) with its tool calls under it. false shows one line per run call. /config switches it for the session. Default: true.",
+      "description": "Show the whole JavaScript of each run call in the terminal (dim, up to 200 lines) with its tool calls under it. false shows one line per run call. /config switches and saves it. Default: true.",
       "type": "boolean"
     },
     "read_only": {
@@ -134,7 +134,7 @@
       "additionalProperties": { "anyOf": [{ "$ref": "#/$defs/mcp_server" }, { "type": "null" }] }
     },
     "picker": {
-      "description": "Shell command for the / picker: reads tab-separated items on stdin and prints the chosen line. {prompt} is replaced with the quoted prompt. Default: fzf with a 40% height.",
+      "description": "Picker for every menu. \"builtin\" is qi's own fuzzy picker (also `qi pick`). Otherwise a shell command that reads tab-separated items on stdin and prints the chosen line; {prompt} is replaced with the quoted prompt. Default: builtin.",
       "type": "string"
     },
     "notify_cmd": {
@@ -142,7 +142,7 @@
       "type": "string"
     },
     "file_picker": {
-      "description": "Shell command opened by @: gets this directory's files on stdin (or {file}) and prints the chosen paths. {picker} expands to the picker command. \"off\" disables it. Default: {picker}.",
+      "description": "Shell command opened by @. With the builtin picker it is a folder browser; a shell command gets this directory's files on stdin (or {file}) and prints the chosen paths. {picker} expands to the picker command. \"off\" disables it. Default: {picker}.",
       "type": "string"
     },
     "history_picker": {
@@ -150,7 +150,7 @@
       "type": "string"
     },
     "session_picker": {
-      "description": "Shell command for /resume and -r: gets this directory's sessions on stdin and prints the chosen line. \"off\" disables it. Default: {picker} with a session preview.",
+      "description": "Shell command for /resume and -r: gets this directory's sessions on stdin and prints the chosen line. \"off\" disables it. Default: {picker}, plus a session preview when the picker is fzf-like.",
       "type": "string"
     },
     "pager": {

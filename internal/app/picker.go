@@ -15,10 +15,8 @@ type pickItem struct {
 	desc string
 }
 
-const builtinPicker = "builtin"
-
 func isBuiltin(command, picker string) bool {
-	return firstCommand(strings.ReplaceAll(command, "{picker}", picker)) == builtinPicker
+	return firstCommand(strings.ReplaceAll(command, "{picker}", picker)) == config.DefaultPicker
 }
 
 func uiItems(items []pickItem) []ui.PickItem {

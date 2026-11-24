@@ -248,7 +248,7 @@ func TestToggleSavesWhereTheSettingIsDefined(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	display, _ := capturePrinter(t)
+	display, out := capturePrinter(t)
 	o := options{configPath: path}
 	a, runner := buildAgent(cfg, o, t.TempDir(), scripted(), display, true, false)
 	r := &repl{agent: a, display: display, hooks: &agent.Hooks{}, runner: runner, opts: o}
@@ -259,14 +259,14 @@ func TestToggleSavesWhereTheSettingIsDefined(t *testing.T) {
 	if err := r.switchProfile("quiet"); err != nil || r.agent.Config().RunCodeOn() {
 		t.Fatalf("the profile's run_code applies: %v %v", r.agent.Config().RunCodeOn(), err)
 	}
-	if msg, err := r.switchSetting("run_code"); err != nil || msg != `run_code: full (saved in profile "quiet")` {
-		t.Fatalf("%q %v", msg, err)
+	if err := r.toggleSetting("run_code"); err != nil || !strings.Contains(out.String(), `run_code: full (saved in profile "quiet")`) {
+		t.Fatalf("%q %v", out.String(), err)
 	}
 	if err := r.switchProfile("loud"); err != nil || !r.agent.Config().RunCodeOn() {
 		t.Fatalf("loud has no run_code: %v %v", r.agent.Config().RunCodeOn(), err)
 	}
-	if msg, err := r.switchSetting("run_code"); err != nil || msg != "run_code: compact (saved)" {
-		t.Fatalf("%q %v", msg, err)
+	if err := r.toggleSetting("run_code"); err != nil || !strings.Contains(out.String(), "run_code: compact (saved)\n") {
+		t.Fatalf("%q %v", out.String(), err)
 	}
 	if err := r.switchProfile("quiet"); err != nil || !r.agent.Config().RunCodeOn() {
 		t.Errorf("quiet keeps its saved run_code: %v %v", r.agent.Config().RunCodeOn(), err)

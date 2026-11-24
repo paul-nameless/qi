@@ -24,24 +24,36 @@ func pickMain(args []string, in io.Reader, out io.Writer) int {
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "qi pick: no terminal:", err)
-		return 2
-	}
 	var lines []string
 	if !*files {
 		lines = readLines(in)
 	}
-	t, err := ui.OpenTerminalOn(tty, tty)
+	ed, done, err := ttyEditor()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "qi pick:", err)
 		return 2
 	}
+	choice, ok := pickLine(ed, lines, *prompt, *desc, *files)
+	done()
+	if !ok {
+		return 1
+	}
+	fmt.Fprintln(out, choice)
+	return 0
+}
+
+func ttyEditor() (*ui.Editor, func(), error) {
+	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	if err != nil {
+		return nil, nil, err
+	}
+	t, err := ui.OpenTerminalOn(tty, tty)
+	if err != nil {
+		return nil, nil, err
+	}
 	ed := ui.NewEditor(t, ui.NewPrinter(tty), "")
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt)
-	defer signal.Stop(sig)
 	go func() {
 		for range sig {
 			select {
@@ -50,13 +62,10 @@ func pickMain(args []string, in io.Reader, out io.Writer) int {
 			}
 		}
 	}()
-	choice, ok := pickLine(ed, lines, *prompt, *desc, *files)
-	t.Restore()
-	if !ok {
-		return 1
-	}
-	fmt.Fprintln(out, choice)
-	return 0
+	return ed, func() {
+		signal.Stop(sig)
+		t.Restore()
+	}, nil
 }
 
 func pickLine(ed *ui.Editor, lines []string, prompt string, desc, files bool) (string, bool) {

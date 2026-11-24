@@ -568,22 +568,7 @@ func (p *Printer) stopTicker() {
 	p.redraw()
 }
 
-func (p *Printer) SetPrompt(draw func(width, height int) Frame, final func(width int) string) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.clearFooter()
-	p.promptDraw, p.promptFinal = draw, final
-	if draw == nil {
-		return
-	}
-	if !p.atLineStart {
-		_, _ = p.out.WriteString("\n")
-		p.atLineStart = true
-	}
-	p.drawFooter()
-}
-
-func (p *Printer) SwapPrompt(draw func(width, height int) Frame, final func(width int) string) (func(width, height int) Frame, func(width int) string) {
+func (p *Printer) SetPrompt(draw func(width, height int) Frame, final func(width int) string) (func(width, height int) Frame, func(width int) string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	old, oldFinal := p.promptDraw, p.promptFinal

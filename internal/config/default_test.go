@@ -30,7 +30,7 @@ func TestSetDefaultProfileKeepsFileValid(t *testing.T) {
 	if err := os.WriteFile(path, []byte(orig), 0o640); err != nil {
 		t.Fatal(err)
 	}
-	if err := SetDefaultProfile(path, "opus"); err != nil {
+	if _, err := SetValue(path, "", "default_profile", "opus"); err != nil {
 		t.Fatal(err)
 	}
 	c, err := Load(path, "")
