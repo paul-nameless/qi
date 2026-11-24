@@ -88,6 +88,12 @@ func TestExecOffsets(t *testing.T) {
 		{`$`, "", "ab", 0, []int{2, 2}},
 		{`abc`, "", strings.Repeat("x", 100) + "abc", 50, []int{100, 103}},
 		{`abc`, "y", "xabc", 1, []int{1, 4}},
+		{`(é+)é`, "", "aééé", 0, []int{1, 4, 1, 3}},
+		{`é+`, "i", "aÉéÉb", 0, []int{1, 4}},
+		{`ü{2}`, "", "üüü", 0, []int{0, 2}},
+		{`€+x`, "", "€€x", 0, []int{0, 3}},
+		{`😀+`, "u", "😀😀a", 0, []int{0, 4}},
+		{`(😀+)😀`, "u", "😀😀😀", 0, []int{0, 6, 0, 4}},
 	}
 	for _, c := range cases {
 		for _, eng := range []int{EngineAuto, EngineBacktrack, EngineRE2} {

@@ -72,6 +72,9 @@ func decode(s string, i int) (rune, int) {
 	if b < 0x80 {
 		return rune(b), 1
 	}
+	if b >= 0xC2 && b < 0xE0 && i+1 < len(s) && s[i+1]&0xC0 == 0x80 {
+		return rune(b&0x1F)<<6 | rune(s[i+1]&0x3F), 2
+	}
 	if b == 0xED && i+2 < len(s) && s[i+1] >= 0xA0 {
 		return rune(b&0x0F)<<12 | rune(s[i+1]&0x3F)<<6 | rune(s[i+2]&0x3F), 3
 	}
@@ -610,6 +613,11 @@ func (m *machine) repeat(pc int, in *inst, pos int) (int, bool) {
 	if !set.nonASCII {
 		for cnt < in.max && pos < len(s) && set.hasASCII(s[pos]) {
 			pos++
+			cnt++
+		}
+	} else if set.lit != "" {
+		for cnt < in.max && strings.HasPrefix(s[pos:], set.lit) {
+			pos += len(set.lit)
 			cnt++
 		}
 	} else {
