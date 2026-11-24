@@ -41,7 +41,7 @@ func Bash() *Tool {
 			Params:   []string{"command"},
 			Required: 1,
 			Options:  []string{"timeout", "background", "daemon"},
-			Doc:      fmt.Sprintf("bash(command, {timeout, background, daemon}) → {output, exit_code, timed_out, truncated} — stdin is empty, output is stdout+stderr combined; never throws on a non-zero exit. output keeps the first and last %d KB; truncated is true when the middle was dropped (redirect to a file for more). timeout in seconds (default %d, max %d). {background: true} starts a job for long builds and test runs and returns at once with a string naming the job id and its output file; you get a message when it exits, so don't poll or sleep for it. {daemon: true} is for servers and watchers that are not meant to exit.", keepBytes>>10, defaultBashTimeout, maxBashTimeout),
+			Doc:      fmt.Sprintf("bash(command, {timeout, background, daemon}) → {output, exit_code, timed_out, truncated} — stdin is empty, output is stdout+stderr combined; never throws on a non-zero exit. output keeps the first and last %d KB; truncated is true when the middle was dropped (redirect to a file for more). timeout in seconds: max %d, default the user's bash_timeout (%d unless changed). {background: true} starts a job for long builds and test runs and returns at once with a string naming the job id and its output file; you get a message when it exits, so don't poll or sleep for it; its timeout defaults to %d (max %d). {daemon: true} is for servers and watchers that are not meant to exit: no timeout unless you give one.", keepBytes>>10, maxBashTimeout, defaultBashTimeout, defaultJobTimeout, maxJobTimeout),
 		},
 	}
 }
