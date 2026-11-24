@@ -705,7 +705,7 @@ func (a *Agent) estimateTokens() int {
 	return n
 }
 
-const streamAttempts = 3
+const streamAttempts = 4
 
 func streamBackoff(attempt int) time.Duration {
 	return time.Duration(2<<attempt) * time.Second

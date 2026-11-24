@@ -57,13 +57,41 @@ func (e *StreamError) Error() string {
 
 func (e *StreamError) retryable() bool {
 	switch e.Type {
-	case "overloaded_error", "api_error":
+	case "overloaded_error", "api_error", "rate_limit_error":
 		return true
 	}
-	if n, err := strconv.Atoi(e.Code); err == nil && (n == 429 || n >= 500) {
+	if n, err := strconv.Atoi(e.Code); err == nil && (n == 408 || n == 429 || n >= 500) {
 		return true
 	}
-	return e.Code == "server_error" || strings.Contains(strings.ToLower(e.Message), "overloaded")
+	switch e.Code {
+	case "server_error", "rate_limit_exceeded", "timeout":
+		return true
+	}
+	msg := strings.ToLower(e.Message)
+	for _, hint := range []string{"overloaded", "retry", "try again", "temporarily unavailable"} {
+		if strings.Contains(msg, hint) {
+			return true
+		}
+	}
+	return false
+}
+
+var transientHTTP2 = []string{"INTERNAL_ERROR", "REFUSED_STREAM", "CANCEL", "ENHANCE_YOUR_CALM"}
+
+func http2Transient(err error) bool {
+	s := err.Error()
+	switch {
+	case strings.Contains(s, "server sent GOAWAY"), strings.Contains(s, "http2: client connection lost"):
+		return true
+	case !strings.Contains(s, "received from peer"):
+		return false
+	}
+	for _, code := range transientHTTP2 {
+		if strings.Contains(s, "; "+code+";") {
+			return true
+		}
+	}
+	return false
 }
 
 type exhaustedError struct {
@@ -84,17 +112,24 @@ func Retryable(err error) bool {
 		errors.As(err, &exhausted), errors.Is(err, ErrInvalidURL), certError(err):
 		return false
 	case errors.As(err, &apiErr):
-		return apiErr.Throttled() || apiErr.Status >= 500
+		return apiErr.Throttled() || apiErr.Status == http.StatusRequestTimeout || apiErr.Status >= 500
 	case errors.As(err, &streamErr):
 		return streamErr.retryable()
 	case errors.As(err, &dnsErr):
 		return dnsErr.IsTemporary || dnsErr.IsTimeout
-	case errors.Is(err, ErrStalled), errors.Is(err, ErrIncomplete), errors.Is(err, io.ErrUnexpectedEOF), errors.Is(err, syscall.ECONNRESET):
+	case errors.Is(err, ErrStalled), errors.Is(err, ErrIncomplete), errors.Is(err, io.ErrUnexpectedEOF),
+		errors.Is(err, syscall.ECONNRESET), errors.Is(err, syscall.EPIPE), errors.Is(err, syscall.ETIMEDOUT), errors.Is(err, syscall.ECONNABORTED),
+		http2Transient(err), netTimeout(err):
 		return true
 	case errors.As(err, &urlErr):
 		return urlErr.Op != "parse"
 	}
 	return false
+}
+
+func netTimeout(err error) bool {
+	var ne net.Error
+	return errors.As(err, &ne) && ne.Timeout()
 }
 
 func certError(err error) bool {

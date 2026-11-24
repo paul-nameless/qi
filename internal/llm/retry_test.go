@@ -50,6 +50,17 @@ func TestRetryableClassification(t *testing.T) {
 		{"already retried", &exhaustedError{err: &APIError{Status: 503}}, false},
 		{"refusal", errors.New("the model declined to answer (stop_reason: refusal)"), false},
 		{"decode", fmt.Errorf("decode stream chunk: %w", errors.New("bad json")), false},
+		{"408", &APIError{Status: 408}, true},
+		{"http2 reset by the server", fmt.Errorf("read stream: %w", errors.New("stream error: stream ID 63; INTERNAL_ERROR; received from peer")), true},
+		{"http2 refused stream", errors.New("stream error: stream ID 5; REFUSED_STREAM; received from peer"), true},
+		{"http2 goaway", errors.New("http2: server sent GOAWAY and closed the connection; LastStreamID=7, ErrCode=NO_ERROR, debug=\"\""), true},
+		{"http2 protocol error from us", errors.New("stream error: stream ID 3; PROTOCOL_ERROR"), false},
+		{"read timeout mid-stream", fmt.Errorf("read: %w", &net.OpError{Op: "read", Err: os.ErrDeadlineExceeded}), true},
+		{"broken pipe", fmt.Errorf("write: %w", syscall.EPIPE), true},
+		{"rate limit event", &StreamError{Type: "rate_limit_error", Message: "slow down"}, true},
+		{"routeway unparsable tool call", &StreamError{Message: "The model produced a tool call that could not be parsed. Retry the request."}, true},
+		{"try again event", &StreamError{Code: "400", Message: "Upstream busy, please try again"}, true},
+		{"plain bad request event", &StreamError{Code: "400", Message: "messages: field required"}, false},
 	}
 	for _, c := range cases {
 		if got := Retryable(c.err); got != c.want {

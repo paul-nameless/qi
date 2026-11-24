@@ -57,24 +57,24 @@ func TestStreamRetryAttempts(t *testing.T) {
 			return errors.As(err, &apiErr) && apiErr.Status == 529
 		}},
 		{"bad request is not retried", false, false, func(int) string { return "status:400" }, 1, 0, func(err error) bool { return err != nil }},
-		{"stream cut before any delta", false, false, func(int) string { return sseStart }, 3, 2, func(err error) bool { return errors.Is(err, llm.ErrIncomplete) }},
-		{"overloaded event", false, false, func(int) string { return sseStart + sseOverload }, 3, 2, func(err error) bool {
+		{"stream cut before any delta", false, false, func(int) string { return sseStart }, 4, 3, func(err error) bool { return errors.Is(err, llm.ErrIncomplete) }},
+		{"overloaded event", false, false, func(int) string { return sseStart + sseOverload }, 4, 3, func(err error) bool {
 			var se *llm.StreamError
 			return errors.As(err, &se) && se.Type == "overloaded_error"
 		}},
 		{"cut after text was shown", false, false, func(int) string { return sseStart + sseText }, 1, 0, func(err error) bool { return errors.Is(err, llm.ErrIncomplete) }},
 		{"cut after shown thinking", false, false, func(int) string { return sseStart + sseThinking }, 1, 0, func(err error) bool { return errors.Is(err, llm.ErrIncomplete) }},
-		{"cut after hidden thinking", true, false, func(int) string { return sseStart + sseThinking }, 3, 2, func(err error) bool { return errors.Is(err, llm.ErrIncomplete) }},
-		{"cut after text in headless mode", false, true, func(int) string { return sseStart + sseText }, 3, 2, func(err error) bool { return errors.Is(err, llm.ErrIncomplete) }},
-		{"cut after thinking in headless mode", false, true, func(int) string { return sseStart + sseThinking }, 3, 2, func(err error) bool { return errors.Is(err, llm.ErrIncomplete) }},
-		{"cut after an empty text delta", false, false, func(int) string { return sseStart + sseEmptyText }, 3, 2, func(err error) bool { return errors.Is(err, llm.ErrIncomplete) }},
+		{"cut after hidden thinking", true, false, func(int) string { return sseStart + sseThinking }, 4, 3, func(err error) bool { return errors.Is(err, llm.ErrIncomplete) }},
+		{"cut after text in headless mode", false, true, func(int) string { return sseStart + sseText }, 4, 3, func(err error) bool { return errors.Is(err, llm.ErrIncomplete) }},
+		{"cut after thinking in headless mode", false, true, func(int) string { return sseStart + sseThinking }, 4, 3, func(err error) bool { return errors.Is(err, llm.ErrIncomplete) }},
+		{"cut after an empty text delta", false, false, func(int) string { return sseStart + sseEmptyText }, 4, 3, func(err error) bool { return errors.Is(err, llm.ErrIncomplete) }},
 		{"context too long", false, false, func(int) string { return sseStart + sseTooLong }, 1, 0, contextTooLong},
 		{"worst case interleaving", false, false, func(n int) string {
 			if n%4 == 0 {
 				return sseStart
 			}
 			return "status:503"
-		}, 12, 11, func(err error) bool { return errors.Is(err, llm.ErrIncomplete) }},
+		}, 16, 15, func(err error) bool { return errors.Is(err, llm.ErrIncomplete) }},
 		{"recovers", false, false, func(n int) string {
 			if n == 1 {
 				return sseStart
