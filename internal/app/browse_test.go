@@ -99,7 +99,7 @@ func TestPickIgnoresUnknownFlags(t *testing.T) {
 	fs := flag.NewFlagSet("t", flag.ContinueOnError)
 	fs.String("p", "", "")
 	fs.Bool("d", false, "")
-	got := strings.Join(knownFlags(fs, []string{"--multi", "-p", "@ ", "--preview", "cat {1}", "-d", "--bind=x"}), "|")
+	got := strings.Join(knownFlags(fs, []string{"--multi", "-p", "@ ", "--preview", "help", "-d", "--bind=x"}), "|")
 	if got != "-p|@ |-d" {
 		t.Errorf("got %q", got)
 	}

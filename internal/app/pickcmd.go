@@ -63,9 +63,10 @@ func knownFlags(fs *flag.FlagSet, args []string) []string {
 		name, _, hasValue := strings.Cut(strings.TrimLeft(args[i], "-"), "=")
 		f := fs.Lookup(name)
 		switch {
+		case !strings.HasPrefix(args[i], "-"):
 		case name == "h" || name == "help":
 			out = append(out, args[i])
-		case !strings.HasPrefix(args[i], "-") || f == nil:
+		case f == nil:
 		case f.Name == "p" && !hasValue && i+1 < len(args):
 			out = append(out, args[i], args[i+1])
 			i++
