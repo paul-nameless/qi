@@ -200,6 +200,15 @@ func TestShapeTreeReleased(t *testing.T) {
 	}
 }
 
+func TestMicrotaskFloodHitsLimit(t *testing.T) {
+	vm := New(Options{MemoryLimit: 256 << 20})
+	_, err := vm.RunCell("cell.js", "const f = () => {}; while (true) queueMicrotask(f)")
+	if errName(err) != "RangeError" {
+		t.Errorf("want RangeError, got %v", err)
+	}
+	vm.AbandonPending()
+}
+
 func TestNamedErrorStacks(t *testing.T) {
 	t.Parallel()
 	vm := New(Options{})

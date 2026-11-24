@@ -88,6 +88,40 @@ func TestRuntimeRecursionCaps(t *testing.T) {
 	}
 }
 
+func TestAllocationCaps(t *testing.T) {
+	cases := map[string]string{
+		"new Array 1e9":    "try { new Array(1e9) } catch (e) { return e.name }",
+		"new Array 1e7":    "try { const a = []; for (;;) a.push(new Array(1e7)) } catch (e) { return e.name }",
+		"repeat":           "try { 'x'.repeat(1e9) } catch (e) { return e.name }",
+		"repeat big":       "try { 'abcdefgh'.repeat(6e7) } catch (e) { return e.name }",
+		"padStart":         "try { 'x'.padStart(1e9) } catch (e) { return e.name }",
+		"fill":             "try { const k = []; for (;;) k.push(Array(1e6).fill(0)) } catch (e) { return e.name }",
+		"join":             "const a = new Array(4e6).fill('x'.repeat(40)); try { const out = []; for (;;) out.push(a.join('')) } catch (e) { return e.name }",
+		"rope flatten":     "const keep = []; try { for (let i = 0; ; i++) { const s = 'x'.repeat(1e6) + i; s.charCodeAt(5); keep.push(s) } } catch (e) { return e.name }",
+		"push":             "try { const a = []; for (;;) a.push(1, 2, 3, 4, 5, 6, 7, 8) } catch (e) { return e.name }",
+		"concat":           "let a = new Array(1e6).fill(1); try { const keep = []; for (;;) keep.push(a.concat(a, a)) } catch (e) { return e.name }",
+		"spread":           "let a = new Array(1e6).fill(1); try { const keep = []; for (;;) keep.push([...a, ...a]) } catch (e) { return e.name }",
+		"stringify indent": "const o = {a: new Array(1e5).fill({b: [1, 2, 3]})}; try { const keep = []; for (;;) keep.push(JSON.stringify(o, null, 10)) } catch (e) { return e.name }",
+		"template":         "let s = 'x'.repeat(1e6); try { const keep = []; for (;;) { s = `${s}${s}`; keep.push(s) } } catch (e) { return e.name }",
+		"replace":          "const s = 'x'.repeat(1e6); try { const keep = []; for (;;) keep.push(s.replaceAll('x', 'yy')) } catch (e) { return e.name }",
+		"split":            "const s = 'x,'.repeat(5e6); try { const keep = []; for (;;) keep.push(s.split(',')) } catch (e) { return e.name }",
+		"regex source":     "try { new RegExp('('.repeat(1e5)) } catch (e) { return e.name }",
+	}
+	for name, src := range cases {
+		s := &session{vm: New(Options{MemoryLimit: 256 << 20}), results: make(chan hresult, 1), tools: fakeTool}
+		v, err := s.vm.RunCell("cell.js", src)
+		got := ""
+		if err == nil {
+			got = ToString(v)
+		}
+		if err != nil || (got != "RangeError" && got != "SyntaxError") {
+			t.Errorf("%s: got %q %v", name, got, err)
+		}
+		s.vm.Close()
+		forceGC()
+	}
+}
+
 func TestInternalErrorsCatchable(t *testing.T) {
 	t.Parallel()
 	vm := New(Options{})

@@ -3,10 +3,10 @@ package jsvm
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestReviewRound4(t *testing.T) {
-	t.Parallel()
 	cases := map[string]string{
 		"try { String({toString: Object.prototype.toLocaleString}) } catch (e) { return e.name }":                          "RangeError",
 		"try { return ({toString: String.prototype.trim}) + '' } catch (e) { return e.name }":                              "RangeError",
@@ -47,6 +47,40 @@ func TestDST(t *testing.T) {
 	}
 }
 
+func TestUntrackedAllocations(t *testing.T) {
+	cases := map[string]string{
+		"slice non-ascii": "const big = 'é'.repeat(5e6), keep = []; try { for (;;) keep.push(big.slice(1)) } catch (e) { return e.name }",
+		"set union":       "const a = new Set(Array.from({length: 2e5}, (_, i) => i)); const keep = []; try { for (;;) keep.push(a.union(a)) } catch (e) { return e.name }",
+		"clone map":       "const m = new Map(Array.from({length: 2e5}, (_, i) => [i, i])); const keep = []; try { for (;;) keep.push(structuredClone(m)) } catch (e) { return e.name }",
+		"encodeURI":       "try { encodeURIComponent('é'.repeat(3e7)) } catch (e) { return e.name }",
+		"escape":          "const s = 'é'.repeat(1e6), keep = []; try { for (;;) keep.push(escape(s)) } catch (e) { return e.name }",
+		"split capture":   "try { 'a'.repeat(5e7).split(/()/) } catch (e) { return e.name }",
+		"match global":    "try { const k = []; for (;;) k.push('ab'.repeat(1e6).match(/ab/g)) } catch (e) { return e.name }",
+		"trimEnd":         "const b = ' ' + 'x'.repeat(1e6), k = []; try { for (;;) k.push(b.trimEnd() + '!') } catch (e) { return e.name }",
+		"replace $'":      "try { 'a'.repeat(3e4).replace(/a/g, \"$'\") } catch (e) { return e.name }",
+		"rope doubling":   "let s = 'x'.repeat(300); try { for (let i = 0; i < 22; i++) s = s + s; s.indexOf('y') } catch (e) { return e.name }",
+		"sparse index":    "try { const k = []; for (;;) { const a = []; a[1.6e7] = 0; k.push(a) } } catch (e) { return e.name }",
+	}
+	for name, src := range cases {
+		vm := New(Options{MemoryLimit: 96 << 20})
+		done := make(chan struct{})
+		go func() {
+			select {
+			case <-done:
+			case <-time.After(hangGuard):
+				vm.Interrupt()
+			}
+		}()
+		v, err := vm.RunCell("cell.js", src)
+		close(done)
+		if err != nil || ToString(v) != "RangeError" {
+			t.Errorf("%s: got %q %v", name, ToString(v), err)
+		}
+		vm.Close()
+		forceGC()
+	}
+}
+
 func TestFuzzdiffFindings(t *testing.T) {
 	withLocal(t, "UTC")
 	if v, _ := New(Options{}).RunCell("cell.js", "Object.is(new Date(0).getTimezoneOffset(), 0)"); ToString(v) != "true" {
@@ -70,7 +104,6 @@ func TestFuzzdiffFindings(t *testing.T) {
 }
 
 func TestReviewRound5(t *testing.T) {
-	t.Parallel()
 	cases := map[string]string{
 		"function f(a = 1) { var a; return a } return f(5)":                                                                                                                        "5",
 		"function f(o = {}) { var o = o || {d: 1}; return JSON.stringify(o) } return f({x: 2})":                                                                                    "{\"x\":2}",
@@ -91,13 +124,34 @@ func TestReviewRound5(t *testing.T) {
 			t.Errorf("%s\n  got %q %v want %q", src, out, err, want)
 		}
 	}
+	if v, err := New(Options{MemoryLimit: limitAbove(96 << 20)}).RunCell("cell.js", "const big = 'a' + 'é'.repeat(3e6); const keep = []; for (let i = 0; i < 200; i++) keep.push(/(é+)/.exec(big)); keep.length"); err != nil || ToString(v) != "200" {
+		t.Errorf("shared non-ASCII substrings: %v %v", ToString(v), err)
+	}
 	if _, err := New(Options{}).RunCell("cell.js", "function f(a = 1) { let a = 2 }"); errName(err) != "SyntaxError" {
 		t.Errorf("let shadowing param: %v", err)
+	}
+	mem := map[string]string{
+		"toUpperCase":   "try { 'ΐ'.repeat(5e7).toUpperCase() } catch (e) { return e.name }",
+		"padEnd":        "try { 'a'.padEnd(2e8, '€') } catch (e) { return e.name }",
+		"stringify":     "try { JSON.stringify('\\x01'.repeat(1e8)) } catch (e) { return e.name }",
+		"flatten ropes": "try { let s = 'x'.repeat(1 << 20); for (let i = 0; i < 7; i++) s += s; const a = []; for (let i = 0; i < 64; i++) a.push(s + i); for (const r of a) r.indexOf('y') } catch (e) { return e.name }",
+		"split pieces":  "try { const big = 'é'.repeat(1e7) + ',' + 'é'.repeat(1e7); const keep = []; for (;;) keep.push(big.split(/,/)) } catch (e) { return e.name }",
+	}
+	for name, src := range mem {
+		vm := New(Options{MemoryLimit: 96 << 20})
+		start := time.Now()
+		stop := vm.InterruptAfter(hangGuard)
+		v, err := vm.RunCell("cell.js", src)
+		stop()
+		if err != nil || ToString(v) != "RangeError" {
+			t.Errorf("%s: got %q %v after %v", name, ToString(v), err, time.Since(start))
+		}
+		vm.Close()
+		forceGC()
 	}
 }
 
 func TestReviewRound6(t *testing.T) {
-	t.Parallel()
 	cases := map[string]string{
 		"return ['file 10'.localeCompare('file2', undefined, {numeric: true}), 'a-2'.localeCompare('a2', undefined, {numeric: true}), 'item1'.localeCompare('item 2', undefined, {numeric: true}), 'file_1'.localeCompare('file10', undefined, {numeric: true})].join()": "-1,-1,1,-1",
 		"return ['a😀'.lastIndexOf('😀', 0), '😀😀'.lastIndexOf('😀', 1), 'ab😀'.lastIndexOf('b😀', 0), '😀'.indexOf('', 1)].join()":                                                                                                                                             "-1,0,-1,1",
@@ -115,6 +169,22 @@ func TestReviewRound6(t *testing.T) {
 		if err != nil || out != want {
 			t.Errorf("%s\n  got %q %v want %q", src, out, err, want)
 		}
+	}
+	mem := map[string]string{
+		"strictEquals ropes": "try { let s = 'x'.repeat(1 << 20); for (let i = 0; i < 7; i++) s += s; const a = []; for (let i = 0; i < 64; i++) a.push(s + i); let n = 0; for (const r of a) if (r === s + 'y') n++; return 'eq ' + n } catch (e) { return e.name }",
+		"keys big array":     "try { const k = []; for (;;) k.push(Object.keys(new Array(1.6e7))) } catch (e) { return e.name }",
+		"regex oom":          "const s = 'ab'.repeat(5e6); try { const k = []; for (;;) k.push(s.match(/a/g)) } catch (e) { return e.name }",
+	}
+	for name, src := range mem {
+		vm := New(Options{MemoryLimit: 256 << 20})
+		stop := vm.InterruptAfter(hangGuard)
+		v, err := vm.RunCell("cell.js", src)
+		stop()
+		if err != nil || (ToString(v) != "RangeError" && !strings.HasPrefix(ToString(v), "eq")) {
+			t.Errorf("%s: got %q %v", name, ToString(v), err)
+		}
+		vm.Close()
+		forceGC()
 	}
 }
 

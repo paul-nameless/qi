@@ -6,7 +6,6 @@ import (
 )
 
 func TestReviewRegressions(t *testing.T) {
-	t.Parallel()
 	cases := []struct{ src, want string }{
 		{"function show(a, b) { return a + '=' + b }; return show('x', await Promise.resolve(1))", "x=1"},
 		{"function pair(a, b) { return a + ',' + b } async function f() { return pair('A', await 1) } const p = f(); const q = pair('X', 'Y'); return [await p, q]", `["A,1","X,Y"]`},
@@ -17,6 +16,7 @@ func TestReviewRegressions(t *testing.T) {
 		{"function set(o) { o.a = 1 } set({}); const f = Object.preventExtensions({}); let e = 'none'; try { set(f) } catch (x) { e = x.name } set(globalThis); return [e, f.a === undefined, a]", `["TypeError",true,1]`},
 		{"let log = ''; function s(x) { log += 's'; return x } log += 'r' + s(1); let n = 1; n += (n = 10); return [log, n]", `["r1",11]`},
 		{"const read = p => 'outer:' + p; const tools = { read(p) { return read(p) } }; const count = 5; return [tools.read('x'), ({ count() { return count } }).count()]", `["outer:x",5]`},
+		{"let s = 'ab'; try { for (let i = 0; i < 40; i++) s += s } catch (e) { return e.name + ' ' + e.message }", "RangeError Invalid string length"},
 		{"const a = [1]; a.push(a); try { a.flat(Infinity) } catch (e) { return e.name }", "RangeError"},
 		{"const o = {}; try { Object.setPrototypeOf(Object.prototype.constructor.prototype, o); Object.setPrototypeOf(o, o) } catch (e) { return e.name }", "TypeError"},
 		{"try { Array.from({length: 1e10}) } catch (e) { return e.name }", "RangeError"},
@@ -26,6 +26,7 @@ func TestReviewRegressions(t *testing.T) {
 		{"let s = ''; for (let i = 0; i < 2000; i++) { s += 'é'; if (s.length !== i + 1) return 'bad' } return s.length", "2000"},
 		{"const a = [1, 2, 3]; return a.reduceRight((acc, x) => { a.length = 1; return acc + x }, 0)", "4"},
 		{"try { (1).toLocaleString(undefined, {maximumFractionDigits: -1}) } catch (e) { return e.name }", "RangeError"},
+		{"let s = 'ab'; try { for (let i = 0; i < 40; i++) s = s.concat(s) } catch (e) { return e.name }", "RangeError"},
 		{"let a = []; for (let i = 0; i < 100000; i++) a = [a]; try { String(a) } catch (e) { return e.name }", "RangeError"},
 		{"let f = () => 1; for (let i = 0; i < 5000; i++) f = f.bind(null, i); return [f(), f.name.length > 1000]", "[1,true]"},
 		{"const s = 'é'.repeat(2e5) + ' a'.repeat(1e5); const re = /a/g; let n = 0, last = 0; while (re.exec(s)) { n++; last = re.lastIndex } return [n, last]", "[100000,400000]"},
@@ -34,6 +35,7 @@ func TestReviewRegressions(t *testing.T) {
 		{"const m = new Map([[1, 1]]), seen = []; for (const [k] of m) { seen.push(k); if (k === 1) { m.delete(1); m.set(2, 2) } } const s = new Set([1]); const s2 = []; for (const v of s) { s2.push(v); if (v === 1) { s.clear(); s.add(3) } } return [seen, s2]", "[[1,2],[1,3]]"},
 		{"let a, b; [a, [b] = [2]] = [1]; let p; ({x: {p} = {p: 3}} = {}); return [a, b, p]", "[1,2,3]"},
 		{"const s = new Set([1]), seen = []; for (const x of s) { seen.push(x); s.delete(x); if (x < 3) s.add(x + 1) } return seen", "[1,2,3]"},
+		{"try { 'x'.repeat(1e6).replaceAll('x', 'y'.repeat(1e6)) } catch (e) { return e.name + ' ' + ''.repeat(1e300).length }", "RangeError 0"},
 		{"async function f(a = 1, b) { await null; return b } return await f(undefined, 'kept')", "kept"},
 		{"const a = [3, 1, 2]; try { a.sort((x, y) => { if (x === 2) throw 1; return x - y }) } catch (e) {} return a", "[3,1,2]"},
 	}
