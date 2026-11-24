@@ -56,24 +56,26 @@ func (e *StreamError) Error() string {
 }
 
 func (e *StreamError) retryable() bool {
-	switch e.Type {
-	case "overloaded_error", "api_error", "rate_limit_error", "timeout_error", "server_error":
-		return true
-	}
+	kind := strings.ToLower(e.Type + " " + e.Code)
+	msg := strings.ToLower(e.Message)
 	if n, err := strconv.Atoi(e.Code); err == nil && (n == 408 || n == 429 || n >= 500) {
 		return true
 	}
-	switch e.Code {
-	case "server_error", "timeout":
-		return true
-	case "rate_limit_exceeded":
-		return !strings.Contains(strings.ToLower(e.Message), "too large")
-	}
-	if e.clientError() {
+	if e.clientError(kind) {
 		return false
 	}
-	msg := strings.ToLower(e.Message)
-	for _, hint := range []string{"overloaded", "retry the request", "try again later", "temporarily unavailable"} {
+	for _, k := range []string{"overloaded", "api_error", "server_error", "unavailable", "timeout", "rate_limit"} {
+		if strings.Contains(kind, k) {
+			return !strings.Contains(msg, "too large")
+		}
+	}
+	if strings.Contains(msg, "retry the request") || strings.Contains(msg, "retry your request") {
+		return true
+	}
+	if strings.Contains(kind, "invalid") {
+		return false
+	}
+	for _, hint := range []string{"overloaded", "try again later", "temporarily unavailable"} {
 		if strings.Contains(msg, hint) {
 			return true
 		}
@@ -81,13 +83,12 @@ func (e *StreamError) retryable() bool {
 	return false
 }
 
-func (e *StreamError) clientError() bool {
+func (e *StreamError) clientError(kind string) bool {
 	if n, err := strconv.Atoi(e.Code); err == nil && n >= 400 && n < 500 {
 		return true
 	}
-	t := e.Type + " " + e.Code
-	for _, kind := range []string{"invalid", "authentication", "permission", "billing", "content", "policy", "context_length", "not_found"} {
-		if strings.Contains(t, kind) {
+	for _, k := range []string{"authentication", "permission", "billing", "insufficient", "content", "policy", "safety", "moderation", "invalid_prompt", "context_length", "not_found"} {
+		if strings.Contains(kind, k) {
 			return true
 		}
 	}
@@ -138,7 +139,7 @@ func Retryable(err error) bool {
 	case errors.Is(err, ErrStalled), errors.Is(err, ErrIncomplete), errors.Is(err, io.ErrUnexpectedEOF),
 		errors.Is(err, syscall.ECONNRESET), errors.Is(err, syscall.EPIPE), errors.Is(err, syscall.ETIMEDOUT), errors.Is(err, syscall.ECONNABORTED),
 		errors.Is(err, syscall.ENETDOWN), errors.Is(err, syscall.ENETUNREACH), errors.Is(err, syscall.EHOSTUNREACH),
-		errors.Is(err, errEmpty), http2Transient(err), netTimeout(err):
+		http2Transient(err), netTimeout(err):
 		return true
 	case errors.As(err, &urlErr):
 		return urlErr.Op != "parse"

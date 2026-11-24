@@ -734,11 +734,11 @@ func (a *Agent) withRetries(ctx context.Context, call func() (llm.Message, llm.U
 		note := ""
 		if shown {
 			a.ui.EndBlock()
-			note = " (the text above is discarded)"
+			note = " (the output above is discarded)"
 		}
 		a.ui.Info("↻ retrying: " + tools.OneLine(err.Error(), 100) + note)
 		if err := llm.Sleep(ctx, streamBackoff(attempt)); err != nil {
-			return msg, usage, err
+			return msg, llm.Usage{}, err
 		}
 	}
 }

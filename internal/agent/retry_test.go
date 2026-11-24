@@ -142,7 +142,7 @@ func TestRetryAfterShownTextSaysItIsDiscarded(t *testing.T) {
 	if err != nil || n.Load() != 2 || msg.Text() != "hi" {
 		t.Fatalf("err %v, %d requests, text %q", err, n.Load(), msg.Text())
 	}
-	if len(ui.infos) != 1 || !strings.HasPrefix(ui.infos[0], "↻ retrying: ") || !strings.HasSuffix(ui.infos[0], "(the text above is discarded)") {
+	if len(ui.infos) != 1 || !strings.HasPrefix(ui.infos[0], "↻ retrying: ") || !strings.HasSuffix(ui.infos[0], "(the output above is discarded)") {
 		t.Errorf("notes %q", ui.infos)
 	}
 }
