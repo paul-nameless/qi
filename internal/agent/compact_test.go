@@ -252,6 +252,14 @@ func TestCompactionSurvivesResume(t *testing.T) {
 	if !reflect.DeepEqual(ld.Messages, a.conv.messages) {
 		t.Errorf("resumed history differs:\n%+v\n%+v", ld.Messages, a.conv.messages)
 	}
+	entries, _ := session.Entries(s.Path)
+	recorded := false
+	for _, e := range entries {
+		recorded = recorded || (e.Type == "compaction" && e.Usage != nil)
+	}
+	if !recorded || ld.CtxTokens != 0 {
+		t.Errorf("the compaction entry carries its usage (%v) and does not set the context (%d)", recorded, ld.CtxTokens)
+	}
 }
 
 func TestContextTooLong(t *testing.T) {

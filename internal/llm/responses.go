@@ -188,8 +188,9 @@ type rsEvent struct {
 			Reason string `json:"reason"`
 		} `json:"incomplete_details"`
 		Usage *struct {
-			InputTokens        int `json:"input_tokens"`
-			OutputTokens       int `json:"output_tokens"`
+			InputTokens        int      `json:"input_tokens"`
+			OutputTokens       int      `json:"output_tokens"`
+			Cost               *float64 `json:"cost"`
 			InputTokensDetails struct {
 				CachedTokens     int `json:"cached_tokens"`
 				CacheWriteTokens int `json:"cache_write_tokens"`
@@ -274,6 +275,7 @@ func (s *responsesStream) end(e rsEvent) error {
 				Output:     u.OutputTokens,
 				CacheRead:  u.InputTokensDetails.CachedTokens,
 				CacheWrite: u.InputTokensDetails.CacheWriteTokens,
+				Cost:       u.Cost,
 			}
 		}
 	}

@@ -111,11 +111,11 @@ type Request struct {
 }
 
 type Usage struct {
-	Input      int     `json:"input"`
-	Output     int     `json:"output"`
-	CacheRead  int     `json:"cache_read"`
-	CacheWrite int     `json:"cache_write"`
-	Cost       float64 `json:"cost,omitempty"`
+	Input      int      `json:"input"`
+	Output     int      `json:"output"`
+	CacheRead  int      `json:"cache_read"`
+	CacheWrite int      `json:"cache_write"`
+	Cost       *float64 `json:"cost,omitempty"`
 }
 
 const (

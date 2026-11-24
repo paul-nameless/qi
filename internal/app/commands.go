@@ -49,7 +49,7 @@ func init() {
 		{name: "status", help: "model, effort, profile, mode, context, session id and file", short: "show the current session status", run: func(r *repl, _ string) { r.display.Info(r.status()) }},
 		{name: "config", args: "[setting]", help: "config file, external tools and settings; switch a setting and save it (picker without a name)", short: "show the config and switch settings", run: (*repl).configCmd},
 		{name: "clear", help: "start a new session", short: "start a new session", run: func(r *repl, _ string) { r.clear() }},
-		{name: "cost", help: "tokens, cache hits and cost of this session and its subagents (cost only where the provider reports it, e.g. OpenRouter)", short: "show what this session cost", run: func(r *repl, _ string) { r.display.Info(r.costReport()) }},
+		{name: "cost", help: "tokens, cache hits and cost of this session and its subagents, as recorded (cancelled or failed requests are missing; cost only where the provider reports it, e.g. OpenRouter)", short: "show what this session cost", run: (*repl).cost},
 		{name: "context", help: "show what takes space in the context", short: "show what takes space in the context", run: func(r *repl, _ string) { r.display.Info(r.agent.ContextReport()) }},
 		{name: "reload", help: "re-read skills, commands and CLAUDE.md files (rebuilds the cached prompt)", short: "re-read skills, commands and CLAUDE.md files", run: func(r *repl, _ string) { r.reload() }},
 		{name: "compact", args: "[focus]", help: "summarize the conversation to free context (optional focus for the summary)", short: "summarize the conversation to free context", run: (*repl).compact},
@@ -276,6 +276,15 @@ func (r *repl) reload() {
 		note = "changed; the next request rewrites the prompt cache"
 	}
 	r.display.Info(fmt.Sprintf("reloaded %d skills, %d commands; system prompt %s · %s", len(r.skills), len(r.commands), note, "context "+r.agent.ContextUsage()))
+}
+
+func (r *repl) cost(string) {
+	text, err := r.costReport()
+	if err != nil {
+		r.report(err)
+		return
+	}
+	r.display.Info(text)
 }
 
 func (r *repl) report(err error) {

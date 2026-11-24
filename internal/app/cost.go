@@ -3,6 +3,7 @@ package app
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 
 type spend struct {
 	llm.Usage
+	dollars          float64
 	requests, priced int
 }
 
@@ -23,11 +25,11 @@ func (s *spend) add(u llm.Usage) {
 	s.Output += u.Output
 	s.CacheRead += u.CacheRead
 	s.CacheWrite += u.CacheWrite
-	s.Cost += u.Cost
-	s.requests++
-	if u.Cost > 0 {
+	if u.Cost != nil {
+		s.dollars += *u.Cost
 		s.priced++
 	}
+	s.requests++
 }
 
 func (s spend) String() string {
@@ -37,9 +39,9 @@ func (s spend) String() string {
 	cost := "not reported by the provider"
 	switch {
 	case s.priced == s.requests:
-		cost = dollars(s.Cost)
+		cost = dollars(s.dollars)
 	case s.priced > 0:
-		cost = fmt.Sprintf("%s for %d of %d requests (the rest not reported)", dollars(s.Cost), s.priced, s.requests)
+		cost = fmt.Sprintf("%s for %d of %d requests (the rest not reported)", dollars(s.dollars), s.priced, s.requests)
 	}
 	parts := []string{cost, plural(s.requests, "request"), "input " + agent.FmtTokens(s.Input) + cachedShare(s.Usage), "output " + agent.FmtTokens(s.Output)}
 	if s.CacheWrite > 0 {
@@ -69,18 +71,27 @@ func plural(n int, word string) string {
 	return fmt.Sprintf("%d %ss", n, word)
 }
 
-func fileSpend(path string) spend {
+func fileSpend(path string) (spend, error) {
 	var s spend
-	entries, _ := session.Entries(path)
-	for _, e := range entries {
-		if e.Usage != nil {
+	f, err := os.Open(path)
+	if err != nil {
+		return s, err
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 1<<20), 256<<20)
+	for sc.Scan() {
+		var e struct {
+			Usage *llm.Usage `json:"usage"`
+		}
+		if json.Unmarshal(sc.Bytes(), &e) == nil && e.Usage != nil {
 			s.add(*e.Usage)
 		}
 	}
-	return s
+	return s, sc.Err()
 }
 
-func subagentSpend(dir, parent string) (spend, int) {
+func subagentSpend(dir, parent string) (spend, int, error) {
 	var total spend
 	files, _ := filepath.Glob(filepath.Join(dir, "subagents", "*.jsonl"))
 	n := 0
@@ -88,10 +99,14 @@ func subagentSpend(dir, parent string) (spend, int) {
 		if metaParent(f) != parent {
 			continue
 		}
+		s, err := fileSpend(f)
+		if err != nil {
+			return total, n, err
+		}
 		n++
-		total = total.mergeAll(fileSpend(f))
+		total = total.mergeAll(s)
 	}
-	return total, n
+	return total, n, nil
 }
 
 func (s spend) mergeAll(o spend) spend {
@@ -99,7 +114,7 @@ func (s spend) mergeAll(o spend) spend {
 	s.Output += o.Output
 	s.CacheRead += o.CacheRead
 	s.CacheWrite += o.CacheWrite
-	s.Cost += o.Cost
+	s.dollars += o.dollars
 	s.requests += o.requests
 	s.priced += o.priced
 	return s
@@ -119,15 +134,21 @@ func metaParent(path string) string {
 	return e.ParentSession
 }
 
-func (r *repl) costReport() string {
+func (r *repl) costReport() (string, error) {
 	s := r.agent.Session()
 	if s == nil {
-		return "no session"
+		return "", errors.New("no session")
 	}
-	own := fileSpend(s.Path)
-	subs, n := subagentSpend(filepath.Dir(s.Path), s.ID)
+	own, err := fileSpend(s.Path)
+	if err != nil {
+		return "", fmt.Errorf("read session: %w", err)
+	}
+	subs, n, err := subagentSpend(session.Dir(r.agent.Cwd()), s.ID)
+	if err != nil {
+		return "", fmt.Errorf("read subagent session: %w", err)
+	}
 	if n == 0 {
-		return "cost  " + own.String()
+		return "cost  " + own.String(), nil
 	}
-	return fmt.Sprintf("session    %s\nsubagents  %s (%d)\ntotal      %s", own, subs, n, own.mergeAll(subs))
+	return fmt.Sprintf("session    %s\nsubagents  %s (%d)\ntotal      %s", own, subs, n, own.mergeAll(subs)), nil
 }

@@ -65,7 +65,7 @@ func TestStreamAssemblesParallelToolCalls(t *testing.T) {
 	if calls[1].ID != "c1" || calls[1].Name != "bash" || string(calls[1].Input) != `{"command":"ls"}` {
 		t.Errorf("call 1 %+v %s", calls[1], calls[1].Input)
 	}
-	if u != (Usage{Input: 100, Output: 10, CacheRead: 80, CacheWrite: 5, Cost: 0.5}) {
+	if u.Cost == nil || *u.Cost != 0.5 || u.Input != 100 || u.Output != 10 || u.CacheRead != 80 || u.CacheWrite != 5 {
 		t.Errorf("usage %+v", u)
 	}
 }

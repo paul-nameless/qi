@@ -200,9 +200,9 @@ type oaChunk struct {
 		FinishReason *string `json:"finish_reason"`
 	} `json:"choices"`
 	Usage *struct {
-		PromptTokens        int     `json:"prompt_tokens"`
-		CompletionTokens    int     `json:"completion_tokens"`
-		Cost                float64 `json:"cost"`
+		PromptTokens        int      `json:"prompt_tokens"`
+		CompletionTokens    int      `json:"completion_tokens"`
+		Cost                *float64 `json:"cost"`
 		PromptTokensDetails struct {
 			CachedTokens     int `json:"cached_tokens"`
 			CacheWriteTokens int `json:"cache_write_tokens"`
