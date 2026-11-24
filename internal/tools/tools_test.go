@@ -319,6 +319,7 @@ func TestSpillFailureIsReported(t *testing.T) {
 
 func TestReadServesEmbeddedFiles(t *testing.T) {
 	Embed("qi:test/hello.md", []byte("line one\nline two\n"))
+	t.Cleanup(func() { delete(embedded, "qi:test/hello.md") })
 	env := &Env{Cwd: t.TempDir()}
 	r := newFuncSet(Read())
 	res := r.Execute(context.Background(), env, []llm.Block{

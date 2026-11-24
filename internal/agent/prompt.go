@@ -213,7 +213,8 @@ func isGitRepo(cwd string) bool {
 }
 
 const (
-	skillsIntro = "\n# Skills\n\nSkills are instruction files for specific tasks. When a task matches a skill, read its SKILL.md with read() before starting and follow it. A path starting with qi: is built into qi, not a file on disk: pass it to read() exactly as written.\n\n"
+	skillsIntro = "\n# Skills\n\nSkills are instruction files for specific tasks. When a task matches a skill, read its SKILL.md with read() before starting and follow it.\n\n"
+	builtinNote = "A path starting with qi: is built into qi, not a file on disk: pass it to read() exactly as written.\n\n"
 )
 
 type Section struct {
@@ -278,6 +279,9 @@ func BuildSystemPrompt(cwd, scratch, base string, instructionFiles []string, ski
 	if len(global) > 0 {
 		p.section(fmt.Sprintf("skills (%d global)", len(global)), func(b *strings.Builder) {
 			b.WriteString("\n" + skillsIntro)
+			if slices.ContainsFunc(global, func(s Skill) bool { return s.Builtin }) {
+				b.WriteString(builtinNote)
+			}
 			writeSkills(b, global)
 		})
 	}

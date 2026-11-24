@@ -2,12 +2,15 @@ package agent
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/paul-nameless/qi/internal/config"
+	"github.com/paul-nameless/qi/internal/llm"
 	"github.com/paul-nameless/qi/internal/tools"
 )
 
@@ -43,8 +46,16 @@ func TestBuiltinSkillInStaticPrompt(t *testing.T) {
 			t.Errorf("%s not served from memory", path)
 		}
 	}
-	if entries, _ := os.ReadDir(filepath.Join(os.Getenv("HOME"), ".cache")); len(entries) != 0 {
-		t.Errorf("nothing should be written to the cache dir: %v", entries)
+	if cache, err := os.UserCacheDir(); err == nil {
+		if entries, _ := os.ReadDir(cache); len(entries) != 0 {
+			t.Errorf("nothing should be written to the cache dir: %v", entries)
+		}
+	}
+	env := &tools.Env{Cwd: t.TempDir()}
+	run := tools.Run(tools.Read(), tools.Write())
+	res := run.Execute(context.Background(), env, []llm.Block{{ID: "r", Name: "run", Input: json.RawMessage(`{"code":"const s = await read('qi:skills/qi-config/SKILL.md'); const j = JSON.parse(await read('qi:skills/qi-config/schema.json')); let w = ''; try { await write('qi:skills/qi-config/SKILL.md', 'x') } catch (e) { w = e.message } return [s.includes('qi-config'), typeof j.properties, w].join('|')"}`)}}, nopDisplay{})
+	if len(res) != 1 || !strings.Contains(res[0].Text, "true|object|") || !strings.Contains(res[0].Text, "read-only") {
+		t.Errorf("reading the real built-in paths: %+v", res)
 	}
 	meta, body := ParseFrontmatter(string(configSkill))
 	if meta.Name != "qi-config" || !strings.Contains(body, "schema.json") || !strings.Contains(body, "builtin_skills") {

@@ -73,7 +73,7 @@ func Read() *Function {
 			if a.FilePath == "" {
 				return errResult("file_path is required")
 			}
-			if res, ok := readEmbedded(a.FilePath, a.Offset, a.Limit); ok {
+			if res, ok := readEmbedded(a.FilePath, a.Offset, a.Limit, a.Crop); ok {
 				return res
 			}
 			path := env.resolve(a.FilePath)
@@ -259,6 +259,9 @@ func Write() *Function {
 			if err != nil {
 				return errResult("%v", err)
 			}
+			if res, ok := builtinWrite(a.FilePath); ok {
+				return res
+			}
 			if err := env.checkWritable(a.FilePath); err != nil {
 				return deniedResult("%v", err)
 			}
@@ -320,6 +323,9 @@ func Edit() *Function {
 			a, err := decode[editArgs](in)
 			if err != nil {
 				return errResult("%v", err)
+			}
+			if res, ok := builtinWrite(a.FilePath); ok {
+				return res
 			}
 			if err := env.checkWritable(a.FilePath); err != nil {
 				return deniedResult("%v", err)
