@@ -405,8 +405,8 @@ func (s *Session) Drop() error {
 	return s.write(Entry{Type: "drop"})
 }
 
-func (s *Session) Compaction(summary string, kept []llm.Message, model string) error {
-	return s.write(Entry{Type: "compaction", Summary: summary, Kept: kept, Model: model})
+func (s *Session) Compaction(summary string, kept []llm.Message, model string, u *llm.Usage) error {
+	return s.write(Entry{Type: "compaction", Summary: summary, Kept: kept, Model: model, Usage: u})
 }
 
 func (s *Session) Close() {

@@ -409,8 +409,8 @@ func TestSystemPromptStaticPartIsDirectoryFree(t *testing.T) {
 func TestFmtTokens(t *testing.T) {
 	cases := map[int]string{42: "42", 5234: "5.2k", 200000: "200k", 1000000: "1M", 1050000: "1.05M"}
 	for n, want := range cases {
-		if got := fmtTokens(n); got != want {
-			t.Errorf("fmtTokens(%d) = %q, want %q", n, got, want)
+		if got := FmtTokens(n); got != want {
+			t.Errorf("FmtTokens(%d) = %q, want %q", n, got, want)
 		}
 	}
 }

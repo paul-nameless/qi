@@ -256,7 +256,7 @@ func (a *Agent) compact(ctx context.Context, opts compactOpts) error {
 	if threshold == 0 {
 		threshold = a.Config().CompactTokens()
 	}
-	a.ui.ToolStart("compact", fmt.Sprintf("compacting %s tokens", fmtTokens(before)))
+	a.ui.ToolStart("compact", fmt.Sprintf("compacting %s tokens", FmtTokens(before)))
 	var tail []llm.Message
 	if !opts.midTurn && !endsWithToolResults(a.conv.messages) {
 		tail = keepTail(a.conv.messages, min(keepTokens, threshold/4))
@@ -274,13 +274,13 @@ func (a *Agent) compact(ctx context.Context, opts compactOpts) error {
 	a.conv.messages = append([]llm.Message{llm.UserText(text)}, tail...)
 	a.restoreModeAfter(hadNote)
 	if l := a.snapshot(); l.session != nil {
-		if err := l.session.Compaction(text, tail, l.cfg.Model); err != nil {
+		if err := l.session.Compaction(text, tail, l.cfg.Model, &usage); err != nil {
 			a.ui.Error("session: " + err.Error())
 		}
 	}
 	after := a.estimateTokens()
 	a.SetContextTokens(after)
-	a.ui.ToolDone("compact", true, fmt.Sprintf("compacted %s → %s tokens%s", fmtTokens(before), fmtTokens(after), cachedPct(usage)))
+	a.ui.ToolDone("compact", true, fmt.Sprintf("compacted %s → %s tokens%s", FmtTokens(before), FmtTokens(after), cachedPct(usage)))
 	a.conv.paused, a.conv.thrashAt = false, 0
 	if opts.auto || opts.overflow {
 		a.conv.thrashAt = threshold * (thrashShare - 1) / thrashShare
@@ -292,7 +292,7 @@ func (a *Agent) compact(ctx context.Context, opts compactOpts) error {
 func (a *Agent) pauseIfOver(tokens int) {
 	if a.conv.thrashAt > 0 && tokens > a.conv.thrashAt {
 		a.conv.paused, a.conv.thrashAt = true, 0
-		a.ui.Info(fmt.Sprintf("context is still %s tokens right after compaction, too close to the threshold; automatic compaction is paused until /compact or /clear, raise compact_at", fmtTokens(tokens)))
+		a.ui.Info(fmt.Sprintf("context is still %s tokens right after compaction, too close to the threshold; automatic compaction is paused until /compact or /clear, raise compact_at", FmtTokens(tokens)))
 	}
 }
 

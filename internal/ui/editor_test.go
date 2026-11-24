@@ -408,7 +408,9 @@ func TestCollectCopiesTheSessionID(t *testing.T) {
 	e.T.Keys <- Key{Kind: KeyCopyID}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan string)
-	go func() { done <- e.Collect(ctx, "", Steer{OnQueue: func(string) {}, OnCancel: func() {}, OnToggle: func() {}}) }()
+	go func() {
+		done <- e.Collect(ctx, "", Steer{OnQueue: func(string) {}, OnCancel: func() {}, OnToggle: func() {}})
+	}()
 	select {
 	case <-copied:
 	case <-time.After(2 * time.Second):

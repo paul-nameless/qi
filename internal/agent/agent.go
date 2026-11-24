@@ -474,9 +474,9 @@ func (a *Agent) ContextUsage() string {
 
 func usageOf(n, window int, known bool) string {
 	if !known || window <= 0 {
-		return fmtTokens(n)
+		return FmtTokens(n)
 	}
-	return fmt.Sprintf("%s/%s (%s)", fmtTokens(n), fmtTokens(window), pct(n, window))
+	return fmt.Sprintf("%s/%s (%s)", FmtTokens(n), FmtTokens(window), pct(n, window))
 }
 
 func (a *Agent) ContextShort() string {
@@ -484,7 +484,7 @@ func (a *Agent) ContextShort() string {
 	return usageOf(a.ContextTokens(), window, known)
 }
 
-func fmtTokens(n int) string {
+func FmtTokens(n int) string {
 	switch {
 	case n >= 1000000:
 		return strconv.FormatFloat(math.Round(float64(n)/1e4)/100, 'f', -1, 64) + "M"

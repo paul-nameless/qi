@@ -46,7 +46,7 @@ func TestQuitStopsMCPServersThatIgnoreEOF(t *testing.T) {
 	if d := time.Since(start); d > 3*time.Second {
 		t.Errorf("quit took %v", d)
 	}
-	if err := s.Compaction("x", nil, "m"); err == nil {
+	if err := s.Compaction("x", nil, "m", nil); err == nil {
 		t.Error("session still open after quit")
 	}
 }

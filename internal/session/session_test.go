@@ -64,7 +64,7 @@ func TestRoundTrip(t *testing.T) {
 	reasoning := llm.Block{Type: llm.BlockReasoning, Raw: json.RawMessage(`{"type":"reasoning.encrypted","data":"x"}`), Model: "m"}
 	_ = s.Message(llm.UserText("first"), "m", nil)
 	_ = s.Message(llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{reasoning, {Type: llm.BlockText, Text: "a"}}}, "m", &llm.Usage{Input: 100, Output: 20})
-	_ = s.Compaction("summary text", nil, "m")
+	_ = s.Compaction("summary text", nil, "m", nil)
 	_ = s.Message(llm.UserText("after"), "m", nil)
 	_ = s.Message(llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: "b"}}}, "m", &llm.Usage{Input: 50, Output: 5})
 	s.Close()
@@ -192,7 +192,7 @@ func TestTeeMatchesFile(t *testing.T) {
 	}
 	s.Message(llm.UserText("hi"), "m", nil)
 	s.Drop()
-	s.Compaction("sum", nil, "m")
+	s.Compaction("sum", nil, "m", nil)
 	s.Close()
 	data, err := os.ReadFile(s.Path)
 	if err != nil || !bytes.Equal(data, out.Bytes()) || bytes.Count(data, []byte("\n")) != 4 {

@@ -25,9 +25,9 @@ func (a *Agent) ContextReport() string {
 	}
 	window, known := l.cfg.Window()
 	var b strings.Builder
-	head := "context " + usageOf(total, window, known) + " · compacts at " + fmtTokens(l.cfg.CompactTokens())
+	head := "context " + usageOf(total, window, known) + " · compacts at " + FmtTokens(l.cfg.CompactTokens())
 	if n := l.ctxTokens; n > 0 {
-		head += " · last request " + fmtTokens(n)
+		head += " · last request " + FmtTokens(n)
 	}
 	b.WriteString(head + "\n")
 	if known && window > total {
@@ -38,9 +38,9 @@ func (a *Agent) ContextReport() string {
 		base = window
 	}
 	for _, r := range rows {
-		fmt.Fprintf(&b, "  %-30s %7s  %6s\n", fitName(r.name, 30), fmtTokens(r.tokens), pct(r.tokens, base))
+		fmt.Fprintf(&b, "  %-30s %7s  %6s\n", fitName(r.name, 30), FmtTokens(r.tokens), pct(r.tokens, base))
 		for _, s := range r.sub {
-			fmt.Fprintf(&b, "    %-28s %7s\n", fitName(s.name, 28), fmtTokens(s.tokens))
+			fmt.Fprintf(&b, "    %-28s %7s\n", fitName(s.name, 28), FmtTokens(s.tokens))
 		}
 	}
 	b.WriteString("estimated at 4 characters per token; images from their size")
