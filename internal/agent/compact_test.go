@@ -445,7 +445,7 @@ func TestThrashPauseFromMeasuredUsage(t *testing.T) {
 	}
 	a.Reconfigure(a.live.cfg, p)
 	if a.conv.paused {
-		t.Error("/model and /profile should lift the pause")
+		t.Error("/profile should lift the pause")
 	}
 }
 

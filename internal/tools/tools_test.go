@@ -341,4 +341,18 @@ func TestSpillGoesToTheSessionScratch(t *testing.T) {
 	if err != nil || !strings.HasPrefix(path, filepath.Join(scratch, "out")+string(filepath.Separator)) {
 		t.Errorf("spill went to %q: %v", path, err)
 	}
+	if _, err := (&Env{}).spill("x"); err == nil {
+		t.Error("spill without a scratch dir should fail, not fall back to a shared dir")
+	}
+	other := t.TempDir()
+	link := t.TempDir()
+	os.Symlink(other, filepath.Join(link, "out"))
+	if _, err := (&Env{Scratch: func() string { return link }}).spill("x"); err == nil {
+		t.Error("spill followed an out symlink")
+	}
+	open := t.TempDir()
+	os.Mkdir(filepath.Join(open, "out"), 0o755)
+	if _, err := (&Env{Scratch: func() string { return open }}).spill("x"); err == nil {
+		t.Error("spill used an out dir others can read")
+	}
 }

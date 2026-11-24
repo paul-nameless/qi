@@ -145,9 +145,6 @@ func (jb *job) isGone() bool {
 }
 
 func (j *Jobs) start(ctx context.Context, cmd *exec.Cmd, cancel context.CancelFunc, timeout time.Duration, command, dir string, daemon bool) (*job, error) {
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return nil, err
-	}
 	j.mu.Lock()
 	j.seq++
 	id := j.seq
@@ -385,7 +382,12 @@ func startJob(env *Env, a bashArgs) Result {
 		ctx, cancel = context.WithCancel(context.Background())
 	}
 	cmd := bashCmd(ctx, env, a.Command)
-	jb, err := env.Jobs.start(ctx, cmd, cancel, timeout, a.Command, env.outDir(), a.Daemon)
+	dir, err := env.outDir()
+	if err != nil {
+		cancel()
+		return errResult("start background job: %v", err)
+	}
+	jb, err := env.Jobs.start(ctx, cmd, cancel, timeout, a.Command, dir, a.Daemon)
 	if err != nil {
 		cancel()
 		return errResult("start background job: %v", err)

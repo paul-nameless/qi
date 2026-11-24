@@ -62,7 +62,7 @@ func TestReadOnlyWiring(t *testing.T) {
 	}
 }
 
-func TestModelSwitchKeepsSubagentsOnProfileProvider(t *testing.T) {
+func TestProfileSwitchDropsCLIProvider(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("QI_CONFIG_DIR", dir)
 	path := dir + "/config.json"
@@ -98,8 +98,8 @@ func TestModelSwitchKeepsSubagentsOnProfileProvider(t *testing.T) {
 	if saved, err := config.Resolve(config.Options{Path: path}); err != nil || saved.Profile != "p" {
 		t.Errorf("/profile p not saved as default: %q, %v", saved.Profile, err)
 	}
-	if a.Config().Provider != "or" {
-		t.Errorf("CLI -provider came back after /profile: %q", a.Config().Provider)
+	if a.Config().Provider != "or" || runner.Provider != "or" {
+		t.Errorf("CLI -provider came back after /profile: agent %q, subagent default %q", a.Config().Provider, runner.Provider)
 	}
 }
 

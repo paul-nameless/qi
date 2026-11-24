@@ -5,12 +5,15 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/paul-nameless/qi/internal/config"
@@ -306,19 +309,36 @@ func (e *Env) capText(out string, maxLines, maxBytes int) string {
 	return head + fmt.Sprintf("\n… %d lines omitted. Full output: %s\n", len(lines)-headLines-tailLines, path) + tail
 }
 
-func (e *Env) outDir() string {
+func (e *Env) outDir() (string, error) {
 	if e.SpillDir != "" {
-		return e.SpillDir
+		return e.SpillDir, os.MkdirAll(e.SpillDir, 0o700)
 	}
-	if s := e.scratch(); s != "" {
-		return filepath.Join(s, "out")
+	s := e.scratch()
+	if s == "" {
+		return "", fmt.Errorf("no private scratch dir under %s", os.TempDir())
 	}
-	return filepath.Join(os.TempDir(), fmt.Sprintf("qi-%d", os.Getuid()), "out")
+	dir := filepath.Join(s, "out")
+	if err := os.Mkdir(dir, 0o700); err != nil && !errors.Is(err, fs.ErrExist) {
+		return "", err
+	}
+	if !PrivateDir(dir) {
+		return "", fmt.Errorf("%s is not a private directory owned by you", dir)
+	}
+	return dir, nil
+}
+
+func PrivateDir(path string) bool {
+	st, err := os.Lstat(path)
+	if err != nil || !st.IsDir() || st.Mode().Perm() != 0o700 {
+		return false
+	}
+	sys, ok := st.Sys().(*syscall.Stat_t)
+	return ok && int(sys.Uid) == os.Getuid()
 }
 
 func (e *Env) spill(out string) (string, error) {
-	dir := e.outDir()
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	dir, err := e.outDir()
+	if err != nil {
 		return "", err
 	}
 	b := make([]byte, 3)

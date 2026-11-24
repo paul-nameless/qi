@@ -6,7 +6,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"syscall"
+
+	"github.com/paul-nameless/qi/internal/tools"
 )
 
 func ScratchDir(sessionID string) string {
@@ -21,20 +22,11 @@ func ensureScratch(dir string) string {
 		if err := os.Mkdir(d, 0o700); err != nil && !errors.Is(err, fs.ErrExist) {
 			return ""
 		}
-		if !ownPrivateDir(d) {
+		if !tools.PrivateDir(d) {
 			return ""
 		}
 	}
 	return dir
-}
-
-func ownPrivateDir(path string) bool {
-	st, err := os.Lstat(path)
-	if err != nil || !st.IsDir() || st.Mode().Perm() != 0o700 {
-		return false
-	}
-	sys, ok := st.Sys().(*syscall.Stat_t)
-	return ok && int(sys.Uid) == os.Getuid()
 }
 
 func RemoveScratchIfEmpty(sessionID string) {
