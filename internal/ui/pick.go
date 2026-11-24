@@ -222,7 +222,7 @@ func (st *pickState) row(p *Printer, m match, current bool) string {
 	if it.Desc == "" {
 		return mark + name
 	}
-	return mark + name + "  " + p.Color(Dim, strings.Join(strings.Fields(strings.Map(printable, it.Desc)), " "))
+	return mark + name + "  " + p.Color(Dim, strings.Map(printable, it.Desc))
 }
 
 func printable(r rune) rune {

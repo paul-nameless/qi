@@ -150,7 +150,7 @@ func resumePath(o options, cfg config.Config, cwd string, headless bool) (string
 		}
 		var ed *ui.Editor
 		if isBuiltin(cfg.SessionPicker, cfg.Picker) {
-			e, done, err := ttyEditor()
+			e, done, err := ttyEditor(os.Stdin, os.Stdout)
 			if err != nil {
 				return "", false, err
 			}

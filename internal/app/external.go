@@ -59,7 +59,7 @@ func firstCommand(command string) string {
 }
 
 func expandTool(command, picker string, vars map[string]string) (string, []string) {
-	if picker == config.DefaultPicker {
+	if firstCommand(picker) == config.DefaultPicker {
 		picker = `"$QI_BIN" pick -p {prompt}`
 	}
 	command = strings.ReplaceAll(command, "{picker}", picker)

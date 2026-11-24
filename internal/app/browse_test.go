@@ -1,6 +1,7 @@
 package app
 
 import (
+	"flag"
 	"os"
 	"path/filepath"
 	"strings"
@@ -91,5 +92,15 @@ func TestPickLine(t *testing.T) {
 	}
 	if _, ok := pickLine(keyEditor(t, append(runes("sec"), ui.Key{Kind: ui.KeyEsc})...), lines, "> ", false, false); ok {
 		t.Error("names only: sec matches nothing, esc cancels")
+	}
+}
+
+func TestPickIgnoresUnknownFlags(t *testing.T) {
+	fs := flag.NewFlagSet("t", flag.ContinueOnError)
+	fs.String("p", "", "")
+	fs.Bool("d", false, "")
+	got := strings.Join(knownFlags(fs, []string{"--multi", "-p", "@ ", "--preview", "cat {1}", "-d", "--bind=x"}), "|")
+	if got != "-p|@ |-d" {
+		t.Errorf("got %q", got)
 	}
 }

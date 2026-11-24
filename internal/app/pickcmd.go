@@ -15,6 +15,7 @@ import (
 )
 
 func pickMain(args []string, in io.Reader, out io.Writer) int {
+	defer ui.CleanupOnPanic()
 	fs := flag.NewFlagSet("qi pick", flag.ContinueOnError)
 	fs.Usage = func() {
 		fmt.Fprintln(fs.Output(), "usage: qi pick [-p prompt] [-d] [-f] < lines\n\nPicks one line from stdin and prints it. A tab splits a line into a name and a\ndescription. Exit 1 when cancelled.")
@@ -23,7 +24,7 @@ func pickMain(args []string, in io.Reader, out io.Writer) int {
 	prompt := fs.String("p", "> ", "prompt")
 	desc := fs.Bool("d", false, "search descriptions too")
 	files := fs.Bool("f", false, "browse files from the current directory instead of reading stdin")
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(knownFlags(fs, args)); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
@@ -37,7 +38,12 @@ func pickMain(args []string, in io.Reader, out io.Writer) int {
 		}
 		lines = readLines(in)
 	}
-	ed, done, err := ttyEditor()
+	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "qi pick:", err)
+		return 2
+	}
+	ed, done, err := ttyEditor(tty, tty)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "qi pick:", err)
 		return 2
@@ -51,17 +57,31 @@ func pickMain(args []string, in io.Reader, out io.Writer) int {
 	return 0
 }
 
-func ttyEditor() (*ui.Editor, func(), error) {
-	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+func knownFlags(fs *flag.FlagSet, args []string) []string {
+	var out []string
+	for i := 0; i < len(args); i++ {
+		name, _, hasValue := strings.Cut(strings.TrimLeft(args[i], "-"), "=")
+		f := fs.Lookup(name)
+		switch {
+		case name == "h" || name == "help":
+			out = append(out, args[i])
+		case !strings.HasPrefix(args[i], "-") || f == nil:
+		case f.Name == "p" && !hasValue && i+1 < len(args):
+			out = append(out, args[i], args[i+1])
+			i++
+		default:
+			out = append(out, args[i])
+		}
+	}
+	return out
+}
+
+func ttyEditor(in, out *os.File) (*ui.Editor, func(), error) {
+	t, err := ui.OpenTerminalOn(in, out)
 	if err != nil {
 		return nil, nil, err
 	}
-	t, err := ui.OpenTerminalOn(tty, tty)
-	if err != nil {
-		tty.Close()
-		return nil, nil, err
-	}
-	ed := ui.NewEditor(t, ui.NewPrinter(tty), "")
+	ed := ui.NewEditor(t, ui.NewPrinter(out), "")
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT)
 	signal.Ignore(syscall.SIGTSTP)

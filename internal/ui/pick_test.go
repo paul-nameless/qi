@@ -150,7 +150,7 @@ func TestPickFrame(t *testing.T) {
 	st.show(&PickList{Prompt: "/", Items: []PickItem{{Name: "x\x1b]52;c;aGk=\ay", Desc: "first line\n\tsecond"}}})
 	st.query = nil
 	st.filter()
-	if row := st.frame(p, 60, 20).Rows[2]; row != "▌ x ]52;c;aGk= y  first line second" {
+	if row := st.frame(p, 60, 20).Rows[2]; row != "▌ x ]52;c;aGk= y  first line  second" {
 		t.Errorf("control characters must not reach the terminal: %q", row)
 	}
 	st.show(&PickList{Prompt: "/", Items: items("a", "b", "c", "d", "e", "f", "g", "h", "i", "j")})
