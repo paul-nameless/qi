@@ -62,7 +62,7 @@ func prepareImage(data []byte, mediaType, source string, crop []int) (preparedIm
 		return preparedImage{}, fmt.Errorf("decode image: %w", err)
 	}
 	dw, dh := fitEdge(region.Dx(), region.Dy(), maxImageEdge)
-	small := imgutil.Resize(imgutil.ToRGBA(img, region), dw, dh)
+	small := imgutil.Resize(img, region, dw, dh)
 	out, outType, err := encodeImage(small, format == "jpeg", len(crop) == 0)
 	if err != nil {
 		return preparedImage{}, err

@@ -94,7 +94,7 @@ func kittyImage(src string, box imageBox) (string, error) {
 		return "", err
 	}
 	w, h, cols, rows := fitImage(img.Bounds().Dx(), img.Bounds().Dy(), box)
-	small := imgutil.Resize(imgutil.ToRGBA(img, image.Rect(0, 0, img.Bounds().Dx(), img.Bounds().Dy())), w, h)
+	small := imgutil.Resize(img, image.Rect(0, 0, img.Bounds().Dx(), img.Bounds().Dy()), w, h)
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, small); err != nil {
 		return "", fmt.Errorf("encode png: %w", err)

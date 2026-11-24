@@ -33,41 +33,53 @@ func areaSpans(src, dst int) []areaSpan {
 	return out
 }
 
-func Resize(src *image.RGBA, w, h int) *image.RGBA {
-	sw, sh := src.Rect.Dx(), src.Rect.Dy()
+func Resize(img image.Image, region image.Rectangle, w, h int) *image.RGBA {
+	b := region.Add(img.Bounds().Min)
+	sw, sh := b.Dx(), b.Dy()
 	if sw == w && sh == h {
-		return src
+		return ToRGBA(img, region)
 	}
-	tmp := make([]float32, w*sh*4)
-	hs := areaSpans(sw, w)
-	for y := 0; y < sh; y++ {
-		row := src.Pix[y*src.Stride:]
+	hs, vs := areaSpans(sw, w), areaSpans(sh, h)
+	row := image.NewRGBA(image.Rect(0, 0, sw, 1))
+	hrow := make([]float32, w*4)
+	acc := map[int][]float32{}
+	dst := image.NewRGBA(image.Rect(0, 0, w, h))
+	y0 := 0
+	for sy := 0; sy < sh; sy++ {
+		draw.Draw(row, row.Rect, img, image.Pt(b.Min.X, b.Min.Y+sy), draw.Src)
+		clear(hrow)
 		for x, sp := range hs {
-			o := tmp[(y*w+x)*4:]
+			o := hrow[x*4:]
 			for k, wt := range sp.weights {
-				p := row[(sp.start+k)*4:]
+				p := row.Pix[(sp.start+k)*4:]
 				o[0] += wt * float32(p[0])
 				o[1] += wt * float32(p[1])
 				o[2] += wt * float32(p[2])
 				o[3] += wt * float32(p[3])
 			}
 		}
-	}
-	dst := image.NewRGBA(image.Rect(0, 0, w, h))
-	for y, sp := range areaSpans(sh, h) {
-		for x := 0; x < w; x++ {
-			var c [4]float32
-			for k, wt := range sp.weights {
-				p := tmp[((sp.start+k)*w+x)*4:]
-				c[0] += wt * p[0]
-				c[1] += wt * p[1]
-				c[2] += wt * p[2]
-				c[3] += wt * p[3]
+		for y := y0; y < h && vs[y].start <= sy; y++ {
+			k := sy - vs[y].start
+			if k >= len(vs[y].weights) {
+				continue
 			}
-			o := dst.Pix[y*dst.Stride+x*4:]
-			for i := range c {
-				o[i] = uint8(min(max(c[i]+0.5, 0), 255))
+			a, ok := acc[y]
+			if !ok {
+				a = make([]float32, w*4)
+				acc[y] = a
 			}
+			wt := vs[y].weights[k]
+			for i, v := range hrow {
+				a[i] += wt * v
+			}
+		}
+		for y0 < h && vs[y0].start+len(vs[y0].weights) <= sy+1 {
+			o := dst.Pix[y0*dst.Stride:]
+			for i, v := range acc[y0] {
+				o[i] = uint8(min(max(v+0.5, 0), 255))
+			}
+			delete(acc, y0)
+			y0++
 		}
 	}
 	return dst
