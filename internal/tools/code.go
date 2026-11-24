@@ -92,7 +92,7 @@ func applyDefaults(fields map[string]json.RawMessage, spec *CodeSpec) {
 var jsArgNames = map[string]string{"file_path": "path", "old_string": "old", "new_string": "new", "arguments": "args"}
 
 func checkRequired(t *Tool, fields map[string]json.RawMessage) error {
-	for _, name := range t.Code.Params[:t.Code.Required] {
+	for _, name := range t.Code.Params[:min(t.Code.Required, len(t.Code.Params))] {
 		v, ok := fields[name]
 		switch {
 		case !ok:

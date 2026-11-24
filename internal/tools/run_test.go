@@ -198,7 +198,7 @@ func TestCellSerializesCallsOnOnePath(t *testing.T) {
 			active[p]++
 			overlap = overlap || active[p] > 1
 			mu.Unlock()
-			time.Sleep(40 * time.Millisecond)
+			time.Sleep(100 * time.Millisecond)
 			mu.Lock()
 			active[p]--
 			mu.Unlock()
@@ -213,7 +213,7 @@ func TestCellSerializesCallsOnOnePath(t *testing.T) {
 	if overlap {
 		t.Error("calls on the same path overlapped")
 	}
-	if d := time.Since(start); d > 115*time.Millisecond {
+	if d := time.Since(start); d > 280*time.Millisecond {
 		t.Errorf("calls on different paths did not run in parallel: %v", d)
 	}
 }
