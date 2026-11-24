@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -93,10 +94,14 @@ func fileSpend(path string) (spend, error) {
 
 func subagentSpend(dir, parent string) (spend, int, error) {
 	var total spend
-	files, _ := filepath.Glob(filepath.Join(dir, "subagents", "*.jsonl"))
+	des, err := os.ReadDir(filepath.Join(dir, "subagents"))
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return total, 0, err
+	}
 	n := 0
-	for _, f := range files {
-		if metaParent(f) != parent {
+	for _, de := range des {
+		f := filepath.Join(dir, "subagents", de.Name())
+		if !strings.HasSuffix(de.Name(), ".jsonl") || metaParent(f) != parent {
 			continue
 		}
 		s, err := fileSpend(f)

@@ -263,6 +263,7 @@ func (a *Agent) compact(ctx context.Context, opts compactOpts) error {
 	}
 	summary, usage, err := a.summarize(ctx, opts, len(tail) > 0)
 	if err != nil {
+		a.recordUsage(usage)
 		a.ui.ToolDone("compact", false, "compaction failed")
 		return err
 	}

@@ -479,3 +479,42 @@ func TestClipHistory(t *testing.T) {
 		t.Error("clipHistory modified the history")
 	}
 }
+
+type billedErrorProvider struct{}
+
+func (billedErrorProvider) Stream(context.Context, llm.Request, func(llm.Delta)) (llm.Message, llm.Usage, error) {
+	cost := 0.002
+	return llm.Message{}, llm.Usage{Input: 900, Output: 7, Cost: &cost}, errors.New("the model returned an empty response")
+}
+
+func TestBilledFailuresRecordTheirUsage(t *testing.T) {
+	t.Setenv("QI_SESSION_DIR", t.TempDir())
+	a := newAgent(t, &fakeProvider{})
+	a.live.provider = billedErrorProvider{}
+	s, err := session.Create(session.CreateOptions{Cwd: a.cwd, Model: "m", Kind: session.Interactive})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.live.session = s
+	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "hi"}}); err == nil {
+		t.Fatal("the empty reply should fail the turn")
+	}
+	a.conv.messages = history()
+	if err := a.Compact(context.Background(), ""); err == nil {
+		t.Fatal("the failed summary should fail compaction")
+	}
+	s.Close()
+	entries, _ := session.Entries(s.Path)
+	n := 0
+	for _, e := range entries {
+		if e.Type == "usage" && e.Usage != nil && e.Usage.Input == 900 && *e.Usage.Cost == 0.002 {
+			n++
+		}
+	}
+	if n != 2 {
+		t.Errorf("want 2 usage entries (rejected reply, failed summary), got %d", n)
+	}
+	if _, ld, err := session.Open(s.Path); err != nil || ld.CtxTokens != 0 {
+		t.Errorf("usage entries must not change the restored context: %d %v", ld.CtxTokens, err)
+	}
+}

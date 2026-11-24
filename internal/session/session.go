@@ -401,6 +401,10 @@ func (s *Session) Message(m llm.Message, model string, u *llm.Usage) error {
 	return s.write(Entry{Type: "message", Message: &m, Model: model, Usage: u})
 }
 
+func (s *Session) Usage(model string, u *llm.Usage) error {
+	return s.write(Entry{Type: "usage", Model: model, Usage: u})
+}
+
 func (s *Session) Drop() error {
 	return s.write(Entry{Type: "drop"})
 }

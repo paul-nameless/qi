@@ -536,6 +536,7 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 			a.ui.Error("compaction failed: " + cerr.Error())
 		}
 		if err != nil {
+			a.recordUsage(usage)
 			if ctx.Err() != nil {
 				a.appendMsg(llm.Message{Role: llm.RoleUser, Blocks: []llm.Block{{Type: llm.BlockText, Text: llm.Interrupted}}}, nil)
 				return "", stats, context.Canceled
@@ -590,6 +591,16 @@ func (a *Agent) addTurnNotes(blocks []llm.Block) ([]llm.Block, func()) {
 		blocks = append(blocks, mb)
 	}
 	return blocks, func() { a.conv.carry, a.conv.announced = carry, announced }
+}
+
+func (a *Agent) recordUsage(u llm.Usage) {
+	l := a.snapshot()
+	if l.session == nil || (u.Input == 0 && u.Output == 0 && u.Cost == nil) {
+		return
+	}
+	if err := l.session.Usage(l.cfg.Model, &u); err != nil {
+		a.ui.Error("session: " + err.Error())
+	}
 }
 
 func (a *Agent) recordReply(msg llm.Message, usage llm.Usage) {
