@@ -87,6 +87,11 @@ func projectBwrapArgs(command string, spec projectSpec) []string {
 	}
 	args := bwrapArgs(command, writable, execDenied(), false)
 	prefix := append([]string{}, args[:len(args)-4]...)
+	for _, p := range spec.pinned {
+		if fi, err := os.Stat(p); err == nil && fi.IsDir() {
+			prefix = append(prefix, "--bind", p, p)
+		}
+	}
 	for _, g := range append(spec.guarded, spec.pinned...) {
 		if fi, err := os.Stat(g); err == nil && (!fi.IsDir() || !slices.Contains(spec.pinned, g)) {
 			prefix = append(prefix, "--ro-bind", g, g)
