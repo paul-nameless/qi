@@ -105,7 +105,7 @@ func (w *progressWriter) truncated() bool {
 
 func bashTimeout(requested, configured int) int {
 	switch {
-	case requested >= 1000:
+	case requested >= 10000:
 		requested = (requested + 999) / 1000
 	case requested <= 0:
 		requested = configured

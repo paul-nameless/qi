@@ -155,7 +155,7 @@ func TestHooksWiring(t *testing.T) {
 }
 
 func TestBashTimeoutUnits(t *testing.T) {
-	cases := map[[2]int]int{{120000, 0}: 120, {30, 0}: 30, {0, 0}: 120, {0, 45}: 45, {900000, 0}: 600, {1500, 0}: 2, {600, 0}: 600, {601, 0}: 600, {900, 0}: 600}
+	cases := map[[2]int]int{{120000, 0}: 120, {30, 0}: 30, {0, 0}: 120, {0, 45}: 45, {900000, 0}: 600, {1500, 0}: 600, {3600, 0}: 600, {10000, 0}: 10, {600, 0}: 600, {601, 0}: 600, {900, 0}: 600}
 	for in, want := range cases {
 		if got := bashTimeout(in[0], in[1]); got != want {
 			t.Errorf("bashTimeout(%d, %d) = %d, want %d", in[0], in[1], got, want)
