@@ -727,11 +727,16 @@ func (a *Agent) stream(ctx context.Context) (llm.Message, llm.Usage, error) {
 func (a *Agent) withRetries(ctx context.Context, call func() (llm.Message, llm.Usage, error, bool)) (llm.Message, llm.Usage, error) {
 	for attempt := 0; ; attempt++ {
 		msg, usage, err, shown := call()
-		if err == nil || shown || attempt == streamAttempts-1 || ctx.Err() != nil || !llm.Retryable(err) || contextTooLong(err) {
+		if err == nil || attempt == streamAttempts-1 || ctx.Err() != nil || !llm.Retryable(err) || contextTooLong(err) {
 			return msg, usage, err
 		}
 		a.recordUsage(usage)
-		a.ui.Info("retrying: " + tools.OneLine(err.Error(), 100))
+		note := ""
+		if shown {
+			a.ui.EndBlock()
+			note = " (the text above is discarded)"
+		}
+		a.ui.Info("↻ retrying: " + tools.OneLine(err.Error(), 100) + note)
 		if err := llm.Sleep(ctx, streamBackoff(attempt)); err != nil {
 			return msg, usage, err
 		}

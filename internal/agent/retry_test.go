@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -62,8 +63,8 @@ func TestStreamRetryAttempts(t *testing.T) {
 			var se *llm.StreamError
 			return errors.As(err, &se) && se.Type == "overloaded_error"
 		}},
-		{"cut after text was shown", false, false, func(int) string { return sseStart + sseText }, 1, 0, func(err error) bool { return errors.Is(err, llm.ErrIncomplete) }},
-		{"cut after shown thinking", false, false, func(int) string { return sseStart + sseThinking }, 1, 0, func(err error) bool { return errors.Is(err, llm.ErrIncomplete) }},
+		{"cut after text was shown", false, false, func(int) string { return sseStart + sseText }, 4, 3, func(err error) bool { return errors.Is(err, llm.ErrIncomplete) }},
+		{"cut after shown thinking", false, false, func(int) string { return sseStart + sseThinking }, 4, 3, func(err error) bool { return errors.Is(err, llm.ErrIncomplete) }},
 		{"cut after hidden thinking", true, false, func(int) string { return sseStart + sseThinking }, 4, 3, func(err error) bool { return errors.Is(err, llm.ErrIncomplete) }},
 		{"cut after text in headless mode", false, true, func(int) string { return sseStart + sseText }, 4, 3, func(err error) bool { return errors.Is(err, llm.ErrIncomplete) }},
 		{"cut after thinking in headless mode", false, true, func(int) string { return sseStart + sseThinking }, 4, 3, func(err error) bool { return errors.Is(err, llm.ErrIncomplete) }},
@@ -115,5 +116,33 @@ func TestStreamRetryKeepsOnlyTheSuccessfulAttempt(t *testing.T) {
 	msg, _, err := a.stream(context.Background())
 	if err != nil || n.Load() != 2 || len(msg.Blocks) != 1 || msg.Text() != "hi" {
 		t.Fatalf("err %v, %d requests, blocks %+v", err, n.Load(), msg.Blocks)
+	}
+}
+
+type infoDisplay struct {
+	nopDisplay
+	infos []string
+}
+
+func (d *infoDisplay) Info(s string) { d.infos = append(d.infos, s) }
+
+func TestRetryAfterShownTextSaysItIsDiscarded(t *testing.T) {
+	old := llm.Sleep
+	llm.Sleep = func(ctx context.Context, d time.Duration) error { return ctx.Err() }
+	defer func() { llm.Sleep = old }()
+	url, n := scriptedServer(t, func(n int) string {
+		if n == 1 {
+			return sseStart + sseText
+		}
+		return sseStart + sseText + sseStop
+	})
+	ui := &infoDisplay{}
+	a := New(Options{Config: config.Config{Model: "claude-haiku-5-5", MaxTokens: 10}, Provider: llm.NewAnthropic(url, "k"), UI: ui})
+	msg, _, err := a.stream(context.Background())
+	if err != nil || n.Load() != 2 || msg.Text() != "hi" {
+		t.Fatalf("err %v, %d requests, text %q", err, n.Load(), msg.Text())
+	}
+	if len(ui.infos) != 1 || !strings.HasPrefix(ui.infos[0], "↻ retrying: ") || !strings.HasSuffix(ui.infos[0], "(the text above is discarded)") {
+		t.Errorf("notes %q", ui.infos)
 	}
 }
