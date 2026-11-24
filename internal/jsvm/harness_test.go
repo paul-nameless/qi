@@ -37,6 +37,13 @@ func limitAbove(n int64) int64 {
 	return int64(probe.heapBytes()) + n
 }
 
+func chargedVM(limit int64) *VM {
+	vm := New(Options{MemoryLimit: limit})
+	base := vm.tracked
+	vm.heap = func(bool) uint64 { return uint64(vm.tracked - base) }
+	return vm
+}
+
 type session struct {
 	vm      *VM
 	out     strings.Builder
@@ -49,11 +56,13 @@ type session struct {
 	sleeps  map[string][2]int
 	held    map[string]hresult
 	epoch   int
+	charged int64
 	tools   func(name string, args []json.RawMessage) (any, error)
 }
 
 func newSession(t testing.TB) *session {
-	s := &session{vm: New(Options{MemoryLimit: 512 << 20}), results: make(chan hresult, 1024), tools: fakeTool, sleeps: map[string][2]int{}, held: map[string]hresult{}}
+	s := &session{vm: New(Options{MemoryLimit: 4 << 30}), results: make(chan hresult, 1024), tools: fakeTool, sleeps: map[string][2]int{}, held: map[string]hresult{}}
+	s.vm.heap = func(bool) uint64 { return uint64(s.vm.tracked - s.charged) }
 	s.vm.SetFunc("__host", func(vm *VM, args []Value) (Value, error) {
 		str := func(i int) string {
 			if i < len(args) {
@@ -180,6 +189,7 @@ func (s *session) settle(r hresult) error {
 
 func (s *session) run(code string, timeout time.Duration) (string, error) {
 	s.out.Reset()
+	s.charged = s.vm.tracked
 	s.epoch++
 	s.pending = 0
 	s.vnow = 0

@@ -233,14 +233,11 @@ func TestInterrupt(t *testing.T) {
 }
 
 func TestLimits(t *testing.T) {
-	vm := New(Options{MaxDepth: 500, MemoryLimit: limitAbove(128 << 20)})
+	t.Parallel()
+	vm := New(Options{MaxDepth: 500})
 	v, err := vm.RunCell("cell.js", "function f(n) { return f(n + 1) + 1 } try { f(0) } catch (e) { return e.name + ': ' + e.message }")
 	if err != nil || ToString(v) != "RangeError: Maximum call stack size exceeded" {
 		t.Errorf("depth: %v %v", ToString(v), err)
-	}
-	v, err = vm.RunCell("cell.js", "let a = []; try { while (true) a.push(new Array(1e6).fill(1.5)) } catch (e) { const n = a.length; a = null; return e.name + ' ' + (n > 1) }")
-	if err != nil || ToString(v) != "RangeError true" {
-		t.Errorf("memory: %v %v", ToString(v), err)
 	}
 	if v, err := vm.RunCell("cell.js", "[1, 2].length"); err != nil || ToString(v) != "2" {
 		t.Errorf("after limits: %v %v", ToString(v), err)

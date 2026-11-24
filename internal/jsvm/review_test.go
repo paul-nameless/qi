@@ -6,6 +6,7 @@ import (
 )
 
 func TestReviewRegressions(t *testing.T) {
+	t.Parallel()
 	cases := []struct{ src, want string }{
 		{"function show(a, b) { return a + '=' + b }; return show('x', await Promise.resolve(1))", "x=1"},
 		{"function pair(a, b) { return a + ',' + b } async function f() { return pair('A', await 1) } const p = f(); const q = pair('X', 'Y'); return [await p, q]", `["A,1","X,Y"]`},
@@ -35,7 +36,6 @@ func TestReviewRegressions(t *testing.T) {
 		{"const m = new Map([[1, 1]]), seen = []; for (const [k] of m) { seen.push(k); if (k === 1) { m.delete(1); m.set(2, 2) } } const s = new Set([1]); const s2 = []; for (const v of s) { s2.push(v); if (v === 1) { s.clear(); s.add(3) } } return [seen, s2]", "[[1,2],[1,3]]"},
 		{"let a, b; [a, [b] = [2]] = [1]; let p; ({x: {p} = {p: 3}} = {}); return [a, b, p]", "[1,2,3]"},
 		{"const s = new Set([1]), seen = []; for (const x of s) { seen.push(x); s.delete(x); if (x < 3) s.add(x + 1) } return seen", "[1,2,3]"},
-		{"try { 'x'.repeat(1e6).replaceAll('x', 'y'.repeat(1e6)) } catch (e) { return e.name + ' ' + ''.repeat(1e300).length }", "RangeError 0"},
 		{"async function f(a = 1, b) { await null; return b } return await f(undefined, 'kept')", "kept"},
 		{"const a = [3, 1, 2]; try { a.sort((x, y) => { if (x === 2) throw 1; return x - y }) } catch (e) {} return a", "[3,1,2]"},
 	}

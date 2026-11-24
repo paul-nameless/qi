@@ -75,11 +75,12 @@ func TestRegexGateTwice(t *testing.T) {
 }
 
 func TestGatesPerf(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("short")
 	}
 	s := newSession(t)
-	runGates(t, s, []gate{{code: "const r = await Promise.all([1,2,3,4,5,6,7,8].map(() => sleep(200))); return r.length", want: "8"}})
+	runGates(t, s, []gate{{code: "const r = await Promise.all([1,2,3,4,5,6,7,8].map(() => sleep(20))); return r.length", want: "8"}})
 	if s.maxPend != 8 {
 		t.Errorf("8 parallel host calls: at most %d were in flight at once", s.maxPend)
 	}

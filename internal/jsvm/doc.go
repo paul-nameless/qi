@@ -45,7 +45,8 @@
 // Options.MaxDepth bounds the JavaScript call depth, including recursion
 // inside builtins such as join and bound functions (RangeError, catchable).
 // Options.MemoryLimit is checked against the Go heap (objects plus goroutine
-// stacks) every 16 MB of tracked allocation; exceeding it after a forced GC
+// stacks) every 16 MB of tracked allocation (limit/32 for limits under
+// 512 MB, at least 64 KB); exceeding it after a forced GC
 // throws a catchable RangeError. Strings are capped at 2^29-24 bytes and at
 // most 100000 async activations may be pending at once (RangeError).
 // Source nesting (expressions, statements, patterns, chains such as a+b+...

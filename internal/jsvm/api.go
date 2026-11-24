@@ -31,7 +31,12 @@ func New(opts Options) *VM {
 	if vm.maxDepth <= 0 {
 		vm.maxDepth = 2000
 	}
-	vm.nextCheck = memCheckEvery
+	vm.heap = vm.processHeap
+	vm.checkEvery = memCheckEvery
+	if vm.memLimit > 0 {
+		vm.checkEvery = min(memCheckEvery, max(vm.memLimit/32, 64<<10))
+	}
+	vm.nextCheck = vm.checkEvery
 	vm.stack = make([]Value, 1024)
 	vm.setup()
 	return vm

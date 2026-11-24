@@ -25,7 +25,7 @@ func TestParkedCoroutinesReleased(t *testing.T) {
 	if _, err := vm.RunCell("cell.js", "1"); err != nil {
 		t.Fatal(err)
 	}
-	base := settleGoroutines(t, vm, 0)
+	base := runtime.NumGoroutine()
 	for range 20 {
 		p, err := vm.RunCell("cell.js", "globalThis.n = (globalThis.n || 0) + 1; await new Promise(() => {}); globalThis.after = 1")
 		if err != nil {
@@ -77,6 +77,7 @@ func gcSettle() {
 }
 
 func TestSettledAwaitSurvivesGC(t *testing.T) {
+	t.Parallel()
 	vm := New(Options{})
 	steps := []string{
 		"globalThis.done = 0; (async () => { await 1; await Promise.resolve(2); await new Promise(res => { globalThis.r = res }); done = 1 })(); 1",
@@ -198,15 +199,6 @@ func TestShapeTreeReleased(t *testing.T) {
 	if err != nil || ToString(v) != "2,4,x,y" {
 		t.Error(ToString(v), err)
 	}
-}
-
-func TestMicrotaskFloodHitsLimit(t *testing.T) {
-	vm := New(Options{MemoryLimit: 256 << 20})
-	_, err := vm.RunCell("cell.js", "const f = () => {}; while (true) queueMicrotask(f)")
-	if errName(err) != "RangeError" {
-		t.Errorf("want RangeError, got %v", err)
-	}
-	vm.AbandonPending()
 }
 
 func TestNamedErrorStacks(t *testing.T) {

@@ -78,6 +78,8 @@ type VM struct {
 	memLimit     int64
 	tracked      int64
 	nextCheck    int64
+	checkEvery   int64
+	heap         func(collect bool) uint64
 	stdout       func(level, text string)
 	coros        map[*coro]struct{}
 	memSample    []metrics.Sample
@@ -141,33 +143,29 @@ func (vm *VM) track(n int) {
 const memCheckEvery = 16 << 20
 
 func (vm *VM) checkMemory() {
-	vm.nextCheck = vm.tracked + memCheckEvery
+	vm.nextCheck = vm.tracked + vm.checkEvery
 	clear(vm.stack[vm.sp:])
-	if vm.memLimit <= 0 {
-		return
+	if vm.memLimit > 0 && vm.over(0) {
+		vm.throwError("RangeError", "out of memory: heap limit exceeded")
 	}
-	if vm.heapBytes() < uint64(vm.memLimit) {
-		return
-	}
-	forceGC()
-	if vm.heapBytes() < uint64(vm.memLimit) {
-		return
-	}
-	vm.throwError("RangeError", "out of memory: heap limit exceeded")
 }
 
 func (vm *VM) reserve(n int) {
-	if vm.memLimit <= 0 || n < 1<<20 {
-		return
+	if vm.memLimit > 0 && n >= 1<<20 && vm.over(n) {
+		vm.throwError("RangeError", "out of memory: heap limit exceeded")
 	}
-	if vm.heapBytes()+uint64(n) < uint64(vm.memLimit) {
-		return
+}
+
+func (vm *VM) over(n int) bool {
+	limit := uint64(vm.memLimit)
+	return vm.heap(false)+uint64(n) >= limit && vm.heap(true)+uint64(n) >= limit
+}
+
+func (vm *VM) processHeap(collect bool) uint64 {
+	if collect {
+		forceGC()
 	}
-	forceGC()
-	if vm.heapBytes()+uint64(n) < uint64(vm.memLimit) {
-		return
-	}
-	vm.throwError("RangeError", "out of memory: heap limit exceeded")
+	return vm.heapBytes()
 }
 
 func (vm *VM) reserveValues(n int) { vm.reserve(n * 24) }
