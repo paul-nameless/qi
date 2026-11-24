@@ -250,3 +250,25 @@ func TestProjectModeRepoSubdirCannotMoveGit(t *testing.T) {
 		t.Errorf("the repo's .git was moved from a subdirectory: %s", out)
 	}
 }
+
+func TestProjectModeScratchAndDotDotLinks(t *testing.T) {
+	env, proj, outside := projectEnv(t)
+	os.MkdirAll(filepath.Join(outside, "sub"), 0o755)
+	os.MkdirAll(filepath.Join(proj, "d"), 0o755)
+	os.Symlink(filepath.Join(outside, "sub"), filepath.Join(proj, "d", "s"))
+	os.Symlink("s/../f.txt", filepath.Join(proj, "d", "link"))
+	r := newFuncSet(Write())
+	res := r.Execute(context.Background(), env, []llm.Block{
+		{ID: "dotdot", Name: "write", Input: json.RawMessage(`{"file_path":"d/link","content":"x"}`)},
+		{ID: "scratch", Name: "write", Input: json.RawMessage(`{"file_path":"` + filepath.Join(env.scratch(), "notes.txt") + `","content":"x"}`)},
+	}, nopUI{})
+	if !res[0].IsError {
+		t.Errorf("a link through a symlink and .. wrote outside: %s", res[0].Text)
+	}
+	if res[1].IsError {
+		t.Errorf("the session scratch dir must stay writable: %s", res[1].Text)
+	}
+	if _, err := os.Stat(filepath.Join(outside, "f.txt")); err == nil {
+		t.Error("f.txt was written outside the project")
+	}
+}

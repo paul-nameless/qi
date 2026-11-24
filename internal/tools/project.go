@@ -119,7 +119,7 @@ func cacheDirs() []string {
 		cargo = filepath.Join(home, ".cargo")
 	}
 	dirs := []string{
-		goModCache(), filepath.Join(filepath.Dir(goModCache()), "sumdb"), filepath.Join(home, ".npm"),
+		goModCache(), filepath.Join(filepath.Dir(goModCache()), "sumdb"), filepath.Join(home, "go", "pkg", "sumdb"), filepath.Join(home, ".npm"),
 		filepath.Join(home, ".cache", "uv"), filepath.Join(home, ".cache", "golangci-lint"),
 		filepath.Join(cargo, "registry"), filepath.Join(cargo, "git"),
 		filepath.Join(cargo, ".package-cache"), filepath.Join(cargo, ".global-cache"),
@@ -169,7 +169,7 @@ func gitPins(dirs []string) []string {
 			parent := filepath.Dir(a)
 			inside := false
 			for _, o := range dirs {
-				inside = inside || (parent != o && within(parent, o)) || parent == o
+				inside = inside || within(parent, o)
 			}
 			if !inside || parent == a {
 				break
@@ -194,6 +194,9 @@ func (e *Env) projectSpec() projectSpec {
 	roots := append([]string{e.Cwd, filepath.Join(config.Home(), ".Trash")}, cacheDirs()...)
 	if tmp := e.projectTmp(); tmp != "" {
 		roots = append(roots, tmp)
+	}
+	if s := e.scratch(); s != "" {
+		roots = append(roots, s)
 	}
 	if gc := projectGoCache(e.Cwd); gc != "" {
 		roots = append(roots, gc)
@@ -227,15 +230,22 @@ func (e *Env) projectSpec() projectSpec {
 	return spec
 }
 
-func (e *Env) projectTmp() string {
+func (e *Env) projectTmpPath() string {
 	scratch := e.scratch()
 	if scratch == "" {
 		return ""
 	}
 	sum := sha256.Sum256([]byte(scratch))
-	base := filepath.Join("/tmp", fmt.Sprintf("qi-%d", os.Getuid()))
-	dir := filepath.Join(base, hex.EncodeToString(sum[:4]))
-	for _, d := range []string{base, dir} {
+	return filepath.Join("/tmp", fmt.Sprintf("qi-%d", os.Getuid()), hex.EncodeToString(sum[:4]))
+}
+
+func (e *Env) projectTmp() string {
+	dir := e.projectTmpPath()
+	if dir == "" {
+		return ""
+	}
+	scratch := e.scratch()
+	for _, d := range []string{filepath.Dir(dir), dir} {
 		if err := os.Mkdir(d, 0o700); err != nil && !os.IsExist(err) {
 			return scratch
 		}
@@ -273,7 +283,7 @@ func realPath(p string) string {
 			return p
 		}
 		if !filepath.IsAbs(target) {
-			target = filepath.Join(dir, target)
+			target = existingReal(dir + string(filepath.Separator) + target)
 		}
 		p = filepath.Clean(target)
 	}
@@ -281,18 +291,17 @@ func realPath(p string) string {
 }
 
 func existingReal(p string) string {
-	rest := ""
-	for {
-		if real, err := filepath.EvalSymlinks(p); err == nil {
-			return filepath.Join(real, rest)
+	parts := strings.Split(p, string(filepath.Separator))
+	for n := len(parts); n > 0; n-- {
+		prefix := strings.Join(parts[:n], string(filepath.Separator))
+		if prefix == "" {
+			prefix = string(filepath.Separator)
 		}
-		parent := filepath.Dir(p)
-		if parent == p {
-			return filepath.Join(p, rest)
+		if real, err := filepath.EvalSymlinks(prefix); err == nil {
+			return filepath.Join(append([]string{real}, parts[n:]...)...)
 		}
-		rest = filepath.Join(filepath.Base(p), rest)
-		p = parent
 	}
+	return filepath.Clean(p)
 }
 
 func sameAsAny(path string, targets []string) bool {
@@ -365,4 +374,11 @@ func projectHint(out string) string {
 func ownedByMe(fi os.FileInfo) bool {
 	st, ok := fi.Sys().(*syscall.Stat_t)
 	return ok && int(st.Uid) == os.Getuid()
+}
+
+func RemoveProjectTmp(scratch string) {
+	e := &Env{Scratch: func() string { return scratch }}
+	if tmp := e.projectTmpPath(); tmp != "" {
+		_ = os.Remove(tmp)
+	}
 }
