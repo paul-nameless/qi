@@ -68,6 +68,7 @@ func checkAcceptedSegment(t *testing.T, command string, words []string) {
 }
 
 func TestFuzzSeedsRejected(t *testing.T) {
+	t.Parallel()
 	for _, c := range append(append([]string{}, fuzzRejected...), escapePoCs...) {
 		if err := CheckReadOnly(c, t.TempDir(), nil); err == nil {
 			t.Errorf("%q accepted", c)

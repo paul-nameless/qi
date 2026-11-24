@@ -246,6 +246,7 @@ func (s *session) format(v Value) string {
 }
 
 func TestScratch(t *testing.T) {
+	t.Parallel()
 	file := os.Getenv("JSFILE")
 	if file == "" {
 		t.Skip("JSFILE not set")
@@ -263,6 +264,7 @@ func TestScratch(t *testing.T) {
 }
 
 func TestProbes(t *testing.T) {
+	t.Parallel()
 	file := os.Getenv("PROBES")
 	if file == "" {
 		t.Skip("PROBES not set")
@@ -294,6 +296,7 @@ func TestProbes(t *testing.T) {
 }
 
 func TestCorpusParse(t *testing.T) {
+	t.Parallel()
 	file := os.Getenv("CORPUS")
 	if file == "" {
 		t.Skip("CORPUS not set")

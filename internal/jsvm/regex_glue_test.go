@@ -8,6 +8,7 @@ import (
 )
 
 func TestRegexUTF16(t *testing.T) {
+	t.Parallel()
 	vm := New(Options{})
 	cases := []struct{ src, want string }{
 		{`"a😀".replace(/./g, "x")`, `"xxx"`},
@@ -63,6 +64,7 @@ func (panicEngine) ExecSubjectBytes(*regex.Subject, int) []int {
 }
 
 func TestRegexPanicCatchable(t *testing.T) {
+	t.Parallel()
 	vm := New(Options{})
 	re, err := vm.RunCell("cell.js", "/x/")
 	if err != nil {

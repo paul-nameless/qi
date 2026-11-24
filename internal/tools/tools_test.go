@@ -54,6 +54,7 @@ func (s funcSet) Execute(ctx context.Context, env *Env, calls []llm.Block, ui UI
 }
 
 func TestReadOnlyRefusesWrites(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	env := &Env{Cwd: dir, ReadOnly: func() bool { return true }}
 	r := newFuncSet(Write(), Edit())
@@ -72,6 +73,7 @@ func TestReadOnlyRefusesWrites(t *testing.T) {
 }
 
 func TestCapOutput(t *testing.T) {
+	t.Parallel()
 	env := &Env{SpillDir: t.TempDir()}
 	short := strings.Repeat("line\n", 300)
 	if env.capOutput(short) != short {
@@ -99,6 +101,7 @@ func TestCapOutput(t *testing.T) {
 }
 
 func TestBash(t *testing.T) {
+	t.Parallel()
 	env := &Env{Cwd: t.TempDir(), SpillDir: t.TempDir()}
 	res := runBash(context.Background(), env, json.RawMessage(`{"command":"echo hi; exit 3"}`), nil)
 	if !res.IsError || !strings.Contains(res.Text, "hi") || !strings.Contains(res.Text, "[exit code 3]") {
@@ -128,6 +131,7 @@ func alive(pid int) bool {
 }
 
 func TestReadFile(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	p := filepath.Join(dir, "f.txt")
 	os.WriteFile(p, []byte("a\nb\nc\nd\n"), 0o600)
@@ -148,6 +152,7 @@ func TestReadFile(t *testing.T) {
 }
 
 func TestHooksWiring(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	var postCalls atomic.Int32
 	env := &Env{
@@ -183,6 +188,7 @@ func TestHooksWiring(t *testing.T) {
 }
 
 func TestBashTimeoutUnits(t *testing.T) {
+	t.Parallel()
 	cases := map[[2]int]int{{120000, 0}: 120, {30, 0}: 30, {0, 0}: 120, {0, 45}: 45, {900000, 0}: 600, {1500, 0}: 600, {3600, 0}: 600, {10000, 0}: 10, {600, 0}: 600, {601, 0}: 600, {900, 0}: 600}
 	for in, want := range cases {
 		if got := bashTimeout(in[0], in[1]); got != want {
@@ -192,6 +198,7 @@ func TestBashTimeoutUnits(t *testing.T) {
 }
 
 func TestBashTTYReadFailsFast(t *testing.T) {
+	t.Parallel()
 	start := time.Now()
 	runBash(context.Background(), &Env{Cwd: t.TempDir(), SpillDir: t.TempDir()}, json.RawMessage(`{"command":"head -1 </dev/tty; echo done","timeout":20}`), nil)
 	if time.Since(start) > 5*time.Second {
@@ -200,6 +207,7 @@ func TestBashTTYReadFailsFast(t *testing.T) {
 }
 
 func TestStaleFileGuard(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	p := filepath.Join(dir, "f.txt")
 	os.WriteFile(p, []byte("one\ntwo\nthree\n"), 0o600)
@@ -249,6 +257,7 @@ func (u *doneUI) ToolDone(id string, ok bool, _ string) {
 }
 
 func TestPanickingToolBecomesErrorResult(t *testing.T) {
+	t.Parallel()
 	ok := func(name string) *Function {
 		return &Function{Name: name, Run: func(context.Context, *Env, json.RawMessage, func(string)) Result {
 			return Result{Text: name + " ran"}
@@ -285,6 +294,7 @@ func TestPanickingToolBecomesErrorResult(t *testing.T) {
 }
 
 func TestMCPCallHookUnwrapAndRewrap(t *testing.T) {
+	t.Parallel()
 	call := MCPFuncs(mcp.NewManager(nil))[1]
 	hc := call.HookCall(llm.Block{ID: "1", Name: "mcp_call", Input: json.RawMessage(`{"server":"gh","tool":"create","arguments":{"title":"x"}}`)})
 	if hc.Tool != "mcp__gh__create" || len(hc.Names) != 1 || string(hc.Input) != `{"title":"x"}` {
@@ -301,6 +311,7 @@ func TestMCPCallHookUnwrapAndRewrap(t *testing.T) {
 }
 
 func TestSpillFailureIsReported(t *testing.T) {
+	t.Parallel()
 	blocker := filepath.Join(t.TempDir(), "file")
 	if err := os.WriteFile(blocker, nil, 0o600); err != nil {
 		t.Fatal(err)
@@ -338,6 +349,7 @@ func TestReadServesEmbeddedFiles(t *testing.T) {
 }
 
 func TestSpillGoesToTheSessionScratch(t *testing.T) {
+	t.Parallel()
 	scratch := t.TempDir()
 	env := &Env{Scratch: func() string { return scratch }}
 	path, err := env.spill("big output")

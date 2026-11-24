@@ -69,6 +69,7 @@ func TestPrepareImageScalesLargeImages(t *testing.T) {
 }
 
 func TestPrepareImageKeepsSmallImagesAsIs(t *testing.T) {
+	t.Parallel()
 	data := testPNG(t, 300, 200, solid(color.RGBA{1, 2, 3, 255}))
 	img, err := prepareImage(data, "image/png", "small.png", nil)
 	if err != nil {
@@ -143,6 +144,7 @@ func TestPrepareImageKeepsJPEGAsJPEG(t *testing.T) {
 }
 
 func TestPrepareImagePassesUndecodableThrough(t *testing.T) {
+	t.Parallel()
 	data := []byte("RIFF\x00\x00\x00\x00WEBPVP8 not really")
 	img, err := prepareImage(data, "image/webp", "x.webp", nil)
 	if err != nil {
@@ -193,6 +195,7 @@ func TestMCPImagesGetAPath(t *testing.T) {
 }
 
 func TestPrepareImageUsesRealFormat(t *testing.T) {
+	t.Parallel()
 	data := testPNG(t, 10, 10, solid(color.RGBA{0, 0, 0, 255}))
 	img, err := prepareImage(data, "image/jpeg", "fake.jpg", nil)
 	if err != nil || img.block.MediaType != "image/png" {

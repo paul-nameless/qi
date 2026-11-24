@@ -21,6 +21,7 @@ func evalJSON(t *testing.T, vm *VM, src string) (string, error) {
 }
 
 func TestExpressions(t *testing.T) {
+	t.Parallel()
 	cases := []struct{ src, want string }{
 		{"1 + 2 * 3", "7"},
 		{"'a' + 1 + 2", `"a12"`},
@@ -63,6 +64,7 @@ func TestExpressions(t *testing.T) {
 }
 
 func TestSyntaxErrors(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		src, msg string
 		line     int
@@ -94,6 +96,7 @@ func TestSyntaxErrors(t *testing.T) {
 }
 
 func TestUnsupported(t *testing.T) {
+	t.Parallel()
 	cases := map[string]string{
 		"class A {}":                  "classes",
 		"x = 1;\nfunction* g() {}":    "generators",
@@ -134,6 +137,7 @@ func TestUnsupported(t *testing.T) {
 }
 
 func TestStacks(t *testing.T) {
+	t.Parallel()
 	vm := New(Options{})
 	_, err := vm.RunCell("cell.js", "function g(){ undefinedFn() }\nfunction h(){ g() }\nh()")
 	var ex *Exception
@@ -159,6 +163,7 @@ func TestStacks(t *testing.T) {
 }
 
 func TestCellSemantics(t *testing.T) {
+	t.Parallel()
 	vm := New(Options{})
 	steps := []struct{ src, want string }{
 		{"const a = 1; let b = 2; var c = 3; function f() { return a + b } const {d, e: [g]} = {d: 4, e: [5]}", "undefined"},
@@ -188,6 +193,7 @@ func TestCellSemantics(t *testing.T) {
 }
 
 func TestInterrupt(t *testing.T) {
+	t.Parallel()
 	vm := New(Options{})
 	for _, src := range []string{
 		"while (true) {}",
@@ -242,6 +248,7 @@ func TestLimits(t *testing.T) {
 }
 
 func TestHostAsync(t *testing.T) {
+	t.Parallel()
 	vm := New(Options{})
 	type done struct {
 		resolve func(Value)
@@ -290,6 +297,7 @@ func TestHostAsync(t *testing.T) {
 }
 
 func TestPromiseOrdering(t *testing.T) {
+	t.Parallel()
 	vm := New(Options{})
 	got, err := evalJSON(t, vm, "const log = []; const p = (async () => { log.push(1); await null; log.push(4) })(); Promise.resolve().then(() => log.push(5)); log.push(2); queueMicrotask(() => log.push(6)); log.push(3); log")
 	if err != nil || got != "[1,2,3]" {
@@ -304,6 +312,7 @@ func TestPromiseOrdering(t *testing.T) {
 }
 
 func TestAPI(t *testing.T) {
+	t.Parallel()
 	var lines []string
 	vm := New(Options{Stdout: func(level, text string) { lines = append(lines, level+":"+text) }})
 	if _, err := vm.RunCell("cell.js", "console.log('a', 1, {b: [2]}); console.error(undefined)"); err != nil {
@@ -364,6 +373,7 @@ func TestZeroAllocLoop(t *testing.T) {
 }
 
 func TestConcurrentVMs(t *testing.T) {
+	t.Parallel()
 	var wg sync.WaitGroup
 	for i := 0; i < 8; i++ {
 		wg.Add(1)
@@ -386,6 +396,7 @@ func TestConcurrentVMs(t *testing.T) {
 }
 
 func TestClose(t *testing.T) {
+	t.Parallel()
 	vm := New(Options{})
 	if _, err := vm.RunCell("cell.js", "await new Promise(() => {}); globalThis.after = 1"); err != nil {
 		t.Fatal(err)
@@ -404,6 +415,7 @@ func TestClose(t *testing.T) {
 }
 
 func TestNativeGlobals(t *testing.T) {
+	t.Parallel()
 	vm := New(Options{})
 	if _, err := vm.RunCell("cell.js", "globalThis.log = []; queueMicrotask(() => log.push('a')); queueMicrotask(() => { throw new Error('ignored') }); queueMicrotask(() => log.push('b')); log.push('sync')"); err != nil {
 		t.Fatal(err)

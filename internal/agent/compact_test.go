@@ -72,6 +72,7 @@ func closedHistory() []llm.Message {
 }
 
 func TestKeepTail(t *testing.T) {
+	t.Parallel()
 	msgs := history()
 	tail := keepTail(msgs, 1000)
 	if len(tail) != 4 || tail[0].Text() != "read it" || tail[3].Blocks[0].ToolUseID != "c2" {
@@ -99,6 +100,7 @@ func TestKeepTail(t *testing.T) {
 }
 
 func TestSummaryRequestKeepsHistoryUnchanged(t *testing.T) {
+	t.Parallel()
 	p := &scriptedProvider{steps: []func(llm.Request) (llm.Message, error){reply(assistantText("SUMMARY"))}}
 	a := newAgent(t, &fakeProvider{})
 	a.live.provider = p
@@ -128,6 +130,7 @@ func TestSummaryRequestKeepsHistoryUnchanged(t *testing.T) {
 }
 
 func TestSummaryClipsOnlyWhenTooLong(t *testing.T) {
+	t.Parallel()
 	p := &scriptedProvider{steps: []func(llm.Request) (llm.Message, error){overflow, reply(assistantText("SUMMARY"))}}
 	a := newAgent(t, &fakeProvider{})
 	a.live.provider = p
@@ -150,6 +153,7 @@ func TestSummaryClipsOnlyWhenTooLong(t *testing.T) {
 }
 
 func TestCompactRejectsCutOffSummary(t *testing.T) {
+	t.Parallel()
 	cut := llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: "## Objective\nhalf"}, {Type: llm.BlockText, Text: "\n" + llm.CutOffMarker}}}
 	a := newAgent(t, &fakeProvider{replies: []llm.Message{cut}})
 	a.conv.messages = history()
@@ -159,6 +163,7 @@ func TestCompactRejectsCutOffSummary(t *testing.T) {
 }
 
 func TestCompactReannouncesModeLostToSummary(t *testing.T) {
+	t.Parallel()
 	a := newAgent(t, &fakeProvider{replies: []llm.Message{assistantText("SUMMARY")}})
 	a.conv.messages = append([]llm.Message{{Role: llm.RoleUser, Blocks: []llm.Block{{Type: llm.BlockText, Text: "go"}, {Type: llm.BlockText, Text: readOnlyNote}}}}, history()[1:]...)
 	a.conv.announced = ModeReadOnly
@@ -171,6 +176,7 @@ func TestCompactReannouncesModeLostToSummary(t *testing.T) {
 }
 
 func TestOverflowCompactsAndRetriesOnce(t *testing.T) {
+	t.Parallel()
 	summary := reply(assistantText("SUMMARY"))
 	p := &scriptedProvider{steps: []func(llm.Request) (llm.Message, error){overflow, summary}}
 	a := newAgent(t, &fakeProvider{})
@@ -199,6 +205,7 @@ func TestOverflowCompactsAndRetriesOnce(t *testing.T) {
 }
 
 func TestThrashPausesAutoCompaction(t *testing.T) {
+	t.Parallel()
 	p := &scriptedProvider{steps: []func(llm.Request) (llm.Message, error){reply(assistantText("SUMMARY"))}}
 	a := newAgent(t, &fakeProvider{})
 	a.live.provider = p
@@ -264,6 +271,7 @@ func TestCompactionSurvivesResume(t *testing.T) {
 }
 
 func TestContextTooLong(t *testing.T) {
+	t.Parallel()
 	yes := []*llm.APIError{
 		{Status: 400, Body: `{"error":{"type":"invalid_request_error","message":"prompt is too long: 213462 tokens > 200000 maximum"}}`},
 		{Status: 400, Body: `{"error":{"message":"This endpoint's maximum context length is 1050000 tokens. However, you requested about 1200000 tokens","code":400}}`},
@@ -291,6 +299,7 @@ func TestContextTooLong(t *testing.T) {
 }
 
 func TestFailedOverflowCompactionDropsPrompt(t *testing.T) {
+	t.Parallel()
 	p := &scriptedProvider{steps: []func(llm.Request) (llm.Message, error){overflow, overflow, overflow}}
 	a := newAgent(t, &fakeProvider{})
 	a.live.provider = p
@@ -314,6 +323,7 @@ func TestFailedOverflowCompactionDropsPrompt(t *testing.T) {
 }
 
 func TestSummaryRequestMatchesTurnRequest(t *testing.T) {
+	t.Parallel()
 	p := &scriptedProvider{}
 	a := newAgent(t, &fakeProvider{})
 	a.live.provider = p
@@ -336,6 +346,7 @@ func TestSummaryRequestMatchesTurnRequest(t *testing.T) {
 }
 
 func TestTryCompactIdle(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name   string
 		tokens int
@@ -377,6 +388,7 @@ func TestTryCompactIdle(t *testing.T) {
 }
 
 func TestMidTurnCompactionKeepsNoTail(t *testing.T) {
+	t.Parallel()
 	a := newAgent(t, &fakeProvider{})
 	a.conv.messages = history()
 	if err := a.compact(context.Background(), compactOpts{midTurn: true}); err != nil {
@@ -404,6 +416,7 @@ func TestMidTurnCompactionKeepsNoTail(t *testing.T) {
 }
 
 func TestClipKeepsPreviousSummary(t *testing.T) {
+	t.Parallel()
 	prev := llm.UserText(compactLead + strings.Repeat("s", 3*clipText))
 	out := clipHistory(append([]llm.Message{prev}, history()...))
 	if out[0].Text() != prev.Text() {
@@ -412,6 +425,7 @@ func TestClipKeepsPreviousSummary(t *testing.T) {
 }
 
 func TestClipKeepsCodeHeadAndTail(t *testing.T) {
+	t.Parallel()
 	code := "const first = 1\n" + strings.Repeat("a && <b>", clipToolResult) + "\nreturn last"
 	in, _ := json.Marshal(map[string]any{"code": code, "timeout": 30})
 	b := clipBlock(llm.Block{Type: llm.BlockToolUse, Input: in})
@@ -432,6 +446,7 @@ func TestClipKeepsCodeHeadAndTail(t *testing.T) {
 }
 
 func TestThrashPauseFromMeasuredUsage(t *testing.T) {
+	t.Parallel()
 	p := &fakeProvider{replies: []llm.Message{assistantText("SUMMARY")}, usage: llm.Usage{Input: 5000}}
 	a := newAgent(t, p)
 	a.live.cfg.CompactAt = config.Threshold{Tokens: 4000}
@@ -450,6 +465,7 @@ func TestThrashPauseFromMeasuredUsage(t *testing.T) {
 }
 
 func TestIdleCompactionSizesTailFromIdleThreshold(t *testing.T) {
+	t.Parallel()
 	a := newAgent(t, &fakeProvider{})
 	a.live.cfg.CompactIdleAt = config.Threshold{Tokens: 400}
 	a.conv.messages = history()
@@ -465,6 +481,7 @@ func TestIdleCompactionSizesTailFromIdleThreshold(t *testing.T) {
 }
 
 func TestClipHistory(t *testing.T) {
+	t.Parallel()
 	big := strings.Repeat("y", 50000)
 	in, _ := json.Marshal(map[string]string{"content": big})
 	msgs := []llm.Message{

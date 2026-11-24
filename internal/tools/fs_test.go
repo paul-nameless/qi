@@ -6,6 +6,7 @@ import (
 )
 
 func TestApplyEdit(t *testing.T) {
+	t.Parallel()
 	src := "func a() {\n\treturn 1\n}\n\nfunc b() {\n\treturn 2\n}\n"
 	cases := []struct {
 		name, old, new, want string
@@ -39,6 +40,7 @@ func TestApplyEdit(t *testing.T) {
 }
 
 func TestApplyEditCRLFAndAmbiguity(t *testing.T) {
+	t.Parallel()
 	src := "a\r\n  b\r\nc\r\n"
 	got, _, err := applyEdit(src, "\tb\nc", "B\nC", false)
 	if err != nil {

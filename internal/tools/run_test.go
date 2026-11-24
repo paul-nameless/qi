@@ -89,6 +89,7 @@ func (k *cellKit) file(name, content string) string {
 }
 
 func TestCellBasics(t *testing.T) {
+	t.Parallel()
 	k := newCellKit(t)
 	cases := []struct{ code, want string }{
 		{"const a = 1; let b = [1, 2]", "(no output)"},
@@ -107,6 +108,7 @@ func TestCellBasics(t *testing.T) {
 }
 
 func TestCellParallelSleeps(t *testing.T) {
+	t.Parallel()
 	k := newCellKit(t)
 	start := time.Now()
 	k.want("await Promise.all([1,2,3,4,5,6,7,8].map(() => sleep(200))); 'ok'", "ok")
@@ -116,6 +118,7 @@ func TestCellParallelSleeps(t *testing.T) {
 }
 
 func TestCellReadRawAndStaleGuard(t *testing.T) {
+	t.Parallel()
 	k := newCellKit(t)
 	p := k.file("f.txt", "one\r\ntwo\nthree\n")
 	k.want(`globalThis.s = await read("f.txt"); JSON.stringify(s)`, `"one\r\ntwo\nthree\n"`)
@@ -132,6 +135,7 @@ func TestCellReadRawAndStaleGuard(t *testing.T) {
 }
 
 func TestCellEdit(t *testing.T) {
+	t.Parallel()
 	k := newCellKit(t)
 	k.file("a.go", "x := 1\ny := x + x\n")
 	k.cell(`await edit("a.go", "x", "z", {all: true})`)
@@ -145,6 +149,7 @@ func TestCellEdit(t *testing.T) {
 }
 
 func TestCellBashShape(t *testing.T) {
+	t.Parallel()
 	k := newCellKit(t)
 	k.want(`JSON.stringify(await bash("echo hi"))`, `{"output":"hi","exit_code":0,"timed_out":false,"truncated":false}`)
 	k.want(`JSON.stringify(await bash("echo oops; exit 3"))`, `{"output":"oops","exit_code":3,"timed_out":false,"truncated":false}`)
@@ -154,6 +159,7 @@ func TestCellBashShape(t *testing.T) {
 }
 
 func TestCellToolError(t *testing.T) {
+	t.Parallel()
 	k := newCellKit(t)
 	k.env.ReadOnly = func() bool { return true }
 	k.wantErr("\n\nawait write('x.txt', 'y')", "ToolError: read-only mode: write is not allowed\n    at cell.js:3:")
@@ -183,6 +189,7 @@ func TestCellToolError(t *testing.T) {
 }
 
 func TestCellSerializesCallsOnOnePath(t *testing.T) {
+	t.Parallel()
 	var mu sync.Mutex
 	active, overlap := map[string]int{}, false
 	slow := &Function{
@@ -216,6 +223,7 @@ func TestCellSerializesCallsOnOnePath(t *testing.T) {
 }
 
 func TestRunFiresHooksOnlyForInnerCalls(t *testing.T) {
+	t.Parallel()
 	k := newCellKit(t)
 	k.file("f.txt", "content\n")
 	var mu sync.Mutex
@@ -241,6 +249,7 @@ func TestRunFiresHooksOnlyForInnerCalls(t *testing.T) {
 }
 
 func TestCellPostHookStaysOutOfValues(t *testing.T) {
+	t.Parallel()
 	k := newCellKit(t)
 	k.file("f.txt", "content\n")
 	var calls []HookCall
@@ -261,6 +270,7 @@ func TestCellPostHookStaysOutOfValues(t *testing.T) {
 }
 
 func TestCellUnawaitedCalls(t *testing.T) {
+	t.Parallel()
 	k := newCellKit(t)
 	res := k.cell(`bash("sleep 0.3; echo done > out.txt"); edit("missing.txt", "a", "b"); "returned"`)
 	if _, err := os.Stat(filepath.Join(k.dir, "out.txt")); err != nil {
@@ -277,6 +287,7 @@ func TestCellUnawaitedCalls(t *testing.T) {
 }
 
 func TestCellNeverSettles(t *testing.T) {
+	t.Parallel()
 	k := newCellKit(t)
 	start := time.Now()
 	k.wantErr(`await new Promise(() => {})`, "can never settle")
@@ -286,6 +297,7 @@ func TestCellNeverSettles(t *testing.T) {
 }
 
 func TestCellBusyLoopStops(t *testing.T) {
+	t.Parallel()
 	k := newCellKit(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	time.AfterFunc(200*time.Millisecond, cancel)
@@ -301,6 +313,7 @@ func TestCellBusyLoopStops(t *testing.T) {
 }
 
 func TestCellStopsCallingAfterCancel(t *testing.T) {
+	t.Parallel()
 	k := newCellKit(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	time.AfterFunc(300*time.Millisecond, cancel)
@@ -319,6 +332,7 @@ func TestCellStopsCallingAfterCancel(t *testing.T) {
 }
 
 func TestCellTimeoutSparesFormatting(t *testing.T) {
+	t.Parallel()
 	k := newCellKit(t)
 	res := k.cellCtx(context.Background(), `return {toJSON() { const t = Date.now(); while (Date.now() - t < 1500) {} return "slow" }}`, 1)
 	if res.IsError || res.Text != `"slow"` {
@@ -338,12 +352,14 @@ func TestCellTimeoutSparesFormatting(t *testing.T) {
 }
 
 func TestCellJobsDrainAfterThrow(t *testing.T) {
+	t.Parallel()
 	k := newCellKit(t)
 	k.wantErr(`Promise.resolve().then(() => console.log("leak")); null.x`, "leak\nTypeError")
 	k.want("1", "1")
 }
 
 func TestCellResultsNotCut(t *testing.T) {
+	t.Parallel()
 	k := newCellKit(t)
 	k.want(`(await bash("seq 1 5000")).output.split("\n").length`, "5000")
 	content := strings.Repeat("short line\n", 2500) + strings.Repeat("x", 5000) + "\n"
@@ -352,6 +368,7 @@ func TestCellResultsNotCut(t *testing.T) {
 }
 
 func TestCellInterruptThroughHostCalls(t *testing.T) {
+	t.Parallel()
 	k := newCellKit(t, Subagent("m", nil, nil))
 	cases := []string{
 		`while (true) { try { print({toJSON() { while (true) {} }}) } catch (e) {} }`,
@@ -374,6 +391,7 @@ func TestCellInterruptThroughHostCalls(t *testing.T) {
 }
 
 func TestCellBackgroundJobSurvives(t *testing.T) {
+	t.Parallel()
 	k := newCellKit(t)
 	k.env.Jobs = NewJobs()
 	defer k.env.Jobs.KillAll()
@@ -392,6 +410,7 @@ func TestCellBackgroundJobSurvives(t *testing.T) {
 }
 
 func TestCellCallLimit(t *testing.T) {
+	t.Parallel()
 	k := newCellKit(t)
 	k.want(`let i = 0; try { for (; i < 600; i++) await tick() } catch (e) { return i + " " + e.name + " " + e.message }`,
 		"500 ToolError too many tool calls in one run call (limit 500); split the work across several run calls")
@@ -399,6 +418,7 @@ func TestCellCallLimit(t *testing.T) {
 }
 
 func TestCellReset(t *testing.T) {
+	t.Parallel()
 	k := newCellKit(t)
 	k.cell("globalThis.z = 1")
 	k.run.Reset(true)
@@ -409,6 +429,7 @@ func TestCellReset(t *testing.T) {
 }
 
 func TestRunPanicAndReplaceThroughExecute(t *testing.T) {
+	t.Parallel()
 	boom := &Function{Name: "boom", Code: CodeSpec{Name: "boom"}, Run: func(context.Context, *Env, json.RawMessage, func(string)) Result {
 		panic("boom")
 	}}
@@ -428,6 +449,7 @@ func TestRunPanicAndReplaceThroughExecute(t *testing.T) {
 }
 
 func TestRunReplaceAndHint(t *testing.T) {
+	t.Parallel()
 	sub := func(model string) *Function { return Subagent(model, nil, []string{"low"}) }
 	build := func() *Tool {
 		return Run(Read(), Write(), Edit(), Bash(), JobsFunc(), sub("m1"))
@@ -459,6 +481,7 @@ func TestRunReplaceAndHint(t *testing.T) {
 }
 
 func TestCellErrorsText(t *testing.T) {
+	t.Parallel()
 	k := newCellKit(t)
 	k.wantErr("let x = ;", "SyntaxError: Unexpected token ';'\n    at cell.js:1:9")
 	k.wantErr("1\nclass A {}", "SyntaxError: unsupported: classes\n    at cell.js:2:")
@@ -474,6 +497,7 @@ func TestCellErrorsText(t *testing.T) {
 }
 
 func TestCellOutputCap(t *testing.T) {
+	t.Parallel()
 	k := newCellKit(t)
 	res := k.cell(`for (let i = 0; i < 5000; i++) console.log("line " + i)`)
 	for _, want := range []string{"line 0\n", "line 4999", "lines omitted. Full output: "} {
@@ -487,6 +511,7 @@ func TestCellOutputCap(t *testing.T) {
 }
 
 func TestCellImages(t *testing.T) {
+	t.Parallel()
 	k := newCellKit(t)
 	k.file("a.png", string(testPNG(t, 4, 4, func(x, y int) color.RGBA { return color.RGBA{255, 0, 0, 255} })))
 	res := k.cell(`const note = await read("a.png"); typeof note`)
@@ -504,6 +529,7 @@ func TestCellImages(t *testing.T) {
 }
 
 func TestCellMCP(t *testing.T) {
+	t.Parallel()
 	m := mcp.NewManager(map[string]config.MCPServer{"fake": fakeMCP(config.MCPServer{})})
 	defer m.Close()
 	k := newCellKit(t, MCPFuncs(m)...)
@@ -530,6 +556,7 @@ func TestCellMCP(t *testing.T) {
 }
 
 func TestCellRecordsCalls(t *testing.T) {
+	t.Parallel()
 	k := newCellKit(t)
 	big := strings.Repeat("é", 3000)
 	code := fmt.Sprintf(`await write("big.txt", %q); await tick(2)`, big)
@@ -554,6 +581,7 @@ func TestCellRecordsCalls(t *testing.T) {
 }
 
 func TestCellInnerUI(t *testing.T) {
+	t.Parallel()
 	k := newCellKit(t)
 	ui := &recordUI{}
 	k.run.Execute(context.Background(), k.env, []llm.Block{{ID: "r9", Name: "run", Input: mustJSON(t, runArgs{Code: "await tick(); await tick()"})}}, ui)
@@ -564,6 +592,7 @@ func TestCellInnerUI(t *testing.T) {
 }
 
 func TestCellSourceUI(t *testing.T) {
+	t.Parallel()
 	k := newCellKit(t)
 	ui := &sourceUI{}
 	code := "await tick()\nreturn 1"
@@ -611,6 +640,7 @@ func mustJSON(t *testing.T, v any) json.RawMessage {
 }
 
 func TestCellSubagents(t *testing.T) {
+	t.Parallel()
 	menu := []config.SubagentModel{{Name: "fast", Model: "m-fast", Provider: "p1"}, {Name: "deep", Model: "m-deep"}}
 	k := newCellKit(t, Subagent("main", menu, []string{"low", "high"}))
 	var mu sync.Mutex
@@ -643,6 +673,7 @@ func TestCellSubagents(t *testing.T) {
 }
 
 func TestCellFailureSavesSubagentAnswers(t *testing.T) {
+	t.Parallel()
 	k := newCellKit(t, Subagent("m", nil, nil))
 	k.env.Subagent = func(ctx context.Context, task SubagentTask, progress func(string)) (string, error) {
 		switch task.Prompt {
@@ -682,6 +713,7 @@ func TestCellFailureSavesSubagentAnswers(t *testing.T) {
 }
 
 func TestSubagentLabelDefaults(t *testing.T) {
+	t.Parallel()
 	menu := []config.SubagentModel{{Name: "fast", Model: "m-fast"}}
 	sub := Subagent("main", menu, []string{"low"})
 	for in, want := range map[string]string{`{"prompt":"x"}`: "subagent fast/default x", `{"prompt":"x","model":"m","effort":"low"}`: "subagent m/low x"} {
@@ -692,6 +724,7 @@ func TestSubagentLabelDefaults(t *testing.T) {
 }
 
 func TestCellParallelLimit(t *testing.T) {
+	t.Parallel()
 	var active, peak atomic.Int32
 	nap := &Function{
 		Name: "nap",
@@ -713,6 +746,7 @@ func TestCellParallelLimit(t *testing.T) {
 }
 
 func TestCellRequiredArgs(t *testing.T) {
+	t.Parallel()
 	k := newCellKit(t, Subagent("m", nil, nil))
 	k.env.Subagent = func(ctx context.Context, task SubagentTask, progress func(string)) (string, error) { return "ok", nil }
 	k.file("out.txt", "keep\n")
@@ -733,6 +767,7 @@ func TestCellRequiredArgs(t *testing.T) {
 }
 
 func TestCellFailedCallsNote(t *testing.T) {
+	t.Parallel()
 	k := newCellKit(t)
 	k.file("a.go", "package a\n")
 	res := k.cell(`edit("a.go", "x", "y"); await bash("sleep 0.3"); "done"`)
@@ -751,6 +786,7 @@ func TestCellFailedCallsNote(t *testing.T) {
 }
 
 func TestCellBashErrorResolves(t *testing.T) {
+	t.Parallel()
 	k := newCellKit(t)
 	var mu sync.Mutex
 	var hookErrs []bool
@@ -776,6 +812,7 @@ func TestCellBashErrorResolves(t *testing.T) {
 }
 
 func TestCellNoCallsAfterFinish(t *testing.T) {
+	t.Parallel()
 	k := newCellKit(t)
 	k.file("f.txt", "x\n")
 	for _, code := range []string{
@@ -798,6 +835,7 @@ func TestCellNoCallsAfterFinish(t *testing.T) {
 }
 
 func TestCellTimersCancelledAfterSettle(t *testing.T) {
+	t.Parallel()
 	k := newCellKit(t)
 	start := time.Now()
 	k.want(`return (await Promise.race([bash("echo hi"), new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 60000))])).output`, "hi")
@@ -822,6 +860,7 @@ func TestCellTimersCancelledAfterSettle(t *testing.T) {
 }
 
 func TestCellReadRejectsNonText(t *testing.T) {
+	t.Parallel()
 	k := newCellKit(t)
 	k.file("bin", "a\x00b")
 	k.file("latin.txt", "caf\xe9\n")
@@ -830,12 +869,14 @@ func TestCellReadRejectsNonText(t *testing.T) {
 }
 
 func TestCellBashTruncated(t *testing.T) {
+	t.Parallel()
 	k := newCellKit(t)
 	k.want(`const r = await bash("seq 1 300000"); [r.truncated, r.output.includes("bytes dropped")].join(" ")`, "true true")
 	k.want(`(await bash("seq 1 3")).truncated`, "false")
 }
 
 func TestCellRedeclaredFunctions(t *testing.T) {
+	t.Parallel()
 	k := newCellKit(t)
 	k.file("f.txt", "hi\n")
 	k.want(`const read = 1; const jobs = 2; var print = 3; let sleep = 4`, "(no output)")
@@ -843,6 +884,7 @@ func TestCellRedeclaredFunctions(t *testing.T) {
 }
 
 func TestCellErrorKeptWhenWaitStops(t *testing.T) {
+	t.Parallel()
 	k := newCellKit(t)
 	res := k.cellCtx(context.Background(), `await Promise.all([bash("sleep 100", {timeout: 600}), read("nope")])`, 1)
 	for _, want := range []string{"ToolError: stat ", "Calls that completed:\n✗ read nope\nNote: the code failed while 1 call was still running. Failed:\nbash sleep 100: ", "Note: waiting for the calls still running stopped: timed out after 1s"} {
@@ -862,6 +904,7 @@ func TestCellErrorKeptWhenWaitStops(t *testing.T) {
 }
 
 func TestRunDescriptionReservedNames(t *testing.T) {
+	t.Parallel()
 	k := newCellKit(t)
 	want := "- The names read, write, edit, bash, jobs, tick, sleep, setTimeout, clearTimeout and print are set again at the start of every run call: don't use them for your own variables.\n"
 	if desc := k.run.Def.Description; !strings.Contains(desc, want) || strings.Contains(desc, "subagent,") {
@@ -888,6 +931,7 @@ func TestCellFormatJobsDoNotLeak(t *testing.T) {
 }
 
 func TestCellParkedFunctionResumesInLaterCell(t *testing.T) {
+	t.Parallel()
 	k := newCellKit(t)
 	k.want(`globalThis.out = []; globalThis.gate = new Promise(r => { globalThis.open = r }); (async () => { await gate; out.push("resumed") })(); "parked"`, "parked")
 	k.want(`return {toJSON() { return "formatted" }}`, `"formatted"`)

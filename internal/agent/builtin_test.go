@@ -93,6 +93,7 @@ func TestBuiltinSkillStaysGlobalInsideHome(t *testing.T) {
 }
 
 func TestScratchDirNamedAndCreated(t *testing.T) {
+	t.Parallel()
 	scratch := filepath.Join(t.TempDir(), "qi-1", "S1")
 	if err := os.Mkdir(filepath.Dir(scratch), 0o755); err != nil {
 		t.Fatal(err)

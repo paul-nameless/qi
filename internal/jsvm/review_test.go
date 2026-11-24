@@ -61,6 +61,7 @@ func jsonOut(t *testing.T, s *session, out string) string {
 }
 
 func TestRedeclareConstAsVar(t *testing.T) {
+	t.Parallel()
 	vm := New(Options{})
 	if _, err := vm.RunCell("cell.js", "const c = 1"); err != nil {
 		t.Fatal(err)
@@ -71,6 +72,7 @@ func TestRedeclareConstAsVar(t *testing.T) {
 }
 
 func TestExceptionInterruptSafe(t *testing.T) {
+	t.Parallel()
 	vm := New(Options{})
 	vm.Interrupt()
 	_, err := vm.RunCell("cell.js", "1")
@@ -91,6 +93,7 @@ func TestExceptionInterruptSafe(t *testing.T) {
 }
 
 func TestSharedStringsNoRace(t *testing.T) {
+	t.Parallel()
 	done := make(chan bool)
 	for i := 0; i < 4; i++ {
 		go func() {
@@ -110,6 +113,7 @@ func TestSharedStringsNoRace(t *testing.T) {
 }
 
 func TestTDZ(t *testing.T) {
+	t.Parallel()
 	cases := map[string]string{
 		"function f() { try { x; let x = 1 } catch (e) { return e.name } } return f()":                                                        "ReferenceError",
 		"function f() { try { return typeof y; let y } catch (e) { return e.name } } return f()":                                              "ReferenceError",
@@ -134,6 +138,7 @@ func TestTDZ(t *testing.T) {
 }
 
 func TestScoreboardFixes(t *testing.T) {
+	t.Parallel()
 	cases := map[string]string{
 		"return ['ß'.toUpperCase(), 'İ'.toLowerCase().length, 'ﬀ'.toUpperCase(), 'ΑΣ'.toLowerCase(), 'ᾳ'.toUpperCase(), 'ŉ'.toUpperCase().length, 'straße'.toLocaleUpperCase(), 'ABC'.toLowerCase()].join()":                                "SS,2,FF,ας,ΑΙ,2,STRASSE,abc",
 		"return [(0.1).toString(3), (0.5).toString(2), (255.5).toString(16), (1/3).toString(36), (-7.25).toString(8), (0.000001).toString(5)].join()":                                                                                       "0.0022002200220022002200220022002201,0.1,ff.8,0.c,-7.2,0.0000000014340322421131001434032",

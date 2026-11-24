@@ -124,6 +124,7 @@ func TestTrustFingerprint(t *testing.T) {
 }
 
 func TestSubagentArgs(t *testing.T) {
+	t.Parallel()
 	mode := ModeReadOnly
 	r := &SubagentRunner{Profile: "p", Provider: "openrouter", SystemPromptFile: "/x/prompt.md", Mode: func() Mode { return mode }}
 	args := strings.Join(r.args(tools.SubagentTask{Prompt: "do it", Model: "m", Effort: "low"}), " ")
@@ -141,6 +142,7 @@ func TestSubagentArgs(t *testing.T) {
 }
 
 func TestTrustAnswer(t *testing.T) {
+	t.Parallel()
 	for answer, want := range map[string]bool{"y\n": true, "Y": true, " y ": true, "": false, "\n": false, "n": false, "yes": false} {
 		if got := approved(answer); got != want {
 			t.Errorf("approved(%q) = %v", answer, got)

@@ -18,6 +18,7 @@ func errName(err error) string {
 }
 
 func TestNestingCaps(t *testing.T) {
+	t.Parallel()
 	r := strings.Repeat
 	syntax := map[string]string{
 		"parens":       r("(", 5000) + "1" + r(")", 5000),
@@ -123,6 +124,7 @@ func TestAllocationCaps(t *testing.T) {
 }
 
 func TestInternalErrorsCatchable(t *testing.T) {
+	t.Parallel()
 	vm := New(Options{})
 	vm.SetFunc("crash", func(vm *VM, args []Value) (Value, error) {
 		var m map[string]*object

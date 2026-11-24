@@ -10,6 +10,7 @@ func norm(s string) string {
 }
 
 func TestParseFrontmatterScalars(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		in, name, desc string
 		hidden         bool
@@ -56,6 +57,7 @@ func TestParseFrontmatterScalars(t *testing.T) {
 }
 
 func TestParseFrontmatterWithoutBlock(t *testing.T) {
+	t.Parallel()
 	for _, in := range []string{"no frontmatter\n", "---\nname: x\nno end\n"} {
 		if m, body := ParseFrontmatter(in); m != (skillMeta{}) || body != in {
 			t.Errorf("%q: got %+v %q", in, m, body)

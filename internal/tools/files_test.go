@@ -12,6 +12,7 @@ import (
 )
 
 func TestUnifiedDiff(t *testing.T) {
+	t.Parallel()
 	var lines []string
 	for i := 1; i <= 20; i++ {
 		lines = append(lines, fmt.Sprintf("line %d", i))
@@ -27,6 +28,7 @@ func TestUnifiedDiff(t *testing.T) {
 }
 
 func TestUnifiedDiffSeparateHunks(t *testing.T) {
+	t.Parallel()
 	var lines []string
 	for i := 1; i <= 30; i++ {
 		lines = append(lines, fmt.Sprintf("l%d", i))
@@ -60,6 +62,7 @@ func touchLater(t *testing.T, path, content string) {
 }
 
 func TestFileChanges(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	env := &Env{Cwd: dir}
 	path := filepath.Join(dir, "a.go")
@@ -100,6 +103,7 @@ func TestFileChanges(t *testing.T) {
 }
 
 func TestNoDiffChangesOnOneLine(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	env := &Env{Cwd: dir}
 	a, b := filepath.Join(dir, "a.png"), filepath.Join(dir, "b.bin")
@@ -122,6 +126,7 @@ func TestNoDiffChangesOnOneLine(t *testing.T) {
 }
 
 func TestPartialReadSnapshotsWholeFile(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	env := &Env{Cwd: dir}
 	path := filepath.Join(dir, "a.txt")

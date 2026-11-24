@@ -8,6 +8,7 @@ import (
 )
 
 func TestOracleCases(t *testing.T) {
+	t.Parallel()
 	runOracleFile(t, "testdata/oracle.json")
 	runOracleFile(t, "testdata/holes_oracle.json")
 }

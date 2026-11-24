@@ -46,6 +46,7 @@ func fakeChild(t *testing.T, stdout, stderr string, code int) string {
 }
 
 func TestSubagentReadsJSONEntries(t *testing.T) {
+	t.Parallel()
 	call := llm.Block{Type: llm.BlockToolUse, ID: "c1", Name: "bash", Input: json.RawMessage(`{"command":"ls"}`)}
 	stream := entryLines(t,
 		session.Entry{Type: "meta", Kind: session.Headless},
@@ -67,6 +68,7 @@ func TestSubagentReadsJSONEntries(t *testing.T) {
 }
 
 func TestSubagentFailureReportsFatalError(t *testing.T) {
+	t.Parallel()
 	long := "qi: api error 402: " + strings.Repeat("ж", 400)
 	cases := []struct{ stderr, want string }{
 		{"qi: config: bad key\n", "exit status 1: qi: config: bad key"},

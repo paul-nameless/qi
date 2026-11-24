@@ -41,6 +41,7 @@ func runMCP(t *testing.T, r funcSet, name, input string) llm.Block {
 }
 
 func TestMCPCallRefusedInReadOnly(t *testing.T) {
+	t.Parallel()
 	m := mcp.NewManager(map[string]config.MCPServer{"x": {Command: "/nonexistent"}})
 	r := newFuncSet(MCPFuncs(m)...)
 	env := &Env{Cwd: t.TempDir(), ReadOnly: func() bool { return true }}
@@ -51,6 +52,7 @@ func TestMCPCallRefusedInReadOnly(t *testing.T) {
 }
 
 func TestToolSearchByServer(t *testing.T) {
+	t.Parallel()
 	m := mcp.NewManager(map[string]config.MCPServer{"fake": fakeMCP(config.MCPServer{ExcludeTools: []string{"delete_*"}})})
 	defer m.Close()
 	r := newFuncSet(MCPFuncs(m)...)
@@ -82,6 +84,7 @@ func TestToolSearchByServer(t *testing.T) {
 }
 
 func TestToolSearchDocListsServers(t *testing.T) {
+	t.Parallel()
 	m := mcp.NewManager(map[string]config.MCPServer{
 		"github": {Command: "gh", Description: "GitHub issues", Tools: []string{"get_issue", "list_issues"}},
 		"bare":   {Command: "bare"},
@@ -93,6 +96,7 @@ func TestToolSearchDocListsServers(t *testing.T) {
 }
 
 func TestToolSearchNoEnabledTools(t *testing.T) {
+	t.Parallel()
 	m := mcp.NewManager(map[string]config.MCPServer{"fake": fakeMCP(config.MCPServer{Tools: []string{"nothing_*"}})})
 	defer m.Close()
 	res := runMCP(t, newFuncSet(MCPFuncs(m)...), "tool_search", `{"server":"fake"}`)
@@ -103,6 +107,7 @@ func TestToolSearchNoEnabledTools(t *testing.T) {
 }
 
 func TestToolSearchLargeServer(t *testing.T) {
+	t.Parallel()
 	m := mcp.NewManager(map[string]config.MCPServer{"fake": fakeMCP(config.MCPServer{Env: map[string]string{mcptest.BulkEnv: "200"}})})
 	defer m.Close()
 	r := newFuncSet(MCPFuncs(m)...)
@@ -124,6 +129,7 @@ func TestToolSearchLargeServer(t *testing.T) {
 }
 
 func TestFitEntriesNeverCutsTheMiddle(t *testing.T) {
+	t.Parallel()
 	entries := make([]string, 50)
 	for i := range entries {
 		entries[i] = strings.Repeat("x", 1000) + "\n"
@@ -139,6 +145,7 @@ func TestFitEntriesNeverCutsTheMiddle(t *testing.T) {
 }
 
 func TestMCPToolDefsByteStable(t *testing.T) {
+	t.Parallel()
 	cfg := map[string]config.MCPServer{
 		"fake":  fakeMCP(config.MCPServer{Description: "fake", Tools: []string{"echo", "list_issues"}}),
 		"other": {Command: "/nonexistent", Description: "other"},
@@ -158,6 +165,7 @@ func TestMCPToolDefsByteStable(t *testing.T) {
 }
 
 func TestToolSearchHugeServerReportsShown(t *testing.T) {
+	t.Parallel()
 	m := mcp.NewManager(map[string]config.MCPServer{"fake": fakeMCP(config.MCPServer{Env: map[string]string{mcptest.BulkEnv: "500"}})})
 	defer m.Close()
 	res := runToolSearch(context.Background(), &Env{Cwd: t.TempDir()}, m, toolSearchArgs{Server: "fake"})

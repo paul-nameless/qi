@@ -33,6 +33,7 @@ func runGates(t *testing.T, s *session, gates []gate) {
 }
 
 func TestGatesState(t *testing.T) {
+	t.Parallel()
 	s := newSession(t)
 	runGates(t, s, []gate{
 		{code: "globalThis.a = 1; var b = 2; const c = 3; function f(){ return 4 } ; e2 = 5", want: "5"},
@@ -54,6 +55,7 @@ func TestGatesState(t *testing.T) {
 }
 
 func TestGatesCancel(t *testing.T) {
+	t.Parallel()
 	s := newSession(t)
 	runGates(t, s, []gate{
 		{code: "globalThis.keep = 42", want: "42"},
@@ -66,6 +68,7 @@ func TestGatesCancel(t *testing.T) {
 }
 
 func TestRegexGateTwice(t *testing.T) {
+	t.Parallel()
 	s := newSession(t)
 	g := gate{code: "const t = 'lorem ipsum dolor '.repeat(50000); return t.match(/\\b\\w+\\b/g).length + ' ' + t.replace(/o(?=r)/g, '0').length + ' ' + t.split(' ').length", want: "150000 900000 150001"}
 	runGates(t, s, []gate{g, g})

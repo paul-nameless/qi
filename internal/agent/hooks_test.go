@@ -30,6 +30,7 @@ func writeHooks(t *testing.T, hooks string) *Hooks {
 }
 
 func TestMatches(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		matcher, tool string
 		want          bool
@@ -67,6 +68,7 @@ func hookCall(name, input string) tools.HookCall {
 }
 
 func TestPreToolUse(t *testing.T) {
+	t.Parallel()
 	h := writeHooks(t, `{"PreToolUse":[
 		{"matcher":"Bash","hooks":[{"type":"command","command":"grep -q 'rm -rf' && { echo no rm >&2; exit 2; } || exit 0"}]},
 		{"matcher":"Write","hooks":[{"type":"command","command":"echo '{\"hookSpecificOutput\":{\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"no writes\"}}'"}]}
@@ -87,6 +89,7 @@ func TestPreToolUse(t *testing.T) {
 }
 
 func TestStopPromptAndPostHooks(t *testing.T) {
+	t.Parallel()
 	h := writeHooks(t, `{
 		"Stop":[{"hooks":[{"type":"command","command":"grep -q '\"stop_hook_active\":true' && exit 0; echo keep going >&2; exit 2"}]}],
 		"UserPromptSubmit":[{"hooks":[{"type":"command","command":"grep -q secret && { echo blocked >&2; exit 2; }; echo extra context"}]}],
@@ -112,6 +115,7 @@ func TestStopPromptAndPostHooks(t *testing.T) {
 }
 
 func TestLegacyDecisionBlock(t *testing.T) {
+	t.Parallel()
 	h := writeHooks(t, `{"PreToolUse":[{"hooks":[{"type":"command","command":"echo '{\"decision\":\"block\",\"reason\":\"r\"}'"}]}]}`)
 	if block, reason, _ := h.PreToolUse(context.Background(), hookCall("bash", `{}`)); !block || reason != "r" {
 		t.Errorf("legacy block: %v %q", block, reason)
@@ -119,6 +123,7 @@ func TestLegacyDecisionBlock(t *testing.T) {
 }
 
 func TestHookJSONIgnoredOnNonZeroExit(t *testing.T) {
+	t.Parallel()
 	h := writeHooks(t, `{"PreToolUse":[{"hooks":[{"type":"command","command":"echo '{\"decision\":\"block\",\"reason\":\"x\"}'; exit 1"}]}]}`)
 	if block, _, _ := h.PreToolUse(context.Background(), hookCall("bash", `{}`)); block {
 		t.Error("block JSON honored on exit 1")
@@ -126,6 +131,7 @@ func TestHookJSONIgnoredOnNonZeroExit(t *testing.T) {
 }
 
 func TestPreToolUseAskAndUpdatedInput(t *testing.T) {
+	t.Parallel()
 	h := writeHooks(t, `{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"grep -q danger && echo '{\"hookSpecificOutput\":{\"permissionDecision\":\"ask\"}}' || echo '{\"hookSpecificOutput\":{\"updatedInput\":{\"command\":\"echo safe\"}}}'"}]}]}`)
 	if block, _, _ := h.PreToolUse(context.Background(), hookCall("bash", `{"command":"danger"}`)); !block {
 		t.Error("ask not treated as block")
@@ -137,6 +143,7 @@ func TestPreToolUseAskAndUpdatedInput(t *testing.T) {
 }
 
 func TestMCPHookNaming(t *testing.T) {
+	t.Parallel()
 	h := writeHooks(t, `{"PreToolUse":[{"matcher":"mcp__github__.*","hooks":[{"type":"command","command":"in=$(cat); echo \"$in\" | grep -q mcp__github__create_issue && echo \"$in\" | grep -q title && { echo denied >&2; exit 2; }; exit 0"}]}]}`)
 	call := hookCall("mcp_call", `{"server":"github","tool":"create_issue","arguments":{"title":"x"}}`)
 	if block, reason, _ := h.PreToolUse(context.Background(), call); !block || reason != "denied" {
@@ -149,6 +156,7 @@ func TestMCPHookNaming(t *testing.T) {
 }
 
 func TestEmptyHooks(t *testing.T) {
+	t.Parallel()
 	var h *Hooks
 	if !h.Empty() {
 		t.Error("nil hooks not empty")
@@ -159,6 +167,7 @@ func TestEmptyHooks(t *testing.T) {
 }
 
 func TestHookFileErrors(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	for name, body := range map[string]string{
 		"syntax.json": "{\n  \"hooks\": {\n    \"Stop\": [,]\n  }\n}",
@@ -198,6 +207,7 @@ func TestHookFileErrors(t *testing.T) {
 }
 
 func TestHookTimeoutAndStartFailureAreReported(t *testing.T) {
+	t.Parallel()
 	var lines []string
 	var mu sync.Mutex
 	h := writeHooks(t, `{"Stop":[{"hooks":[{"type":"command","command":"echo slow >&2; sleep 5","timeout":1},{"type":"command","command":"no-such-hook-binary"}]}]}`)
@@ -216,6 +226,7 @@ func TestHookTimeoutAndStartFailureAreReported(t *testing.T) {
 }
 
 func TestAsyncHookRunsInBackground(t *testing.T) {
+	t.Parallel()
 	marker := filepath.Join(t.TempDir(), "ran")
 	h := writeHooks(t, `{"PreToolUse":[{"hooks":[{"type":"command","async":true,"command":"sleep 0.5; echo no >&2; touch `+marker+`; exit 2"}]}]}`)
 	start := time.Now()
@@ -234,6 +245,7 @@ func TestAsyncHookRunsInBackground(t *testing.T) {
 }
 
 func TestBlockingDuplicateOfAsyncHookStillBlocks(t *testing.T) {
+	t.Parallel()
 	h := writeHooks(t, `{"PreToolUse":[
 		{"hooks":[{"type":"command","async":true,"command":"echo no >&2; exit 2"}]},
 		{"matcher":"Bash","hooks":[{"type":"command","command":"echo no >&2; exit 2"}]}

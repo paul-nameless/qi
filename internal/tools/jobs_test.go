@@ -41,6 +41,7 @@ func waitNotice(t *testing.T, j *Jobs) Notice {
 }
 
 func TestBackgroundJobReturnsAtOnceAndNotifies(t *testing.T) {
+	t.Parallel()
 	env := jobEnv(t)
 	start := time.Now()
 	res := runBash(context.Background(), env, bashIn(t, map[string]any{"command": "sleep 0.3; seq 1 30; exit 3", "background": true}), nil)
@@ -60,6 +61,7 @@ func TestBackgroundJobReturnsAtOnceAndNotifies(t *testing.T) {
 }
 
 func TestDaemonJobIsNotWaitedFor(t *testing.T) {
+	t.Parallel()
 	env := jobEnv(t)
 	res := runBash(context.Background(), env, bashIn(t, map[string]any{"command": "sleep 30", "daemon": true}), nil)
 	if res.IsError || !strings.Contains(res.Text, "daemon") || len(env.Jobs.Waiting()) != 0 {
@@ -68,6 +70,7 @@ func TestDaemonJobIsNotWaitedFor(t *testing.T) {
 }
 
 func TestJobsFuncKillsProcessGroup(t *testing.T) {
+	t.Parallel()
 	env := jobEnv(t)
 	runBash(context.Background(), env, bashIn(t, map[string]any{"command": "sleep 30 & sleep 30", "background": true}), nil)
 	pgid := env.Jobs.list[0].cmd.Process.Pid
@@ -90,6 +93,7 @@ func TestJobsFuncKillsProcessGroup(t *testing.T) {
 }
 
 func TestKillAllStopsDaemons(t *testing.T) {
+	t.Parallel()
 	env := jobEnv(t)
 	runBash(context.Background(), env, bashIn(t, map[string]any{"command": "sleep 30", "daemon": true}), nil)
 	pgid := env.Jobs.list[0].cmd.Process.Pid
@@ -100,6 +104,7 @@ func TestKillAllStopsDaemons(t *testing.T) {
 }
 
 func TestBackgroundJobTimeout(t *testing.T) {
+	t.Parallel()
 	env := jobEnv(t)
 	runBash(context.Background(), env, bashIn(t, map[string]any{"command": "sleep 30", "background": true, "timeout": 1}), nil)
 	if n := waitNotice(t, env.Jobs); n.Status != "timed out after 1s" {
@@ -108,6 +113,7 @@ func TestBackgroundJobTimeout(t *testing.T) {
 }
 
 func TestReadOnlyRefusesBackgroundWrite(t *testing.T) {
+	t.Parallel()
 	env := jobEnv(t)
 	env.ReadOnly = func() bool { return true }
 	res := runBash(context.Background(), env, bashIn(t, map[string]any{"command": "rm -rf x", "background": true}), nil)
@@ -117,6 +123,7 @@ func TestReadOnlyRefusesBackgroundWrite(t *testing.T) {
 }
 
 func TestBackgroundTimeoutIsSeconds(t *testing.T) {
+	t.Parallel()
 	env := jobEnv(t)
 	runBash(context.Background(), env, bashIn(t, map[string]any{"command": "sleep 30", "background": true, "timeout": 1800}), nil)
 	time.Sleep(2500 * time.Millisecond)
@@ -129,6 +136,7 @@ func TestBackgroundTimeoutIsSeconds(t *testing.T) {
 }
 
 func TestLeftoverProcessesStayKillable(t *testing.T) {
+	t.Parallel()
 	env := jobEnv(t)
 	start := time.Now()
 	runBash(context.Background(), env, bashIn(t, map[string]any{"command": "sleep 30 > /dev/null 2>&1 & echo started", "background": true}), nil)
@@ -154,6 +162,7 @@ func TestLeftoverProcessesStayKillable(t *testing.T) {
 }
 
 func TestJobLogNamesAreUnique(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	a, b := &Env{Cwd: dir, SpillDir: dir, Jobs: NewJobs()}, &Env{Cwd: dir, SpillDir: dir, Jobs: NewJobs()}
 	t.Cleanup(a.Jobs.KillAll)
@@ -166,6 +175,7 @@ func TestJobLogNamesAreUnique(t *testing.T) {
 }
 
 func TestFinishedJobsArePruned(t *testing.T) {
+	t.Parallel()
 	env := jobEnv(t)
 	for i := 0; i < keepFinished+5; i++ {
 		if res := runBash(context.Background(), env, bashIn(t, map[string]any{"command": "true", "background": true}), nil); res.IsError {

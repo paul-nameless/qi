@@ -83,6 +83,7 @@ func lastText(m llm.Message) string {
 }
 
 func TestTurnRunsToolsAndQueuesSteering(t *testing.T) {
+	t.Parallel()
 	p := &fakeProvider{replies: []llm.Message{toolCall("c1", "echo hi")}}
 	a := newAgent(t, p)
 	p.onCall = func(n int) {
@@ -105,6 +106,7 @@ func TestTurnRunsToolsAndQueuesSteering(t *testing.T) {
 }
 
 func TestModeNoteSentOnChangeOnly(t *testing.T) {
+	t.Parallel()
 	p := &fakeProvider{}
 	a := newAgent(t, p)
 	a.SetReadOnly(true)
@@ -129,6 +131,7 @@ func TestModeNoteSentOnChangeOnly(t *testing.T) {
 }
 
 func TestCancelDuringToolsKeepsLogValid(t *testing.T) {
+	t.Parallel()
 	p := &fakeProvider{replies: []llm.Message{toolCall("c1", "sleep 5")}}
 	a := newAgent(t, p)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -151,6 +154,7 @@ func TestCancelDuringToolsKeepsLogValid(t *testing.T) {
 }
 
 func TestCompactBeforeNewPrompt(t *testing.T) {
+	t.Parallel()
 	p := &fakeProvider{replies: []llm.Message{{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: "SUMMARY"}}}}}
 	a := newAgent(t, p)
 	a.live.cfg.CompactAt = config.Threshold{Tokens: 100}
@@ -169,6 +173,7 @@ func TestCompactBeforeNewPrompt(t *testing.T) {
 }
 
 func TestCompactRejectsEmptySummary(t *testing.T) {
+	t.Parallel()
 	p := &fakeProvider{replies: []llm.Message{{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockToolUse, ID: "x", Name: "bash", Input: json.RawMessage(`{}`)}}}}}
 	a := newAgent(t, p)
 	a.conv.messages = []llm.Message{llm.UserText("old")}
@@ -181,6 +186,7 @@ func TestCompactRejectsEmptySummary(t *testing.T) {
 }
 
 func TestStopHookContinuesOnceWithActiveFlag(t *testing.T) {
+	t.Parallel()
 	p := &fakeProvider{}
 	a := newAgent(t, p)
 	var actives []bool
@@ -203,6 +209,7 @@ func TestStopHookContinuesOnceWithActiveFlag(t *testing.T) {
 }
 
 func TestCompactRejectsToolCallsAndTriesOncePerTurn(t *testing.T) {
+	t.Parallel()
 	summaryWithTool := llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: "Let me check first."}, {Type: llm.BlockToolUse, ID: "x", Name: "bash", Input: json.RawMessage(`{"command":"ls"}`)}}}
 	p := &fakeProvider{replies: []llm.Message{summaryWithTool, toolCall("c1", "echo a"), toolCall("c2", "echo b")}}
 	a := newAgent(t, p)
@@ -227,6 +234,7 @@ func TestCompactRejectsToolCallsAndTriesOncePerTurn(t *testing.T) {
 }
 
 func TestStopHookEmptyReason(t *testing.T) {
+	t.Parallel()
 	p := &fakeProvider{}
 	a := newAgent(t, p)
 	n := 0
@@ -244,6 +252,7 @@ func TestStopHookEmptyReason(t *testing.T) {
 }
 
 func TestRestoreMode(t *testing.T) {
+	t.Parallel()
 	a := newAgent(t, &fakeProvider{})
 	a.conv.messages = []llm.Message{{Role: llm.RoleUser, Blocks: []llm.Block{{Type: llm.BlockText, Text: "x"}, {Type: llm.BlockText, Text: readOnlyNote}}}}
 	a.restoreMode()
@@ -260,6 +269,7 @@ func (r *rejectProvider) Stream(ctx context.Context, req llm.Request, onDelta fu
 }
 
 func TestRejectedPromptIsRolledBack(t *testing.T) {
+	t.Parallel()
 	a := newAgent(t, &fakeProvider{})
 	a.live.provider = &rejectProvider{}
 	a.conv.messages = []llm.Message{llm.UserText("earlier")}
@@ -272,6 +282,7 @@ func TestRejectedPromptIsRolledBack(t *testing.T) {
 }
 
 func TestRejectedPromptKeepsTurnNotes(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "a.txt")
 	if err := os.WriteFile(path, []byte("one\n"), 0o644); err != nil {
@@ -306,6 +317,7 @@ func TestRejectedPromptKeepsTurnNotes(t *testing.T) {
 }
 
 func TestCancelledPromptIsKept(t *testing.T) {
+	t.Parallel()
 	p := &fakeProvider{}
 	a := newAgent(t, p)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -324,6 +336,7 @@ func TestCancelledPromptIsKept(t *testing.T) {
 }
 
 func TestRejectionAfterInterruptDropsTheInterruptedPrompt(t *testing.T) {
+	t.Parallel()
 	p := &fakeProvider{}
 	a := newAgent(t, p)
 	a.conv.messages = []llm.Message{llm.UserText("earlier"), {Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: "ok"}}}}
@@ -365,6 +378,7 @@ func (p *errProvider) Stream(context.Context, llm.Request, func(llm.Delta)) (llm
 }
 
 func TestMaxRounds(t *testing.T) {
+	t.Parallel()
 	p := &fakeProvider{replies: []llm.Message{toolCall("1", "true"), toolCall("2", "true"), toolCall("3", "true")}}
 	a := newAgent(t, p)
 	a.live.cfg.MaxRounds = 2
@@ -374,6 +388,7 @@ func TestMaxRounds(t *testing.T) {
 }
 
 func TestBlockCharsCountsImagesBySize(t *testing.T) {
+	t.Parallel()
 	big := strings.Repeat("A", 2_000_000)
 	blocks := []llm.Block{
 		{Type: llm.BlockToolResult, Text: "ok", Images: []llm.Block{{Type: llm.BlockImage, Data: big}}},
@@ -385,6 +400,7 @@ func TestBlockCharsCountsImagesBySize(t *testing.T) {
 }
 
 func TestSystemPromptStaticPartIsDirectoryFree(t *testing.T) {
+	t.Parallel()
 	home, proj := t.TempDir(), t.TempDir()
 	os.WriteFile(filepath.Join(home, "CLAUDE.md"), []byte("global rules"), 0o600)
 	os.WriteFile(filepath.Join(proj, "CLAUDE.md"), []byte("project rules"), 0o600)
@@ -412,6 +428,7 @@ func TestSystemPromptStaticPartIsDirectoryFree(t *testing.T) {
 }
 
 func TestFmtTokens(t *testing.T) {
+	t.Parallel()
 	cases := map[int]string{42: "42", 5234: "5.2k", 200000: "200k", 1000000: "1M", 1050000: "1.05M"}
 	for n, want := range cases {
 		if got := FmtTokens(n); got != want {
@@ -421,6 +438,7 @@ func TestFmtTokens(t *testing.T) {
 }
 
 func TestContextUsageBeforeFirstRequest(t *testing.T) {
+	t.Parallel()
 	a := New(Options{Config: config.Config{Model: "claude-opus-5-5", ContextWindow: 200000}})
 	a.SetSystem(SystemPrompt{Text: strings.Repeat("x", 40000)})
 	if got, want := a.ContextUsage(), "10.0k/200k (5.0%)"; got != want {
@@ -429,6 +447,7 @@ func TestContextUsageBeforeFirstRequest(t *testing.T) {
 }
 
 func TestContextReport(t *testing.T) {
+	t.Parallel()
 	a := New(Options{Tool: tools.Run(tools.Read()), Config: config.Config{Model: "claude-opus-5-5", ContextWindow: 200000}})
 	a.SetSystem(SystemPrompt{Text: strings.Repeat("s", 4000), Sections: []Section{{"base prompt", 1000}, {"environment", 3000}}})
 	a.conv.messages = []llm.Message{
@@ -464,6 +483,7 @@ func toolResultOf(t *testing.T, a *Agent, p *fakeProvider, cmd string) string {
 }
 
 func TestReconfigureUpdatesBashAllowlistAndTimeout(t *testing.T) {
+	t.Parallel()
 	p := &fakeProvider{}
 	a := newAgent(t, p)
 	a.SetReadOnly(true)
@@ -485,6 +505,7 @@ func TestReconfigureUpdatesBashAllowlistAndTimeout(t *testing.T) {
 }
 
 func TestAccessorsDuringTurn(t *testing.T) {
+	t.Parallel()
 	inTurn, release := make(chan struct{}), make(chan struct{})
 	p := &fakeProvider{onCall: func(n int) {
 		if n == 0 {
@@ -560,6 +581,7 @@ func TestTurnStatsLine(t *testing.T) {
 }
 
 func TestSystemPromptReplacesBase(t *testing.T) {
+	t.Parallel()
 	sys := BuildSystemPrompt(t.TempDir(), "", "custom base", nil, nil)
 	if !strings.HasPrefix(sys.Text, "custom base\n\n<env>") || strings.Contains(sys.Text, "You are qi") || sys.Sections[0].Name != "base prompt (system_prompt_file)" {
 		t.Fatalf("got %q %+v", sys.Text, sys.Sections)
@@ -567,6 +589,7 @@ func TestSystemPromptReplacesBase(t *testing.T) {
 }
 
 func TestSkillLinkTarget(t *testing.T) {
+	t.Parallel()
 	for in, want := range map[string]string{
 		"/a/b/SKILL.md":         "/a/b/SKILL.md",
 		"/My Skills/x/SKILL.md": "</My Skills/x/SKILL.md>",

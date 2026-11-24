@@ -189,6 +189,7 @@ func TestReviewRound6(t *testing.T) {
 }
 
 func TestRev4Round1(t *testing.T) {
+	t.Parallel()
 	v, err := New(Options{}).RunCell("c.js", "const m = new Map([[1, 2]]); Object.setPrototypeOf(m, null); const c = structuredClone(m); c instanceof Map && c.get(1) === 2")
 	if err != nil || ToString(v) != "true" {
 		t.Errorf("structuredClone of null-proto Map: %s %v", ToString(v), err)

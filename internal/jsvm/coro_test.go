@@ -102,6 +102,7 @@ func TestSettledAwaitSurvivesGC(t *testing.T) {
 }
 
 func TestInterruptedJobsCancelLatestCell(t *testing.T) {
+	t.Parallel()
 	vm := New(Options{})
 	if _, err := vm.RunCell("cell.js", "globalThis.out = 0; (async () => { await new Promise(res => { globalThis.r = res }); out = 1 })(); 1"); err != nil {
 		t.Fatal(err)
@@ -157,6 +158,7 @@ func TestCallArgsNotRetained(t *testing.T) {
 }
 
 func TestInterruptInsideToString(t *testing.T) {
+	t.Parallel()
 	for _, src := range []string{
 		"throw {toString() { for (;;) {} }}",
 		"try { [].map({toString() { for (;;) {} }}) } catch (e) { 'caught' }",
@@ -208,6 +210,7 @@ func TestMicrotaskFloodHitsLimit(t *testing.T) {
 }
 
 func TestNamedErrorStacks(t *testing.T) {
+	t.Parallel()
 	vm := New(Options{})
 	if s := vm.Exception(vm.NewError("TypeError", "x")).Error(); s != "TypeError: x" {
 		t.Errorf("NewError: %q", s)
@@ -222,6 +225,7 @@ func TestNamedErrorStacks(t *testing.T) {
 }
 
 func TestInterruptInNestedHostCall(t *testing.T) {
+	t.Parallel()
 	nested := map[string]func(vm *VM, args []Value) (Value, error){
 		"CallValue": func(vm *VM, args []Value) (Value, error) { return vm.CallValue(args[0], Undefined()) },
 		"Call":      func(vm *VM, args []Value) (Value, error) { return vm.Call("spin") },
@@ -247,6 +251,7 @@ func TestInterruptInNestedHostCall(t *testing.T) {
 }
 
 func TestJobsQueuedBeforeThrowStayQueued(t *testing.T) {
+	t.Parallel()
 	vm := New(Options{})
 	_, err := vm.RunCell("cell.js", "globalThis.ran = 0; Promise.resolve().then(() => { ran = 1 }); (async () => { await null; ran += 10 })(); throw new Error('boom')")
 	if errName(err) != "Error" {
@@ -270,6 +275,7 @@ func TestJobsQueuedBeforeThrowStayQueued(t *testing.T) {
 }
 
 func TestInterruptAfterStopLeavesNoLateInterrupt(t *testing.T) {
+	t.Parallel()
 	vm := New(Options{})
 	for i := 0; i < 2000; i++ {
 		stop := vm.InterruptAfter(time.Duration(i%50) * time.Microsecond)

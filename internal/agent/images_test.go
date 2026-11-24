@@ -24,6 +24,7 @@ func imageRound(i int) []llm.Message {
 }
 
 func TestEvictImagesDropsOldestPastTheLimit(t *testing.T) {
+	t.Parallel()
 	a := newAgent(t, &fakeProvider{})
 	for i := 0; i < maxImages; i++ {
 		a.conv.messages = append(a.conv.messages, imageRound(i)...)
@@ -55,6 +56,7 @@ func TestEvictImagesDropsOldestPastTheLimit(t *testing.T) {
 }
 
 func TestImageTokensFromSize(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		w, h, want int
 	}{
@@ -74,6 +76,7 @@ func TestImageTokensFromSize(t *testing.T) {
 }
 
 func TestOverflowClipRemovesPastedImages(t *testing.T) {
+	t.Parallel()
 	msgs := []llm.Message{{Role: llm.RoleUser, Blocks: []llm.Block{
 		{Type: llm.BlockText, Text: "look"},
 		{Type: llm.BlockImage, Data: "AAAA", Source: "/tmp/a.png"},
@@ -91,6 +94,7 @@ func TestOverflowClipRemovesPastedImages(t *testing.T) {
 }
 
 func TestEvictImagesKeepsTheNewestMessage(t *testing.T) {
+	t.Parallel()
 	a := newAgent(t, &fakeProvider{})
 	big := strings.Repeat("A", 6<<20)
 	var imgs []llm.Block
@@ -108,6 +112,7 @@ func TestEvictImagesKeepsTheNewestMessage(t *testing.T) {
 }
 
 func TestEvictImagesBySize(t *testing.T) {
+	t.Parallel()
 	a := newAgent(t, &fakeProvider{})
 	for i := 0; i < 30; i++ {
 		r := imageRound(i)
@@ -122,6 +127,7 @@ func TestEvictImagesBySize(t *testing.T) {
 }
 
 func TestCompactionEvictsImagesFirst(t *testing.T) {
+	t.Parallel()
 	p := &fakeProvider{replies: []llm.Message{{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: "summary"}}}}}
 	a := newAgent(t, p)
 	for i := 0; i < 130; i++ {

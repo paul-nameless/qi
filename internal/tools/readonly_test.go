@@ -18,6 +18,7 @@ import (
 )
 
 func TestCheckReadOnly(t *testing.T) {
+	t.Parallel()
 	ok := []string{
 		"ls -la",
 		"rg -n TODO . | head -20",
@@ -156,6 +157,7 @@ func TestCheckReadOnly(t *testing.T) {
 }
 
 func TestReadOnlyGlobMatchingFlags(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "--pre=sh"), nil, 0o600)
 	os.WriteFile(filepath.Join(dir, "evil"), nil, 0o600)
@@ -170,6 +172,7 @@ func TestReadOnlyGlobMatchingFlags(t *testing.T) {
 }
 
 func TestReadOnlySandboxBlocksWrites(t *testing.T) {
+	t.Parallel()
 	if !HasSandbox() {
 		t.Skip("no OS sandbox")
 	}
@@ -219,6 +222,7 @@ func TestRunBashUsesSandbox(t *testing.T) {
 }
 
 func TestReadOnlyBashThroughHooksPath(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	env := &Env{Cwd: dir, ReadOnly: func() bool { return true }, SpillDir: t.TempDir()}
 	res := newFuncSet(Bash()).Execute(context.Background(), env, []llm.Block{{ID: "1", Name: "bash", Input: json.RawMessage(`{"command":"touch x"}`)}}, nopUI{})
@@ -231,6 +235,7 @@ func TestReadOnlyBashThroughHooksPath(t *testing.T) {
 }
 
 func TestReadOnlyGitIgnoresFsmonitor(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
@@ -249,6 +254,7 @@ func TestReadOnlyGitIgnoresFsmonitor(t *testing.T) {
 }
 
 func TestBwrapExecDenyList(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	usr := filepath.Join(root, "usr", "bin")
 	os.MkdirAll(usr, 0o755)
@@ -289,6 +295,7 @@ func requireLinuxSandbox(t *testing.T) {
 }
 
 func TestLinuxSandboxDeniesExec(t *testing.T) {
+	t.Parallel()
 	requireLinuxSandbox(t)
 	denied := execDenied()
 	if len(denied) == 0 {
@@ -334,6 +341,7 @@ var escapePoCs = []string{
 }
 
 func TestReadOnlyEscapePoCs(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	os.MkdirAll(filepath.Join(dir, "bin"), 0o755)
 	os.WriteFile(filepath.Join(dir, "bin", "ls"), []byte("#!/bin/sh\ntouch PWNED-ls\n"), 0o755)
@@ -363,6 +371,7 @@ func TestReadOnlyEscapePoCs(t *testing.T) {
 }
 
 func TestSandboxDeniesNetwork(t *testing.T) {
+	t.Parallel()
 	if !SandboxIsolatesNetwork() {
 		t.Skip("no OS sandbox with network isolation")
 	}

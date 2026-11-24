@@ -25,6 +25,7 @@ func textMsg(s string) llm.Message {
 }
 
 func TestTurnWaitsForBackgroundJob(t *testing.T) {
+	t.Parallel()
 	p := &fakeProvider{replies: []llm.Message{bgCall("c1", "sleep 0.3; echo finished", false), textMsg("waiting for it")}}
 	a := newAgent(t, p)
 	t.Cleanup(a.KillJobs)
@@ -42,6 +43,7 @@ func TestTurnWaitsForBackgroundJob(t *testing.T) {
 }
 
 func TestCancelWhileWaitingForJob(t *testing.T) {
+	t.Parallel()
 	p := &fakeProvider{replies: []llm.Message{bgCall("c1", "sleep 30", false), textMsg("waiting")}}
 	a := newAgent(t, p)
 	t.Cleanup(a.KillJobs)
@@ -65,6 +67,7 @@ func TestCancelWhileWaitingForJob(t *testing.T) {
 }
 
 func TestDaemonDoesNotHoldTurn(t *testing.T) {
+	t.Parallel()
 	p := &fakeProvider{replies: []llm.Message{bgCall("c1", "sleep 30", true), textMsg("server up")}}
 	a := newAgent(t, p)
 	t.Cleanup(a.KillJobs)
@@ -76,6 +79,7 @@ func TestDaemonDoesNotHoldTurn(t *testing.T) {
 }
 
 func TestSteeringWakesJobWait(t *testing.T) {
+	t.Parallel()
 	p := &fakeProvider{replies: []llm.Message{bgCall("c1", "sleep 1", false), textMsg("waiting")}}
 	a := newAgent(t, p)
 	t.Cleanup(a.KillJobs)
@@ -97,6 +101,7 @@ func TestSteeringWakesJobWait(t *testing.T) {
 }
 
 func TestNoticeOfIdleJobJoinsNextTurn(t *testing.T) {
+	t.Parallel()
 	p := &fakeProvider{replies: []llm.Message{bgCall("c1", "sleep 0.5; exit 4", false), textMsg("waiting")}}
 	a := newAgent(t, p)
 	t.Cleanup(a.KillJobs)
@@ -117,6 +122,7 @@ func TestNoticeOfIdleJobJoinsNextTurn(t *testing.T) {
 }
 
 func TestQueueDuringLastReplyWithoutJobsEndsTurn(t *testing.T) {
+	t.Parallel()
 	p := &fakeProvider{}
 	a := newAgent(t, p)
 	p.onCall = func(int) { a.Queue([]llm.Block{{Type: llm.BlockText, Text: "later"}}) }

@@ -146,6 +146,7 @@ func projectSocketDenied(t *testing.T, run func(string) string) {
 }
 
 func TestProjectModeGitWorktree(t *testing.T) {
+	t.Parallel()
 	if !HasSandbox() {
 		t.Skip("no OS sandbox")
 	}
@@ -231,6 +232,7 @@ func TestProjectModeTrickyPaths(t *testing.T) {
 }
 
 func TestProjectModeGitInit(t *testing.T) {
+	t.Parallel()
 	if !HasSandbox() {
 		t.Skip("no OS sandbox")
 	}
@@ -244,6 +246,7 @@ func TestProjectModeGitInit(t *testing.T) {
 }
 
 func TestProjectModeRepoSubdirCannotMoveGit(t *testing.T) {
+	t.Parallel()
 	if !HasSandbox() {
 		t.Skip("no OS sandbox")
 	}
