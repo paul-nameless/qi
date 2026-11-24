@@ -4,6 +4,7 @@ import (
 	"slices"
 	"sync"
 	"unicode"
+	"unicode/utf8"
 )
 
 const (
@@ -15,6 +16,7 @@ type charset struct {
 	ascii    [4]uint64
 	ranges   []rune
 	nonASCII bool
+	lit      string
 }
 
 func newCharset(rs []rune) *charset {
@@ -28,6 +30,9 @@ func newCharset(rs []rune) *charset {
 		for r := lo; r <= hi && r < 0x80; r++ {
 			c.ascii[r>>6] |= 1 << (r & 63)
 		}
+	}
+	if r, ok := c.single(); ok && r >= 0x80 && utf8.ValidRune(r) && r != utf8.RuneError {
+		c.lit = string(r)
 	}
 	return c
 }
@@ -44,6 +49,9 @@ func (c *charset) has(r rune) bool {
 		return false
 	}
 	rs := c.ranges
+	if len(rs) == 2 {
+		return r >= rs[0] && r <= rs[1]
+	}
 	lo, hi := 0, len(rs)/2
 	for lo < hi {
 		m := int(uint(lo+hi) >> 1)
