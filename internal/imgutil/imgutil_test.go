@@ -43,3 +43,18 @@ func TestResizeReadsAnyImageAndRegionRowByRow(t *testing.T) {
 		t.Error("a same-size resize should be the region's RGBA copy")
 	}
 }
+
+func TestResizeLeavesRowsOutsideTheSourceTransparent(t *testing.T) {
+	src := image.NewNRGBA(image.Rect(0, 0, 10, 5))
+	for i := range src.Pix {
+		src.Pix[i] = 200
+	}
+	got := Resize(src, image.Rect(0, 0, 10, 10), 5, 5)
+	for y := 3; y < 5; y++ {
+		for _, v := range got.Pix[y*got.Stride : (y+1)*got.Stride] {
+			if v != 0 {
+				t.Fatalf("row %d below the source is %v, want transparent", y, got.Pix[y*got.Stride:(y+1)*got.Stride])
+			}
+		}
+	}
+}

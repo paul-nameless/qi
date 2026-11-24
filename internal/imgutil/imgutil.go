@@ -43,9 +43,11 @@ func Resize(img image.Image, region image.Rectangle, w, h int) *image.RGBA {
 	row := image.NewRGBA(image.Rect(0, 0, sw, 1))
 	hrow := make([]float32, w*4)
 	acc := map[int][]float32{}
+	var free [][]float32
 	dst := image.NewRGBA(image.Rect(0, 0, w, h))
 	y0 := 0
 	for sy := 0; sy < sh; sy++ {
+		clear(row.Pix)
 		draw.Draw(row, row.Rect, img, image.Pt(b.Min.X, b.Min.Y+sy), draw.Src)
 		clear(hrow)
 		for x, sp := range hs {
@@ -65,7 +67,12 @@ func Resize(img image.Image, region image.Rectangle, w, h int) *image.RGBA {
 			}
 			a, ok := acc[y]
 			if !ok {
-				a = make([]float32, w*4)
+				if n := len(free); n > 0 {
+					a, free = free[n-1], free[:n-1]
+					clear(a)
+				} else {
+					a = make([]float32, w*4)
+				}
 				acc[y] = a
 			}
 			wt := vs[y].weights[k]
@@ -77,6 +84,9 @@ func Resize(img image.Image, region image.Rectangle, w, h int) *image.RGBA {
 			o := dst.Pix[y0*dst.Stride:]
 			for i, v := range acc[y0] {
 				o[i] = uint8(min(max(v+0.5, 0), 255))
+			}
+			if a, ok := acc[y0]; ok {
+				free = append(free, a)
 			}
 			delete(acc, y0)
 			y0++
