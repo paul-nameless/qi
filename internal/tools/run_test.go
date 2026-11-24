@@ -185,6 +185,31 @@ func TestCellToolError(t *testing.T) {
 	}
 }
 
+func TestRunFiresHooksOnlyForInnerCalls(t *testing.T) {
+	k := newCellKit(t)
+	k.file("f.txt", "content\n")
+	var mu sync.Mutex
+	var seen []string
+	record := func(event, tool string) {
+		mu.Lock()
+		seen = append(seen, event+" "+tool)
+		mu.Unlock()
+	}
+	k.env.PreHook = func(ctx context.Context, c HookCall) (bool, string, json.RawMessage) {
+		record("pre", c.Tool)
+		return false, "", nil
+	}
+	k.env.PostHook = func(ctx context.Context, c HookCall, r Result) string {
+		record("post", c.Tool)
+		return ""
+	}
+	in, _ := json.Marshal(runArgs{Code: `await read("f.txt")`})
+	res := k.reg.Execute(k.ctx, k.env, []llm.Block{{ID: "1", Name: "run", Input: in}}, nopUI{})
+	if res[0].IsError || strings.Join(seen, ",") != "pre Read,post Read" {
+		t.Errorf("hooks saw %v, result %+v", seen, res[0])
+	}
+}
+
 func TestCellPostHookStaysOutOfValues(t *testing.T) {
 	k := newCellKit(t)
 	k.file("f.txt", "content\n")

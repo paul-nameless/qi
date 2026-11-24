@@ -86,7 +86,7 @@ The agent finds MCP tools with `tool_search()` and calls them with `mcp()`, so t
 
 ### Code mode
 
-The model gets a single tool, `run`, which executes JavaScript in an in-process VM. The functions `read`, `write`, `edit`, `bash`, `jobs`, `subagent`, `tool_search` and `mcp` are async JavaScript functions there; each call goes through hooks, read-only mode and the stale-file check, and shows as its own line under the `run` line. Variables stay defined between `run` calls; this state lives in memory only and is dropped on `/clear`, on resume and at exit (not on compaction).
+The model gets a single tool, `run`, which executes JavaScript in an in-process VM. The functions `read`, `write`, `edit`, `bash`, `jobs`, `subagent`, `tool_search` and `mcp` are async JavaScript functions there; each call goes through read-only mode, the stale-file check and your PreToolUse/PostToolUse hooks under Claude Code's tool names (`Read`, `Write`, `Edit`, `Bash`, `Agent`/`Task`, `mcp__server__tool`; `jobs` and `tool_search` under their own), and shows as its own line under the `run` line. Variables stay defined between `run` calls; this state lives in memory only and is dropped on `/clear`, on resume and at exit (not on compaction). `run` itself fires no hooks, so a `*` matcher sees each call once.
 
 The terminal shows the whole code of each `run` call (dim, up to 200 lines) with its tool calls under it; `"run_code": false`, globally or in a profile, shows one line per call instead, and `/config` switches it for the session.
 

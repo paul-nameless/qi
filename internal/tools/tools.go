@@ -318,7 +318,7 @@ func (r *Registry) invokeSplit(ctx context.Context, env *Env, t *Tool, call llm.
 	case llm.InvalidArgs(call.Input):
 		return errResult("invalid JSON arguments: %s", string(call.Input)), ""
 	}
-	if env.PreHook != nil {
+	if env.PreHook != nil && t.Inner == nil {
 		block, reason, input := env.PreHook(ctx, t.HookCall(call))
 		if block {
 			return deniedResult("blocked by hook: %s", reason), ""
@@ -331,7 +331,7 @@ func (r *Registry) invokeSplit(ctx context.Context, env *Env, t *Tool, call llm.
 	if ctx.Err() != nil && !res.IsError && !inCell(ctx) {
 		res.Text += "\n[interrupted by user]"
 	}
-	if env.PostHook != nil {
+	if env.PostHook != nil && t.Inner == nil {
 		extra = env.PostHook(ctx, t.HookCall(call), res)
 	}
 	return res, extra
