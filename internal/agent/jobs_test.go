@@ -24,7 +24,7 @@ func bgCall(id, cmd string, daemon bool) llm.Message {
 }
 
 func gated(gate, then string) string {
-	return fmt.Sprintf("while [ ! -e %q ]; do sleep 0.01; done; %s", gate, then)
+	return fmt.Sprintf("i=0; while [ ! -e %[1]q ] && [ $i -lt 500 ]; do sleep 0.01; i=$((i+1)); done; [ -e %[1]q ] || exit 9; %[2]s", gate, then)
 }
 
 func openGate(t *testing.T, gate string) {

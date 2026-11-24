@@ -51,30 +51,28 @@ func (nopDisplay) EndBlock()                     {}
 func (nopDisplay) Info(string)                   {}
 func (nopDisplay) Error(string)                  {}
 
-type hookDisplay struct {
+type jobWaitDisplay struct {
 	nopDisplay
-	onInfo  func(string)
-	onStart func(id string)
+	onWait func()
 }
 
-func (d hookDisplay) Info(s string) {
-	if d.onInfo != nil {
-		d.onInfo(s)
+func (d jobWaitDisplay) Info(s string) {
+	if strings.HasPrefix(s, "waiting for background") {
+		d.onWait()
 	}
 }
 
-func (d hookDisplay) ToolStart(id, _ string) {
-	if d.onStart != nil {
-		d.onStart(id)
-	}
+func onJobWait(f func()) jobWaitDisplay {
+	return jobWaitDisplay{onWait: f}
 }
 
-func onJobWait(f func()) hookDisplay {
-	return hookDisplay{onInfo: func(s string) {
-		if strings.HasPrefix(s, "waiting for background") {
-			f()
+func appears(path string) bool {
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+		if _, err := os.Stat(path); err == nil {
+			return true
 		}
-	}}
+	}
+	return false
 }
 
 func runCall(id, code string) llm.Message {
@@ -162,13 +160,16 @@ func TestModeNoteSentOnChangeOnly(t *testing.T) {
 
 func TestCancelDuringToolsKeepsLogValid(t *testing.T) {
 	t.Parallel()
-	p := &fakeProvider{replies: []llm.Message{toolCall("c1", "sleep 5")}}
+	running := filepath.Join(t.TempDir(), "running")
+	p := &fakeProvider{replies: []llm.Message{toolCall("c1", "touch '"+running+"'; sleep 5")}}
+	a := newAgent(t, p)
 	ctx, cancel := context.WithCancel(context.Background())
-	a := newAgentUI(t, p, hookDisplay{onStart: func(id string) {
-		if strings.Contains(id, ".") {
-			cancel()
+	go func() {
+		if !appears(running) {
+			t.Error("the tool never started")
 		}
-	}})
+		cancel()
+	}()
 	_, _, err := a.Turn(ctx, []llm.Block{{Type: llm.BlockText, Text: "go"}})
 	if err != context.Canceled {
 		t.Fatalf("err %v", err)

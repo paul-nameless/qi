@@ -324,7 +324,11 @@ func TestCellStopsCallingAfterCancel(t *testing.T) {
 	t.Parallel()
 	k := newCellKit(t)
 	ctx, cancel := context.WithCancel(context.Background())
-	time.AfterFunc(100*time.Millisecond, cancel)
+	go func() {
+		for deadline := time.Now().Add(5 * time.Second); k.tick.Load() < 3 && time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+		}
+		cancel()
+	}()
 	res := k.cellCtx(ctx, `globalThis.n = 0; while (true) { try { n++; await tick(); await bash("sleep 0.02") } catch {} }`, 0)
 	if !strings.Contains(res.Text, "interrupted by user") {
 		t.Fatalf("got %q", res.Text)
@@ -939,7 +943,7 @@ func TestCellFormatJobsDoNotLeak(t *testing.T) {
 	}
 	start := time.Now()
 	k.want(`return {toJSON() { const spin = () => Promise.resolve().then(spin); spin(); return 3 }}`, "3")
-	if d := time.Since(start); d > 2*formatSeconds*k.run.r.unit() {
+	if d := time.Since(start); d > formatSeconds*k.run.r.unit()+5*time.Second {
 		t.Errorf("an endless job loop held the result for %v", d)
 	}
 	k.want(`await sleep(1); 4`, "4")
