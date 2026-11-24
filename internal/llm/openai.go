@@ -209,6 +209,7 @@ type oaChunk struct {
 		} `json:"prompt_tokens_details"`
 	} `json:"usage"`
 	Error *struct {
+		Type    string `json:"type"`
 		Message string `json:"message"`
 		Code    any    `json:"code"`
 	} `json:"error"`
@@ -265,7 +266,7 @@ func (s *openAIStream) handle(ev sseEvent) error {
 		return fmt.Errorf("decode stream chunk: %w", err)
 	}
 	if ch.Error != nil {
-		return &StreamError{Code: errorCode(ch.Error.Code), Message: ch.Error.Message}
+		return &StreamError{Type: ch.Error.Type, Code: errorCode(ch.Error.Code), Message: ch.Error.Message}
 	}
 	if ch.Usage != nil {
 		s.usage = Usage{

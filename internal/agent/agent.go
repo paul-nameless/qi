@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/http"
 	"slices"
 	"strconv"
 	"strings"
@@ -659,7 +660,7 @@ func blockChars(blocks []llm.Block) int {
 
 func rejected(err error) bool {
 	var apiErr *llm.APIError
-	return errors.As(err, &apiErr) && apiErr.Status >= 400 && apiErr.Status < 500 && !apiErr.Throttled()
+	return errors.As(err, &apiErr) && apiErr.Status >= 400 && apiErr.Status < 500 && !apiErr.Throttled() && apiErr.Status != http.StatusRequestTimeout
 }
 
 func (a *Agent) dropLast() {
@@ -712,16 +713,24 @@ func streamBackoff(attempt int) time.Duration {
 }
 
 func (a *Agent) stream(ctx context.Context) (llm.Message, llm.Usage, error) {
-	for attempt := 0; ; attempt++ {
+	return a.withRetries(ctx, func() (llm.Message, llm.Usage, error, bool) {
 		shown := false
 		l := a.snapshot()
 		show := l.cfg.ShowReasoningOn()
 		msg, usage, err := l.provider.Stream(ctx, a.request(l, a.conv.messages), func(d llm.Delta) {
 			shown = a.onDelta(d, show) || shown
 		})
-		if err == nil || shown || attempt == streamAttempts-1 || ctx.Err() != nil || !llm.Retryable(err) {
+		return msg, usage, err, shown
+	})
+}
+
+func (a *Agent) withRetries(ctx context.Context, call func() (llm.Message, llm.Usage, error, bool)) (llm.Message, llm.Usage, error) {
+	for attempt := 0; ; attempt++ {
+		msg, usage, err, shown := call()
+		if err == nil || shown || attempt == streamAttempts-1 || ctx.Err() != nil || !llm.Retryable(err) || contextTooLong(err) {
 			return msg, usage, err
 		}
+		a.recordUsage(usage)
 		a.ui.Info("retrying: " + tools.OneLine(err.Error(), 100))
 		if err := llm.Sleep(ctx, streamBackoff(attempt)); err != nil {
 			return msg, usage, err

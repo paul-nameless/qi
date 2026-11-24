@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/paul-nameless/qi/internal/config"
 	"github.com/paul-nameless/qi/internal/llm"
@@ -516,5 +517,28 @@ func TestBilledFailuresRecordTheirUsage(t *testing.T) {
 	}
 	if _, ld, err := session.Open(s.Path); err != nil || ld.CtxTokens != 0 {
 		t.Errorf("usage entries must not change the restored context: %d %v", ld.CtxTokens, err)
+	}
+}
+
+type flakyProvider struct{ calls int }
+
+func (f *flakyProvider) Stream(context.Context, llm.Request, func(llm.Delta)) (llm.Message, llm.Usage, error) {
+	f.calls++
+	if f.calls == 1 {
+		return llm.Message{}, llm.Usage{}, errors.New("stream error: stream ID 63; INTERNAL_ERROR; received from peer")
+	}
+	return assistantText("SUMMARY"), llm.Usage{}, nil
+}
+
+func TestCompactionRetriesATransientFailure(t *testing.T) {
+	old := llm.Sleep
+	llm.Sleep = func(context.Context, time.Duration) error { return nil }
+	t.Cleanup(func() { llm.Sleep = old })
+	a := newAgent(t, &fakeProvider{})
+	p := &flakyProvider{}
+	a.live.provider = p
+	a.conv.messages = history()
+	if err := a.Compact(context.Background(), ""); err != nil || p.calls != 2 {
+		t.Errorf("compaction after one reset: %v, %d calls", err, p.calls)
 	}
 }

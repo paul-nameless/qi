@@ -229,7 +229,7 @@ func (s *responsesStream) handle(ev sseEvent) error {
 		return s.end(e)
 	case "response.failed":
 		if e.Response != nil && e.Response.Error != nil {
-			return &StreamError{Code: errorCode(e.Response.Error.Code), Message: e.Response.Error.Message}
+			return &StreamError{Type: e.Response.Error.Type, Code: errorCode(e.Response.Error.Code), Message: e.Response.Error.Message}
 		}
 		return &StreamError{Message: "response failed"}
 	case "error":

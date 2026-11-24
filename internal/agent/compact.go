@@ -228,9 +228,15 @@ var overflowMessages = []string{
 func (a *Agent) summarize(ctx context.Context, opts compactOpts, keepsTail bool) (string, llm.Usage, error) {
 	prompt := compactPrompt(a.conv.messages, opts.focus, keepsTail)
 	l := a.snapshot()
-	msg, usage, err := l.provider.Stream(ctx, a.request(l, summaryRequest(a.conv.messages, prompt, opts.overflow)), func(llm.Delta) {})
+	summarize := func(overflow bool) (llm.Message, llm.Usage, error) {
+		return a.withRetries(ctx, func() (llm.Message, llm.Usage, error, bool) {
+			msg, usage, err := l.provider.Stream(ctx, a.request(l, summaryRequest(a.conv.messages, prompt, overflow)), func(llm.Delta) {})
+			return msg, usage, err, false
+		})
+	}
+	msg, usage, err := summarize(opts.overflow)
 	if err != nil && !opts.overflow && contextTooLong(err) {
-		msg, usage, err = l.provider.Stream(ctx, a.request(l, summaryRequest(a.conv.messages, prompt, true)), func(llm.Delta) {})
+		msg, usage, err = summarize(true)
 	}
 	summary := strings.TrimSpace(msg.Text())
 	switch {

@@ -57,18 +57,23 @@ func (e *StreamError) Error() string {
 
 func (e *StreamError) retryable() bool {
 	switch e.Type {
-	case "overloaded_error", "api_error", "rate_limit_error":
+	case "overloaded_error", "api_error", "rate_limit_error", "timeout_error", "server_error":
 		return true
 	}
 	if n, err := strconv.Atoi(e.Code); err == nil && (n == 408 || n == 429 || n >= 500) {
 		return true
 	}
 	switch e.Code {
-	case "server_error", "rate_limit_exceeded", "timeout":
+	case "server_error", "timeout":
 		return true
+	case "rate_limit_exceeded":
+		return !strings.Contains(strings.ToLower(e.Message), "too large")
+	}
+	if e.clientError() {
+		return false
 	}
 	msg := strings.ToLower(e.Message)
-	for _, hint := range []string{"overloaded", "retry", "try again", "temporarily unavailable"} {
+	for _, hint := range []string{"overloaded", "retry the request", "try again later", "temporarily unavailable"} {
 		if strings.Contains(msg, hint) {
 			return true
 		}
@@ -76,12 +81,25 @@ func (e *StreamError) retryable() bool {
 	return false
 }
 
-var transientHTTP2 = []string{"INTERNAL_ERROR", "REFUSED_STREAM", "CANCEL", "ENHANCE_YOUR_CALM"}
+func (e *StreamError) clientError() bool {
+	if n, err := strconv.Atoi(e.Code); err == nil && n >= 400 && n < 500 {
+		return true
+	}
+	t := e.Type + " " + e.Code
+	for _, kind := range []string{"invalid", "authentication", "permission", "billing", "content", "policy", "context_length", "not_found"} {
+		if strings.Contains(t, kind) {
+			return true
+		}
+	}
+	return false
+}
+
+var transientHTTP2 = []string{"INTERNAL_ERROR", "REFUSED_STREAM", "ENHANCE_YOUR_CALM", "NO_ERROR"}
 
 func http2Transient(err error) bool {
 	s := err.Error()
 	switch {
-	case strings.Contains(s, "server sent GOAWAY"), strings.Contains(s, "http2: client connection lost"):
+	case strings.Contains(s, "GOAWAY"):
 		return true
 	case !strings.Contains(s, "received from peer"):
 		return false
@@ -119,7 +137,8 @@ func Retryable(err error) bool {
 		return dnsErr.IsTemporary || dnsErr.IsTimeout
 	case errors.Is(err, ErrStalled), errors.Is(err, ErrIncomplete), errors.Is(err, io.ErrUnexpectedEOF),
 		errors.Is(err, syscall.ECONNRESET), errors.Is(err, syscall.EPIPE), errors.Is(err, syscall.ETIMEDOUT), errors.Is(err, syscall.ECONNABORTED),
-		http2Transient(err), netTimeout(err):
+		errors.Is(err, syscall.ENETDOWN), errors.Is(err, syscall.ENETUNREACH), errors.Is(err, syscall.EHOSTUNREACH),
+		errors.Is(err, errEmpty), http2Transient(err), netTimeout(err):
 		return true
 	case errors.As(err, &urlErr):
 		return urlErr.Op != "parse"
