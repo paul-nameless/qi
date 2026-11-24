@@ -261,6 +261,59 @@ func TestRejectedPromptIsRolledBack(t *testing.T) {
 	}
 }
 
+func TestRejectedPromptKeepsTurnNotes(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "a.txt")
+	if err := os.WriteFile(path, []byte("one\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	in, _ := json.Marshal(map[string]string{"file_path": "a.txt"})
+	p := &fakeProvider{replies: []llm.Message{{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockToolUse, ID: "1", Name: "read", Input: in}}}}}
+	a := New(Options{Config: config.Config{CompactAt: config.Threshold{Tokens: 1 << 30}, Model: "m"}, Cwd: dir, Provider: p, UI: nopDisplay{}, Tools: []*tools.Tool{tools.Read()}, SpillDir: t.TempDir()})
+	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "read it"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("one\ntwo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	later := time.Now().Add(2 * time.Second)
+	if err := os.Chtimes(path, later, later); err != nil {
+		t.Fatal(err)
+	}
+	a.SetReadOnly(true)
+	a.live.provider = &rejectProvider{}
+	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "bad"}}); err == nil {
+		t.Fatal("expected error")
+	}
+	a.live.provider = p
+	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "again"}}); err != nil {
+		t.Fatal(err)
+	}
+	last := p.requests[len(p.requests)-1]
+	got := lastText(last[len(last)-1])
+	if strings.Contains(got, "bad") || !strings.Contains(got, "+two") || !strings.Contains(got, readOnlyNote) {
+		t.Errorf("next turn after a rejected prompt lost its notes:\n%s", got)
+	}
+}
+
+func TestCancelledPromptIsKept(t *testing.T) {
+	p := &fakeProvider{}
+	a := newAgent(t, p)
+	ctx, cancel := context.WithCancel(context.Background())
+	p.onCall = func(int) { cancel() }
+	if _, _, err := a.Turn(ctx, []llm.Block{{Type: llm.BlockText, Text: "first"}}); err != context.Canceled {
+		t.Fatalf("got %v", err)
+	}
+	p.onCall = nil
+	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "second"}}); err != nil {
+		t.Fatal(err)
+	}
+	last := llm.MergeConsecutive(p.requests[len(p.requests)-1])
+	if len(last) != 1 || lastText(last[0]) != "first|"+interruptedNote+"|second" {
+		t.Errorf("request after a cancelled prompt: %+v", last)
+	}
+}
+
 func TestThrottledPromptIsKept(t *testing.T) {
 	old := llm.Sleep
 	llm.Sleep = func(ctx context.Context, d time.Duration) error { return ctx.Err() }

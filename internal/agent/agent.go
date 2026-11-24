@@ -70,6 +70,7 @@ type conversation struct {
 	registry     *tools.Registry
 	onStop       StopHook
 	announced    bool
+	carry        []llm.Block
 	paused       bool
 	thrashAt     int
 	windowWarned bool
@@ -85,8 +86,9 @@ func New(o Options) *Agent {
 }
 
 const (
-	readOnlyNote = "<mode>Read-only mode is on: write and edit are refused, and bash only runs allowlisted read-only commands.</mode>"
-	yoloNote     = "<mode>Read-only mode is off: all tools are available again.</mode>"
+	readOnlyNote    = "<mode>Read-only mode is on: write and edit are refused, and bash only runs allowlisted read-only commands.</mode>"
+	yoloNote        = "<mode>Read-only mode is off: all tools are available again.</mode>"
+	interruptedNote = "[Request interrupted by user]"
 )
 
 func (a *Agent) ReadOnly() bool { return a.readOnly.Load() }
@@ -130,7 +132,7 @@ func (a *Agent) setSession(s *session.Session) {
 func (a *Agent) resetConversation(msgs []llm.Message) {
 	a.conv.messages = msgs
 	a.env.ForgetFiles()
-	a.conv.announced = false
+	a.conv.announced, a.conv.carry = false, nil
 	a.conv.paused, a.conv.thrashAt = false, 0
 }
 
@@ -482,13 +484,7 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 			a.ui.Error("compaction failed: " + err.Error())
 		}
 	}
-	if cb, ok := a.changesBlock(); ok {
-		blocks = append(blocks, cb)
-	}
-	blocks = append(blocks, a.jobBlocks()...)
-	if mb, ok := a.modeBlock(); ok {
-		blocks = append(blocks, mb)
-	}
+	blocks, undo := a.addTurnNotes(blocks)
 	a.appendMsg(llm.Message{Role: llm.RoleUser, Blocks: blocks}, nil)
 	maxRounds := a.Config().MaxRounds
 	stopActive := false
@@ -516,11 +512,13 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 			a.ui.Error("compaction failed: " + cerr.Error())
 		}
 		if err != nil {
-			if round == 0 && (ctx.Err() != nil || rejected(err)) {
-				a.dropLast()
-			}
 			if ctx.Err() != nil {
+				a.appendMsg(llm.Message{Role: llm.RoleUser, Blocks: []llm.Block{{Type: llm.BlockText, Text: interruptedNote}}}, nil)
 				return "", stats, context.Canceled
+			}
+			if round == 0 && rejected(err) {
+				a.dropLast()
+				undo()
 			}
 			return "", stats, err
 		}
@@ -552,6 +550,22 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 		}
 		a.appendNext(next)
 	}
+}
+
+func (a *Agent) addTurnNotes(blocks []llm.Block) ([]llm.Block, func()) {
+	n := len(blocks)
+	blocks = append(blocks, a.conv.carry...)
+	a.conv.carry = nil
+	if cb, ok := a.changesBlock(); ok {
+		blocks = append(blocks, cb)
+	}
+	blocks = append(blocks, a.jobBlocks()...)
+	carry := slices.Clone(blocks[n:])
+	announced := a.conv.announced
+	if mb, ok := a.modeBlock(); ok {
+		blocks = append(blocks, mb)
+	}
+	return blocks, func() { a.conv.carry, a.conv.announced = carry, announced }
 }
 
 func (a *Agent) recordReply(msg llm.Message, usage llm.Usage) {

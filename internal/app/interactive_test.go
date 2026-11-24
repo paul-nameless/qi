@@ -253,8 +253,8 @@ func TestTurnCancel(t *testing.T) {
 	if !r.lastCancelled || !strings.Contains(out.String(), "interrupted") {
 		t.Errorf("cancelled %v output:\n%s", r.lastCancelled, out.String())
 	}
-	if n := len(r.agent.Messages()); n != 0 {
-		t.Errorf("cancelled first request left %d messages", n)
+	if n := len(r.agent.Messages()); n != 2 {
+		t.Errorf("cancelled first request left %d messages, want the prompt and the interrupt note", n)
 	}
 	if r.cancelTurn() {
 		t.Error("cancelTurn still finds the finished turn")
