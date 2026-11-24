@@ -76,6 +76,7 @@ type Env struct {
 	files       fileTimes
 	gitOnce     sync.Once
 	git         []string
+	dotGit      string
 }
 
 func (e *Env) readOnly() bool {

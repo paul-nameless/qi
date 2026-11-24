@@ -23,6 +23,11 @@ func (c Config) validate() error {
 		atLeast("bash_timeout", c.BashTimeout, 1),
 		atLeast("max_rounds", c.MaxRounds, 0),
 	}
+	for i, p := range c.ProjectWritable {
+		if !strings.HasPrefix(p, "/") && !strings.HasPrefix(p, "~/") {
+			checks = append(checks, fmt.Errorf("key \"project_writable.%d\": %q must be an absolute path or start with ~/", i, p))
+		}
+	}
 	for i, e := range c.SubagentEfforts {
 		checks = append(checks, oneOf(fmt.Sprintf("subagent_efforts.%d", i), e, efforts))
 	}

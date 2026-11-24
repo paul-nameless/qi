@@ -22,7 +22,7 @@ func projectEnv(t *testing.T) (env *Env, proj, outside string) {
 	}
 	os.WriteFile(filepath.Join(proj, ".git", "config"), []byte("[core]\n"), 0o600)
 	env = &Env{Cwd: proj, Project: func() bool { return true }, Scratch: func() string { return scratch }, SpillDir: t.TempDir()}
-	t.Cleanup(func() { os.RemoveAll(projectGoCache(proj)) })
+	t.Cleanup(func() { os.RemoveAll(projectGoCache(proj)); os.RemoveAll(env.projectTmp()) })
 	return env, proj, outside
 }
 
@@ -47,7 +47,7 @@ func TestProjectModeWriteAndEditStayInside(t *testing.T) {
 		in("commondir", "write", `{"file_path":".git/commondir","content":"../evil"}`),
 		in("dotgit", "write", `{"file_path":".git","content":"gitdir: ../evil"}`),
 		in("edit", "edit", `{"file_path":"`+filepath.Join(outside, "o.txt")+`","old_string":"a","new_string":"b"}`),
-		in("tmp", "write", `{"file_path":"`+filepath.Join(env.scratch(), "t.txt")+`","content":"hi"}`),
+		in("tmp", "write", `{"file_path":"`+filepath.Join(env.projectTmp(), "t.txt")+`","content":"hi"}`),
 	}, nopUI{})
 	for _, b := range res {
 		allowed := b.ToolUseID == "ok" || b.ToolUseID == "tmp"
@@ -77,10 +77,10 @@ func TestProjectModeSandboxesBash(t *testing.T) {
 		in, _ := json.Marshal(bashArgs{Command: cmd})
 		return runBash(context.Background(), env, in, nil).Text
 	}
-	if out := run(`echo in > inside.txt && echo t > "$TMPDIR/t.txt" && echo "$TMPDIR|$GOCACHE"`); !strings.HasPrefix(strings.TrimSpace(out), env.scratch()+"|") || !strings.HasSuffix(strings.TrimSpace(out), projectGoCache(proj)) {
-		t.Errorf("TMPDIR should be the session scratch dir and GOCACHE the project's own: %s", out)
+	if out := run(`echo in > inside.txt && echo t > "$TMPDIR/t.txt" && echo "$TMPDIR|$GOCACHE"`); !strings.HasPrefix(strings.TrimSpace(out), env.projectTmp()+"|") || !strings.HasSuffix(strings.TrimSpace(out), projectGoCache(proj)) {
+		t.Errorf("TMPDIR should be the session's short temp dir and GOCACHE the project's own: %s", out)
 	}
-	for _, p := range []string{filepath.Join(proj, "inside.txt"), filepath.Join(env.scratch(), "t.txt")} {
+	for _, p := range []string{filepath.Join(proj, "inside.txt"), filepath.Join(env.projectTmp(), "t.txt")} {
 		if _, err := os.Stat(p); err != nil {
 			t.Errorf("bash could not write %s: %v", p, err)
 		}
@@ -147,7 +147,7 @@ func TestProjectModeGitWorktree(t *testing.T) {
 	git(repo, "worktree", "add", "-q", "-b", "w", wt)
 	scratch, _ := filepath.EvalSymlinks(t.TempDir())
 	env := &Env{Cwd: wt, Project: func() bool { return true }, Scratch: func() string { return scratch }, SpillDir: t.TempDir()}
-	t.Cleanup(func() { os.RemoveAll(projectGoCache(wt)) })
+	t.Cleanup(func() { os.RemoveAll(projectGoCache(wt)); os.RemoveAll(env.projectTmp()) })
 	in, _ := json.Marshal(bashArgs{Command: "echo b > b && git add b && git -c user.email=t@t -c user.name=t commit -qm b && git log --oneline | wc -l; echo x >> " + filepath.Join(repo, ".git", "config")})
 	out := runBash(context.Background(), env, in, nil).Text
 	if !strings.HasPrefix(strings.TrimSpace(out), "2") {
@@ -182,5 +182,71 @@ func TestProjectModeGitCannotBeRedirected(t *testing.T) {
 	}
 	if _, err := os.Stat(projectGoCache(proj)); err != nil {
 		t.Errorf("the per-project Go cache should be created by qi: %v", err)
+	}
+}
+
+func TestProjectModeTrickyPaths(t *testing.T) {
+	env, proj, outside := projectEnv(t)
+	os.MkdirAll(filepath.Join(proj, "d"), 0o755)
+	os.MkdirAll(filepath.Join(proj, "s1", "s2", "s3"), 0o755)
+	os.Symlink(filepath.Join(proj, "d"), filepath.Join(proj, "s1", "s2", "s3", "a"))
+	rel, _ := filepath.Rel(filepath.Join(proj, "d"), filepath.Join(outside, "f.txt"))
+	os.Symlink(rel, filepath.Join(proj, "d", "link"))
+	r := newFuncSet(Write(), Edit())
+	in := func(id, name, args string) llm.Block {
+		return llm.Block{ID: id, Name: name, Input: json.RawMessage(args)}
+	}
+	res := r.Execute(context.Background(), env, []llm.Block{
+		in("chain", "write", `{"file_path":"s1/s2/s3/a/link","content":"x"}`),
+		in("ligature", "edit", `{"file_path":".git/con\ufb01g","old_string":"[core]","new_string":"[core]\nfsmonitor = x"}`),
+		in("longs", "write", `{"file_path":".git/hook\u017f/pre-commit","content":"#!/bin/sh"}`),
+	}, nopUI{})
+	for _, b := range res {
+		if !b.IsError || !strings.Contains(b.Text, "project mode") {
+			t.Errorf("%s: %+v", b.ToolUseID, b)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(outside, "f.txt")); err == nil {
+		t.Error("a relative symlink chain wrote outside the project")
+	}
+	if data, _ := os.ReadFile(filepath.Join(proj, ".git", "config")); string(data) != "[core]\n" {
+		t.Errorf("a lookalike name changed .git/config: %q", data)
+	}
+}
+
+func TestProjectModeShortTmpAndGitInit(t *testing.T) {
+	if !HasSandbox() {
+		t.Skip("no OS sandbox")
+	}
+	proj, _ := filepath.EvalSymlinks(t.TempDir())
+	scratch, _ := filepath.EvalSymlinks(t.TempDir())
+	env := &Env{Cwd: proj, Project: func() bool { return true }, Scratch: func() string { return scratch }, SpillDir: t.TempDir()}
+	t.Cleanup(func() { os.RemoveAll(projectGoCache(proj)); os.RemoveAll(env.projectTmp()) })
+	if tmp := env.projectTmp(); len(tmp) > 40 {
+		t.Errorf("TMPDIR %q leaves too little room for unix socket names", tmp)
+	}
+	in, _ := json.Marshal(bashArgs{Command: "git init -q && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m x && echo committed"})
+	if out := runBash(context.Background(), env, in, nil).Text; !strings.Contains(out, "committed") {
+		t.Errorf("git init in a folder without a repo should work: %s", out)
+	}
+}
+
+func TestProjectModeRepoSubdirCannotMoveGit(t *testing.T) {
+	if !HasSandbox() {
+		t.Skip("no OS sandbox")
+	}
+	repo, _ := filepath.EvalSymlinks(t.TempDir())
+	sub := filepath.Join(repo, "sub")
+	os.MkdirAll(sub, 0o755)
+	if out, err := exec.Command("git", "-C", repo, "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	scratch, _ := filepath.EvalSymlinks(t.TempDir())
+	env := &Env{Cwd: sub, Project: func() bool { return true }, Scratch: func() string { return scratch }, SpillDir: t.TempDir()}
+	t.Cleanup(func() { os.RemoveAll(projectGoCache(sub)); os.RemoveAll(env.projectTmp()) })
+	in, _ := json.Marshal(bashArgs{Command: "mv ../.git ./x; ls -a"})
+	out := runBash(context.Background(), env, in, nil).Text
+	if fi, err := os.Stat(filepath.Join(repo, ".git")); err != nil || !fi.IsDir() {
+		t.Errorf("the repo's .git was moved from a subdirectory: %s", out)
 	}
 }
