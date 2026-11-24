@@ -78,6 +78,13 @@ func recordAll(args []string) error {
 			return err
 		}
 	}
+	if scratch, err = filepath.EvalSymlinks(scratch); err != nil {
+		return err
+	}
+	scratch, err = filepath.Abs(scratch)
+	if err != nil {
+		return err
+	}
 	for _, f := range files {
 		rid := strings.TrimSuffix(filepath.Base(f), ".json")
 		if err := recordOne(bin, f, rid, scratch); err != nil {
@@ -102,7 +109,11 @@ func recordOne(bin, file, rid, scratch string) error {
 	}
 	out := filepath.Join(scratch, "tapes", rid+".json")
 	profile, _ := filepath.Abs("corpus/replay/sb.profile")
-	cmd := exec.Command("sandbox-exec", "-f", profile, bin, "record", file, work, out)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command("sandbox-exec", "-D", "HOME="+home, "-D", "SCRATCH="+scratch, "-f", profile, bin, "record", file, work, out)
 	cmd.Dir = work
 	cmd.Env = []string{"PATH=/opt/homebrew/bin:/usr/bin:/bin", "HOME=" + scratch + "/home", "GOCACHE=" + scratch + "/gocache", "TMPDIR=" + scratch + "/tmp", "GOPATH=" + scratch + "/gopath", "GOTOOLCHAIN=local", "GOPROXY=off", "GOFLAGS=-mod=mod"}
 	t := time.Now()

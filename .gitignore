@@ -8,3 +8,4 @@
 docs/
 dist/
 CLAUDE.local.md
+internal/jsvm/bench/corpus/
