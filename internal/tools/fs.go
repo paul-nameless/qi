@@ -44,8 +44,7 @@ type readArgs struct {
 
 func Read() *Tool {
 	return &Tool{
-		ParallelSafe: true,
-		HookNames:    []string{"Read"},
+		HookNames: []string{"Read"},
 		Def: llm.ToolDef{
 			Name: "read",
 		},
@@ -241,7 +240,6 @@ func pathKey(env *Env, in json.RawMessage) string {
 
 func Write() *Tool {
 	return &Tool{
-		Mutates:   true,
 		HookNames: []string{"Write"},
 		Def: llm.ToolDef{
 			Name: "write",
@@ -301,7 +299,6 @@ type editArgs struct {
 
 func Edit() *Tool {
 	return &Tool{
-		Mutates:   true,
 		HookNames: []string{"Edit"},
 		Def: llm.ToolDef{
 			Name: "edit",

@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/paul-nameless/qi/internal/config"
@@ -93,20 +92,18 @@ func (e *Env) rel(p string) string {
 }
 
 type Tool struct {
-	Def          llm.ToolDef
-	Run          func(ctx context.Context, env *Env, input json.RawMessage, progress func(string)) Result
-	Label        func(env *Env, input json.RawMessage) string
-	Path         func(env *Env, input json.RawMessage) string
-	Mutates      bool
-	ParallelSafe bool
-	HookNames    []string
-	Unwrap       func(input json.RawMessage) (name string, args json.RawMessage)
-	Rewrap       func(input, args json.RawMessage) json.RawMessage
-	Code         *CodeSpec
-	Source       func(input json.RawMessage) string
-	Inner        *Registry
-	Reset        func(hadCells bool)
-	describe     func(inner *Registry) string
+	Def       llm.ToolDef
+	Run       func(ctx context.Context, env *Env, input json.RawMessage, progress func(string)) Result
+	Label     func(env *Env, input json.RawMessage) string
+	Path      func(env *Env, input json.RawMessage) string
+	HookNames []string
+	Unwrap    func(input json.RawMessage) (name string, args json.RawMessage)
+	Rewrap    func(input, args json.RawMessage) json.RawMessage
+	Code      *CodeSpec
+	Source    func(input json.RawMessage) string
+	Inner     *Registry
+	Reset     func(hadCells bool)
+	describe  func(inner *Registry) string
 }
 
 func (t *Tool) HookCall(call llm.Block) HookCall {
@@ -225,42 +222,9 @@ func startCall(ui UI, t *Tool, call llm.Block, label string) {
 
 func (r *Registry) Execute(ctx context.Context, env *Env, calls []llm.Block, ui UI) []llm.Block {
 	results := make([]llm.Block, len(calls))
-	groups := map[string][]int{}
-	var order []string
-	writes := false
-	for _, c := range calls {
-		if t := r.byKey[c.Name]; t != nil && t.Mutates {
-			writes = true
-		}
-	}
 	for i, c := range calls {
-		t := r.byKey[c.Name]
-		key := fmt.Sprintf("#%d", i)
-		if t != nil && t.Path != nil {
-			if p := t.Path(env, c.Input); p != "" {
-				key = "path:" + p
-			}
-		}
-		if writes && (t == nil || !t.ParallelSafe) {
-			key = "serial"
-		}
-		if _, seen := groups[key]; !seen {
-			order = append(order, key)
-		}
-		groups[key] = append(groups[key], i)
+		results[i] = r.runOne(ctx, env, c, ui)
 	}
-	var wg sync.WaitGroup
-	for _, key := range order {
-		idxs := groups[key]
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for _, i := range idxs {
-				results[i] = r.runOne(ctx, env, calls[i], ui)
-			}
-		}()
-	}
-	wg.Wait()
 	return results
 }
 

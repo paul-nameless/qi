@@ -185,6 +185,39 @@ func TestCellToolError(t *testing.T) {
 	}
 }
 
+func TestCellSerializesCallsOnOnePath(t *testing.T) {
+	var mu sync.Mutex
+	active, overlap := map[string]int{}, false
+	slow := &Tool{
+		Def:  llm.ToolDef{Name: "slow"},
+		Code: &CodeSpec{Name: "slow", Params: []string{"file_path"}, Required: 1},
+		Path: pathKey,
+		Run: func(ctx context.Context, env *Env, in json.RawMessage, _ func(string)) Result {
+			p := pathKey(env, in)
+			mu.Lock()
+			active[p]++
+			overlap = overlap || active[p] > 1
+			mu.Unlock()
+			time.Sleep(40 * time.Millisecond)
+			mu.Lock()
+			active[p]--
+			mu.Unlock()
+			return Result{Text: "done"}
+		},
+	}
+	k := newCellKit(t, slow)
+	start := time.Now()
+	if res := k.cell(`await Promise.all([slow("a.txt"), slow("b.txt"), slow("./a.txt")])`); res.IsError {
+		t.Fatal(res.Text)
+	}
+	if overlap {
+		t.Error("calls on the same path overlapped")
+	}
+	if d := time.Since(start); d > 115*time.Millisecond {
+		t.Errorf("calls on different paths did not run in parallel: %v", d)
+	}
+}
+
 func TestRunFiresHooksOnlyForInnerCalls(t *testing.T) {
 	k := newCellKit(t)
 	k.file("f.txt", "content\n")

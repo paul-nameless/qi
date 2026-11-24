@@ -166,7 +166,6 @@ func writeNotices(b *strings.Builder, l mcp.Listing) {
 
 func MCPTools(m *mcp.Manager) []*Tool {
 	search := toolSearch(m)
-	search.ParallelSafe = true
 	call := &Tool{
 		Def: llm.ToolDef{
 			Name: "mcp_call",

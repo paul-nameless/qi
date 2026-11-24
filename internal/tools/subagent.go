@@ -49,9 +49,8 @@ func subagentDoc(mainModel string, menu []config.SubagentModel, efforts []string
 func Subagent(mainModel string, menu []config.SubagentModel, efforts []string) *Tool {
 	_, names := subagentMenu(mainModel, menu, efforts, "")
 	return &Tool{
-		Def:          llm.ToolDef{Name: "subagent"},
-		ParallelSafe: true,
-		HookNames:    []string{"Agent", "Task"},
+		Def:       llm.ToolDef{Name: "subagent"},
+		HookNames: []string{"Agent", "Task"},
 		Code: &CodeSpec{
 			Name:     "subagent",
 			Params:   []string{"prompt"},

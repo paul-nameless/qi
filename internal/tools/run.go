@@ -58,7 +58,6 @@ func Run(inner *Registry) *Tool {
 			Description: runDescription(inner),
 			Schema:      json.RawMessage(fmt.Sprintf(`{"type":"object","properties":{"code":{"type":"string","description":"JavaScript to run"},"timeout":{"type":"integer","description":"Seconds before the code is stopped (default %d, max %d)"}},"required":["code"]}`, defaultCellTimeout, maxCellTimeout)),
 		},
-		Mutates:  true,
 		Inner:    inner,
 		Reset:    r.reset,
 		describe: runDescription,

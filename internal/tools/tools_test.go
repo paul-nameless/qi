@@ -25,57 +25,6 @@ func (nopUI) ToolStart(string, string)      {}
 func (nopUI) ToolProgress(string, string)   {}
 func (nopUI) ToolDone(string, bool, string) {}
 
-func TestExecuteOrderAndPathSerialization(t *testing.T) {
-	var mu sync.Mutex
-	var events []string
-	active := map[string]int{}
-	overlap := false
-	slow := &Tool{
-		Def:  llm.ToolDef{Name: "slow"},
-		Path: pathKey,
-		Run: func(ctx context.Context, env *Env, in json.RawMessage, _ func(string)) Result {
-			p := pathKey(env, in)
-			mu.Lock()
-			active[p]++
-			if active[p] > 1 {
-				overlap = true
-			}
-			events = append(events, "start "+filepath.Base(p))
-			mu.Unlock()
-			time.Sleep(30 * time.Millisecond)
-			mu.Lock()
-			active[p]--
-			mu.Unlock()
-			return Result{Text: "done " + filepath.Base(p)}
-		},
-	}
-	r := NewRegistry(slow)
-	env := &Env{Cwd: t.TempDir()}
-	calls := []llm.Block{
-		{ID: "1", Name: "slow", Input: json.RawMessage(`{"file_path":"a.txt"}`)},
-		{ID: "2", Name: "slow", Input: json.RawMessage(`{"file_path":"b.txt"}`)},
-		{ID: "3", Name: "slow", Input: json.RawMessage(`{"file_path":"./a.txt"}`)},
-		{ID: "4", Name: "missing", Input: json.RawMessage(`{}`)},
-		{ID: "5", Name: "slow", Input: json.RawMessage(`{"_invalid_json":"x"}`)},
-	}
-	start := time.Now()
-	res := r.Execute(context.Background(), env, calls, nopUI{})
-	for i, b := range res {
-		if b.ToolUseID != calls[i].ID {
-			t.Errorf("result %d has id %s", i, b.ToolUseID)
-		}
-	}
-	if overlap {
-		t.Error("calls on the same path overlapped")
-	}
-	if !res[3].IsError || !strings.Contains(res[3].Text, "unknown tool") || !res[4].IsError {
-		t.Errorf("error results: %+v %+v", res[3], res[4])
-	}
-	if d := time.Since(start); d > 85*time.Millisecond {
-		t.Errorf("different paths did not run in parallel: %v", d)
-	}
-}
-
 func TestReadOnlyRefusesWrites(t *testing.T) {
 	dir := t.TempDir()
 	env := &Env{Cwd: dir, ReadOnly: func() bool { return true }}
@@ -205,37 +154,12 @@ func TestHooksWiring(t *testing.T) {
 	}
 }
 
-func TestSamePathEditsRunInOrder(t *testing.T) {
-	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "f.txt"), []byte("one\n"), 0o600)
-	res := NewRegistry(Edit()).Execute(context.Background(), &Env{Cwd: dir}, []llm.Block{
-		{ID: "1", Name: "edit", Input: json.RawMessage(`{"file_path":"f.txt","old_string":"one","new_string":"two"}`)},
-		{ID: "2", Name: "edit", Input: json.RawMessage(`{"file_path":"./f.txt","old_string":"two","new_string":"three"}`)},
-	}, nopUI{})
-	data, _ := os.ReadFile(filepath.Join(dir, "f.txt"))
-	if string(data) != "three\n" || res[0].IsError || res[1].IsError {
-		t.Fatalf("got %q, results %+v", data, res)
-	}
-}
-
 func TestBashTimeoutUnits(t *testing.T) {
 	cases := map[[2]int]int{{120000, 0}: 120, {30, 0}: 30, {0, 0}: 120, {0, 45}: 45, {900000, 0}: 600, {1500, 0}: 2, {600, 0}: 600, {601, 0}: 600, {900, 0}: 600}
 	for in, want := range cases {
 		if got := bashTimeout(in[0], in[1]); got != want {
 			t.Errorf("bashTimeout(%d, %d) = %d, want %d", in[0], in[1], got, want)
 		}
-	}
-}
-
-func TestEditsSerializeDependentBash(t *testing.T) {
-	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "f.txt"), []byte("old\n"), 0o600)
-	res := NewRegistry(Edit(), Bash()).Execute(context.Background(), &Env{Cwd: dir, SpillDir: t.TempDir()}, []llm.Block{
-		{ID: "1", Name: "edit", Input: json.RawMessage(`{"file_path":"f.txt","old_string":"old","new_string":"new"}`)},
-		{ID: "2", Name: "bash", Input: json.RawMessage(`{"command":"cat f.txt"}`)},
-	}, nopUI{})
-	if !strings.Contains(res[1].Text, "new") {
-		t.Errorf("bash ran before the edit: %q", res[1].Text)
 	}
 }
 
@@ -329,49 +253,6 @@ func TestPanickingToolBecomesErrorResult(t *testing.T) {
 				t.Errorf("%v: %s after the panic: %+v", names, n, b)
 			}
 		}
-	}
-}
-
-func TestExecuteSchedulesByMetadata(t *testing.T) {
-	var mu sync.Mutex
-	running, maxSerial, lookOverlapped := map[string]bool{}, 0, false
-	tool := func(name string, mutates, parallel bool) *Tool {
-		return &Tool{
-			Def:          llm.ToolDef{Name: name},
-			Mutates:      mutates,
-			ParallelSafe: parallel,
-			Run: func(ctx context.Context, env *Env, in json.RawMessage, _ func(string)) Result {
-				mu.Lock()
-				running[name] = true
-				if running["change"] && running["shell"] {
-					maxSerial = 2
-				}
-				if running["look"] && (running["change"] || running["shell"]) {
-					lookOverlapped = true
-				}
-				mu.Unlock()
-				time.Sleep(30 * time.Millisecond)
-				mu.Lock()
-				running[name] = false
-				mu.Unlock()
-				return Result{Text: name}
-			},
-		}
-	}
-	r := NewRegistry(tool("change", true, false), tool("shell", false, false), tool("look", false, true))
-	calls := []llm.Block{{ID: "1", Name: "change", Input: json.RawMessage(`{}`)}, {ID: "2", Name: "shell", Input: json.RawMessage(`{}`)}, {ID: "3", Name: "look", Input: json.RawMessage(`{}`)}}
-	r.Execute(context.Background(), &Env{Cwd: t.TempDir()}, calls, nopUI{})
-	if maxSerial != 0 {
-		t.Error("a mutating call ran alongside a call that is not parallel-safe")
-	}
-	if !lookOverlapped {
-		t.Error("parallel-safe call did not run alongside the serial ones")
-	}
-	running, maxSerial = map[string]bool{}, 0
-	r = NewRegistry(tool("change", false, false), tool("shell", false, false))
-	r.Execute(context.Background(), &Env{Cwd: t.TempDir()}, calls[:2], nopUI{})
-	if maxSerial != 2 {
-		t.Error("calls ran serially without a mutating tool")
 	}
 }
 

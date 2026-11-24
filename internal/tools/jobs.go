@@ -447,7 +447,6 @@ func JobsTool() *Tool {
 			text := env.Jobs.Describe()
 			return Result{Text: text, Summary: strings.SplitN(text, "\n", 2)[0]}
 		},
-		ParallelSafe: true,
 		Code: &CodeSpec{
 			Name:    "jobs",
 			Options: []string{"kill"},
