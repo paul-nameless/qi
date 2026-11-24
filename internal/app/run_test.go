@@ -373,3 +373,43 @@ func TestBuildAgentSetsSubagentLabels(t *testing.T) {
 		t.Errorf("unknown tool label %q", got)
 	}
 }
+
+func TestProfileModeAppliesOnSwitch(t *testing.T) {
+	t.Setenv("QI_SESSION_DIR", t.TempDir())
+	path := filepath.Join(t.TempDir(), "config.json")
+	data := `{"api_key": "k", "model": "m", "profiles": {"wild": {"mode": "project"}, "plain": {}, "careful": {"read_only": true}}}`
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Resolve(config.Options{Path: path, Profile: "wild"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	display, _ := capturePrinter(t)
+	o := options{configPath: path}
+	a, runner := buildAgent(cfg, o, t.TempDir(), scripted(), display, true, false)
+	r := &repl{agent: a, display: display, hooks: &agent.Hooks{}, runner: runner, opts: o}
+	if err := r.newSession(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { r.closeResources() })
+	steps := []struct{ profile, want string }{{"", "project"}, {"plain", "project"}, {"careful", "read-only"}, {"wild", "project"}}
+	for _, s := range steps {
+		if s.profile != "" {
+			if err := r.switchProfile(s.profile); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if got := r.agent.Mode().String(); got != s.want {
+			t.Errorf("after %q: mode %s, want %s", s.profile, got, s.want)
+		}
+	}
+	if _, err := config.Resolve(config.Options{Path: path, Profile: "wild"}); err != nil {
+		t.Fatal(err)
+	}
+	bad := filepath.Join(t.TempDir(), "bad.json")
+	os.WriteFile(bad, []byte(`{"model": "m", "profiles": {"x": {"mode": "dir"}}}`), 0o600)
+	if _, err := config.Resolve(config.Options{Path: bad, Profile: "x"}); err == nil || !strings.Contains(err.Error(), "mode") {
+		t.Errorf("an unknown mode should be rejected: %v", err)
+	}
+}

@@ -17,7 +17,7 @@ A small coding agent for the terminal, built just because.
 - Code mode only: the model's one tool, `run`, executes JavaScript that calls `read`, `write`, `edit`, `bash`, `jobs`, `subagent`, `tool_search` and `mcp`, so a whole step (search, read, edit, test) is one call, with independent calls in parallel. The JavaScript engine is qi's own. See [Code mode](#code-mode). Long builds and servers run as background bash jobs; the agent gets a message when one exits instead of polling, and the line after each answer shows how many are still running (`2 bg jobs`).
 - Prompt caching, sessions saved as JSONL, automatic compaction when the context fills up and idle compaction.
 - MCP servers start on demand, with per-server limits on which tools the agent may use.
-- Three modes, cycled with shift+tab: yolo (default, no limits), project (files can only change inside the working directory, plus temp and build caches; bash runs in an OS sandbox with the network on, handy for models you don't trust yet) and read-only (no edits, bash limited to an allowlist). `-project`, `-read-only` or `"mode"` in the config pick the start mode.
+- Three modes, cycled with shift+tab: yolo (default, no limits), project (files can only change inside the working directory, plus temp and build caches; bash runs in an OS sandbox with the network on, handy for models you don't trust yet) and read-only (no edits, bash limited to an allowlist). `-project`, `-read-only` or `"mode": "yolo" | "project" | "read-only"` in the config (globally or per profile, e.g. project for a model you're trying out) pick the start mode; `/profile` applies a profile's mode.
 
 ## Install
 

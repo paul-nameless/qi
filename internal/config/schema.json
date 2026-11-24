@@ -87,7 +87,7 @@
       "type": "boolean"
     },
     "mode": {
-      "description": "Mode to start in: yolo (no limits), project (files can only change inside the working directory plus temp and build caches; bash runs in an OS sandbox with the network on), or read-only. shift+tab cycles yolo, project, read-only. Default: yolo.",
+      "description": "Mode to start in, globally or per profile (/profile applies a profile's mode): yolo (no limits), project (files can only change inside the working directory plus temp and build caches; bash runs in an OS sandbox with the network on), or read-only. shift+tab cycles yolo, project, read-only. Default: yolo.",
       "type": "string",
       "enum": ["yolo", "project", "read-only"]
     },

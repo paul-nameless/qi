@@ -523,6 +523,11 @@ func (r *repl) switchProfile(name string) error {
 	if err := r.apply(cfg, cfg.Provider); err != nil {
 		return err
 	}
+	if cfg.Mode != "" || cfg.ReadOnly {
+		m := agent.ParseMode(cfg.StartMode())
+		r.agent.SetMode(m)
+		warnNoSandbox(r.display, m)
+	}
 	r.report(r.loadPrompt())
 	if r.runner != nil && !sameMCP(cfg.MCP, r.runner.MCP) {
 		r.display.Info("MCP servers unchanged; restart qi to apply the new profile's MCP setup")

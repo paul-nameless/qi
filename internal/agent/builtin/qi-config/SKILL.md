@@ -36,7 +36,8 @@ Run `qi -check-config` (add `-config path.json` when relevant). It loads the con
 When a change takes effect in a running session:
 - Most keys, including `system_prompt_file`, `skill_dirs`, `instruction_files` and `builtin_skills`: after `/profile <name>`, which re-reads the file and rebuilds the system prompt.
 - Edits inside the system prompt file, skills, commands or CLAUDE.md files: `/reload`.
-- `mcp`, `hook_files`, `read_only`, `mode`: only after restarting qi (shift+tab switches the mode in a running session).
+- `mcp`, `hook_files`, `read_only`: only after restarting qi.
+- `mode` (`yolo`, `project`, `read-only`; globally or per profile): at start and on `/profile` to a profile that sets it; shift+tab switches it in a running session.
 - `run_code`, `show_reasoning` and `terminal_images`: the user can also switch them with `/config`, which saves the change to the file (into the active profile when the profile sets the key).
 
 ## MCP servers
