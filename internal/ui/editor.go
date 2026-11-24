@@ -445,6 +445,10 @@ func (e *Editor) Collect(ctx context.Context, initial string, s Steer) string {
 				s.OnCancel()
 			case KeyModeToggle:
 				s.OnToggle()
+			case KeyCopyID:
+				if e.OnCopyID != nil {
+					e.OnCopyID()
+				}
 			case KeyEOF:
 				if len(buf) == 0 {
 					s.OnCancel()

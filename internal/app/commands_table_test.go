@@ -20,7 +20,7 @@ func TestCommandTable(t *testing.T) {
 			t.Errorf("/%s: not dispatchable", c.name)
 		}
 	}
-	if !strings.HasPrefix(help, "Commands:\n  /help              this help\n") || !strings.Contains(help, "\n  /compact [focus]   summarize") {
+	if !strings.HasPrefix(help, "Commands:\n  /help                   this help\n") || !strings.Contains(help, "\n  /compact [focus]        summarize") || !strings.Contains(help, "\n  /copy [answer|code|id]  copy") {
 		t.Errorf("help layout:\n%s", help)
 	}
 	if findCommand("nope") != nil {

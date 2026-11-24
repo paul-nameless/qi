@@ -73,7 +73,11 @@ func (r *repl) copyAnswer(args string) error {
 	}
 	cmd := r.agent.Config().CopyCmd
 	if !r.toolOn(cmd) {
-		return fmt.Errorf("copy_cmd is off (%s not found)", missingTool(cmd, r.agent.Config().Picker))
+		err := fmt.Errorf("copy_cmd is off (%s not found)", missingTool(cmd, r.agent.Config().Picker))
+		if args == "id" {
+			err = fmt.Errorf("%w; session id %s", err, text)
+		}
+		return err
 	}
 	if _, err := runQuiet(cmd, r.agent.Config().Picker, nil, text); err != nil {
 		return fmt.Errorf("copy_cmd: %w", err)

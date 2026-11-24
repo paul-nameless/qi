@@ -75,14 +75,22 @@ func findCommand(name string) *command {
 }
 
 func helpText() string {
+	width := 0
+	for _, c := range commandList {
+		width = max(width, len(usageOf(c)))
+	}
 	var b strings.Builder
 	b.WriteString("Commands:")
 	for _, c := range commandList {
 		if !c.alias {
-			fmt.Fprintf(&b, "\n  %-19s%s", strings.TrimSpace("/"+c.name+" "+c.args), c.help)
+			fmt.Fprintf(&b, "\n  %-*s  %s", width, usageOf(c), c.help)
 		}
 	}
 	return b.String()
+}
+
+func usageOf(c command) string {
+	return strings.TrimSpace("/" + c.name + " " + c.args)
 }
 
 func pickerItems() []pickItem {

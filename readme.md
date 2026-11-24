@@ -101,7 +101,7 @@ qi -q "list files" -json       # stream the session entries (meta, message, comp
 git diff | qi -q "review this"
 ```
 
-Keys: shift+tab toggles read-only, ctrl+g opens `$EDITOR`, ctrl+r searches past prompts, `@` picks files, alt+enter adds a newline, esc or ctrl+c stops the agent. Text typed while it works is sent with the next tool results.
+Keys: shift+tab toggles read-only, ctrl+g opens `$EDITOR`, ctrl+r searches past prompts, `@` picks files, alt+c copies the session id (on macOS the terminal must send Option as Alt), alt+enter adds a newline, esc or ctrl+c stops the agent. Text typed while it works is sent with the next tool results.
 
 Images: local PNG, JPEG and GIF files whose paths appear in the final answer of a turn are drawn after it (up to 4) in terminals with the kitty graphics protocol (Ghostty, kitty), not inside tmux or screen. `"terminal_images": false` turns this off, globally or in a profile.
 
@@ -109,7 +109,7 @@ Commands: `/help`, `/keys`, `/status`, `/config`, `/clear`, `/context`, `/compac
 
 ## External tools
 
-Whenever qi needs you to pick something, it opens its built-in picker: type to filter (fuzzy; a capital letter makes it case-sensitive), up/down to move, Enter to pick, Tab to complete the highlighted item into the input line without running it (`/` then `comp` Tab gives `/compact ` for adding a focus), Esc to close.
+Whenever qi needs you to pick something, it opens its built-in picker: type to filter (fuzzy; a capital letter makes it case-sensitive), up/down to move, Enter to pick, Esc to close. In the `/` menu and its argument lists (`/model`, `/copy`, ...), Tab puts the highlighted item into the input line without running it (`/` then `comp` Tab gives `/compact ` for adding a focus); elsewhere Tab picks like Enter.
 
 | You press | You get |
 |---|---|
