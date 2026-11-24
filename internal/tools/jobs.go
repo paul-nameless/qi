@@ -17,7 +17,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/paul-nameless/qi/internal/llm"
 	"github.com/paul-nameless/qi/internal/proc"
 )
 
@@ -418,11 +417,9 @@ type jobsArgs struct {
 	Kill int `json:"kill"`
 }
 
-func JobsTool() *Tool {
-	return &Tool{
-		Def: llm.ToolDef{
-			Name: "jobs",
-		},
+func JobsFunc() *Function {
+	return &Function{
+		Name: "jobs",
 		Label: func(env *Env, in json.RawMessage) string {
 			a, _ := decode[jobsArgs](in)
 			if a.Kill > 0 {
@@ -447,7 +444,7 @@ func JobsTool() *Tool {
 			text := env.Jobs.Describe()
 			return Result{Text: text, Summary: strings.SplitN(text, "\n", 2)[0]}
 		},
-		Code: &CodeSpec{
+		Code: CodeSpec{
 			Name:    "jobs",
 			Options: []string{"kill"},
 			Doc:     "jobs({kill}) → string — list this session's background jobs, or stop one by its number: jobs({kill: 2}).",

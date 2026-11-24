@@ -39,11 +39,9 @@ func serverLines(m *mcp.Manager) string {
 	return b.String()
 }
 
-func toolSearch(m *mcp.Manager) *Tool {
-	return &Tool{
-		Def: llm.ToolDef{
-			Name: "tool_search",
-		},
+func toolSearch(m *mcp.Manager) *Function {
+	return &Function{
+		Name: "tool_search",
 		Label: func(env *Env, in json.RawMessage) string {
 			a, _ := decode[toolSearchArgs](in)
 			label := strings.TrimSpace("tool_search " + a.Server)
@@ -59,7 +57,7 @@ func toolSearch(m *mcp.Manager) *Tool {
 			}
 			return runToolSearch(ctx, env, m, a)
 		},
-		Code: &CodeSpec{
+		Code: CodeSpec{
 			Name:   "tool_search",
 			Params: []string{"query", "server"},
 			Doc:    "tool_search(query, server) → string — find tools on the connected MCP servers by keywords, or list one server's tools; returns their input schemas. Servers:" + strings.ReplaceAll(serverLines(m), "\n- ", "\n  - "),
@@ -164,12 +162,10 @@ func writeNotices(b *strings.Builder, l mcp.Listing) {
 	}
 }
 
-func MCPTools(m *mcp.Manager) []*Tool {
+func MCPFuncs(m *mcp.Manager) []*Function {
 	search := toolSearch(m)
-	call := &Tool{
-		Def: llm.ToolDef{
-			Name: "mcp_call",
-		},
+	call := &Function{
+		Name: "mcp_call",
 		Label: func(env *Env, in json.RawMessage) string {
 			a, _ := decode[mcpCallArgs](in)
 			return fmt.Sprintf("mcp %s.%s", a.Server, a.Tool)
@@ -213,7 +209,7 @@ func MCPTools(m *mcp.Manager) []*Tool {
 			}
 			return out
 		},
-		Code: &CodeSpec{
+		Code: CodeSpec{
 			Name:     "mcp",
 			Params:   []string{"server", "tool", "arguments"},
 			Required: 3,
@@ -222,7 +218,7 @@ func MCPTools(m *mcp.Manager) []*Tool {
 		},
 	}
 	call.Unwrap, call.Rewrap = unwrapMCPCall, rewrapMCPCall
-	return []*Tool{search, call}
+	return []*Function{search, call}
 }
 
 func jsonValue(text string) json.RawMessage {

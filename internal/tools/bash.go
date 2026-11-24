@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/paul-nameless/qi/internal/jsvm"
-	"github.com/paul-nameless/qi/internal/llm"
 	"github.com/paul-nameless/qi/internal/proc"
 )
 
@@ -25,18 +24,16 @@ type bashArgs struct {
 	Daemon     bool   `json:"daemon"`
 }
 
-func Bash() *Tool {
-	return &Tool{
+func Bash() *Function {
+	return &Function{
 		HookNames: []string{"Bash"},
-		Def: llm.ToolDef{
-			Name: "bash",
-		},
+		Name:      "bash",
 		Label: func(env *Env, in json.RawMessage) string {
 			a, _ := decode[bashArgs](in)
 			return "bash " + OneLine(a.Command, 70)
 		},
 		Run: runBash,
-		Code: &CodeSpec{
+		Code: CodeSpec{
 			Name:     "bash",
 			Params:   []string{"command"},
 			Required: 1,

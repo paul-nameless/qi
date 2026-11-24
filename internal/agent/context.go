@@ -72,7 +72,7 @@ func systemRow(sp SystemPrompt) usageRow {
 
 func (a *Agent) toolsRow() usageRow {
 	var r usageRow
-	defs := a.conv.registry.Defs()
+	defs := a.toolDefs()
 	for _, d := range defs {
 		n := (len(d.Name) + len(d.Description) + len(d.Schema)) / 4
 		r.tokens += n

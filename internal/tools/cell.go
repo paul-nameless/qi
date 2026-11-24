@@ -282,7 +282,7 @@ func (c *cell) add(p *pendingCall) int {
 	return c.seq
 }
 
-func (c *cell) admit(t *Tool) error {
+func (c *cell) admit(t *Function) error {
 	switch {
 	case c.finished:
 		return errors.New(codeFinished)
@@ -290,19 +290,19 @@ func (c *cell) admit(t *Tool) error {
 		return errors.New("interrupted by user")
 	case c.toolCalls >= maxCellCalls:
 		return fmt.Errorf("too many tool calls in one run call (limit %d); split the work across several run calls", maxCellCalls)
-	case t.Def.Name == "subagent" && c.subagents >= maxCellSubagents:
+	case t.Name == "subagent" && c.subagents >= maxCellSubagents:
 		return fmt.Errorf("too many subagent calls in one run call (limit %d)", maxCellSubagents)
 	}
 	c.toolCalls++
-	if t.Def.Name == "subagent" {
+	if t.Name == "subagent" {
 		c.subagents++
 	}
 	return nil
 }
 
-func (c *cell) startTool(t *Tool, input json.RawMessage, p *pendingCall) {
+func (c *cell) startTool(t *Function, input json.RawMessage, p *pendingCall) {
 	id := c.add(p)
-	subagent := t.Def.Name == "subagent"
+	subagent := t.Name == "subagent"
 	if subagent {
 		c.clock.pause()
 	}
@@ -312,7 +312,7 @@ func (c *cell) startTool(t *Tool, input json.RawMessage, p *pendingCall) {
 		o := outcome{id: id}
 		defer func() {
 			if v := recover(); v != nil {
-				o.res = errResult("tool %s panicked: %v", t.Def.Name, v)
+				o.res = errResult("tool %s panicked: %v", t.Name, v)
 			}
 			if subagent {
 				c.clock.resume()
@@ -323,10 +323,10 @@ func (c *cell) startTool(t *Tool, input json.RawMessage, p *pendingCall) {
 	}()
 }
 
-func (c *cell) runTool(id int, t *Tool, input json.RawMessage) outcome {
+func (c *cell) runTool(id int, t *Function, input json.RawMessage) outcome {
 	innerID := fmt.Sprintf("%s.%d", c.parentID, id)
-	call := llm.Block{ID: innerID, Name: t.Def.Name, Input: input}
-	label := Label(t, c.env, call)
+	call := llm.Block{ID: innerID, Name: t.Name, Input: input}
+	label := t.label(c.env, call)
 	o := outcome{id: id, label: label}
 	unlock := c.lockPath(t, input)
 	defer unlock()
@@ -339,13 +339,13 @@ func (c *cell) runTool(id int, t *Tool, input json.RawMessage) outcome {
 	defer func() { <-c.sem }()
 	c.ui.ToolStart(innerID, label)
 	start := time.Now()
-	o.res, o.extra = c.r.inner.invokeSplit(c.ctx, c.env, t, call, c.ui)
+	o.res, o.extra = callFunction(c.ctx, c.env, t, call, c.ui)
 	c.ui.ToolDone(innerID, !o.res.IsError, DoneLine(label, o.res.Summary))
-	o.record = llm.InnerCall{Tool: t.Def.Name, Label: label, OK: !o.res.IsError, Summary: o.res.Summary, Ms: time.Since(start).Milliseconds(), Input: recordInput(input)}
+	o.record = llm.InnerCall{Tool: t.Name, Label: label, OK: !o.res.IsError, Summary: o.res.Summary, Ms: time.Since(start).Milliseconds(), Input: recordInput(input)}
 	return o
 }
 
-func (c *cell) lockPath(t *Tool, input json.RawMessage) func() {
+func (c *cell) lockPath(t *Function, input json.RawMessage) func() {
 	if t.Path == nil {
 		return func() {}
 	}

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"time"
 
 	"github.com/paul-nameless/qi/internal/agent"
@@ -72,11 +71,11 @@ func run(o options) error {
 	}
 	cfg.DefaultCacheTTL(headless)
 	var manager *mcp.Manager
-	var extra []*tools.Tool
+	var extra []*tools.Function
 	if len(cfg.MCP) > 0 {
 		manager = mcp.NewManager(cfg.MCP)
 		defer manager.Close()
-		extra = tools.MCPTools(manager)
+		extra = tools.MCPFuncs(manager)
 	}
 	a, runner := buildAgent(cfg, o, cwd, newProvider(cfg, key), display, headless, isSub, extra...)
 	roots := agent.ProjectRoots(cwd)
@@ -240,17 +239,17 @@ func submitPrompt(ctx context.Context, a *agent.Agent, display notifier, hooks *
 	return blocks, nil
 }
 
-func buildAgent(cfg config.Config, o options, cwd string, p llm.Provider, display agent.Display, headless, isSub bool, extra ...*tools.Tool) (*agent.Agent, *agent.SubagentRunner) {
+func buildAgent(cfg config.Config, o options, cwd string, p llm.Provider, display agent.Display, headless, isSub bool, extra ...*tools.Function) (*agent.Agent, *agent.SubagentRunner) {
 	opts := agent.Options{Config: cfg, Cwd: cwd, Provider: p, UI: display, Headless: headless, ReadOnly: o.readOnly || cfg.ReadOnly}
-	inner := []*tools.Tool{tools.Read(), tools.Write(), tools.Edit(), tools.Bash(), tools.JobsTool()}
+	funcs := []*tools.Function{tools.Read(), tools.Write(), tools.Edit(), tools.Bash(), tools.JobsFunc()}
 	var runner *agent.SubagentRunner
 	if !isSub {
 		runner = &agent.SubagentRunner{ConfigPath: o.configPath, Profile: cfg.Profile, Provider: cfg.Provider, SystemPromptFile: o.systemPromptFile, Cwd: cwd, MCP: cfg.MCP}
 		opts.Subagent = runner.Run
-		inner = append(inner, tools.Subagent(cfg.Model, cfg.SubagentModels, cfg.SubagentEfforts))
+		funcs = append(funcs, tools.Subagent(cfg.Model, cfg.SubagentModels, cfg.SubagentEfforts))
 	}
-	inner = append(inner, extra...)
-	opts.Tools = []*tools.Tool{tools.Run(tools.NewRegistry(inner...))}
+	funcs = append(funcs, extra...)
+	opts.Tool = tools.Run(funcs...)
 	a := agent.New(opts)
 	if runner != nil {
 		runner.ReadOnly = a.ReadOnly
@@ -260,18 +259,10 @@ func buildAgent(cfg config.Config, o options, cwd string, p llm.Provider, displa
 			}
 			return ""
 		}
-		runner.Label = toolLabels(cwd, slices.Concat(opts.Tools, inner))
+		env := &tools.Env{Cwd: cwd}
+		runner.Label = func(call llm.Block) string { return opts.Tool.Label(env, call) }
 	}
 	return a, runner
-}
-
-func toolLabels(cwd string, toolset []*tools.Tool) func(llm.Block) string {
-	byName := map[string]*tools.Tool{}
-	for _, t := range toolset {
-		byName[t.Def.Name] = t
-	}
-	env := &tools.Env{Cwd: cwd}
-	return func(call llm.Block) string { return tools.Label(byName[call.Name], env, call) }
 }
 
 func newProvider(cfg config.Config, key string) llm.Provider {

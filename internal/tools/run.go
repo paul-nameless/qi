@@ -35,8 +35,14 @@ type runArgs struct {
 	Timeout int    `json:"timeout"`
 }
 
+type Tool struct {
+	Def llm.ToolDef
+	r   *runner
+}
+
 type runner struct {
-	inner     *Registry
+	order     []*Function
+	funcs     map[string]*Function
 	mu        sync.Mutex
 	vm        *jsvm.VM
 	stringify jsvm.Value
@@ -50,30 +56,37 @@ type runner struct {
 	cur       *cell
 }
 
-func Run(inner *Registry) *Tool {
-	r := &runner{inner: inner}
+func Run(funcs ...*Function) *Tool {
+	r := &runner{funcs: map[string]*Function{}}
+	for _, f := range funcs {
+		if f != nil {
+			r.order = append(r.order, f)
+			r.funcs[f.Name] = f
+		}
+	}
 	return &Tool{
 		Def: llm.ToolDef{
 			Name:        "run",
-			Description: runDescription(inner),
+			Description: runDescription(r.order),
 			Schema:      json.RawMessage(fmt.Sprintf(`{"type":"object","properties":{"code":{"type":"string","description":"JavaScript to run"},"timeout":{"type":"integer","description":"Seconds before the code is stopped (default %d, max %d)"}},"required":["code"]}`, defaultCellTimeout, maxCellTimeout)),
 		},
-		Inner:    inner,
-		Reset:    r.reset,
-		describe: runDescription,
-		Label: func(env *Env, in json.RawMessage) string {
-			a, _ := decode[runArgs](in)
-			return "run " + OneLine(a.Code, 70)
-		},
-		Source: func(in json.RawMessage) string {
-			a, _ := decode[runArgs](in)
-			return a.Code
-		},
-		Run: r.run,
+		r: r,
 	}
 }
 
-func (r *runner) reset(hadCells bool) {
+func (t *Tool) Replace(f *Function) {
+	for i, old := range t.r.order {
+		if old.Name == f.Name {
+			t.r.order[i] = f
+			t.r.funcs[f.Name] = f
+			t.Def.Description = runDescription(t.r.order)
+			return
+		}
+	}
+}
+
+func (t *Tool) Reset(hadCells bool) {
+	r := t.r
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.vm != nil {
@@ -140,10 +153,8 @@ func (r *runner) bindHelpers(vm *jsvm.VM) error {
 }
 
 func (r *runner) bindFuncs() {
-	for _, t := range r.inner.tools {
-		if t.Code != nil {
-			r.vm.SetFunc(t.Code.Name, r.toolFunc(t.Def.Name))
-		}
+	for _, f := range r.order {
+		r.vm.SetFunc(f.Code.Name, r.toolFunc(f.Name))
 	}
 	r.vm.SetFunc("sleep", r.sleepFunc)
 	r.vm.SetFunc("setTimeout", r.setTimeoutFunc)
@@ -165,8 +176,8 @@ func (r *runner) stdout(_, text string) {
 func (r *runner) toolFunc(name string) jsvm.HostFunc {
 	return func(vm *jsvm.VM, args []jsvm.Value) (jsvm.Value, error) {
 		site := callSite(vm)
-		c, t := r.cur, r.inner.byKey[name]
-		if c == nil || t == nil || t.Code == nil {
+		c, t := r.cur, r.funcs[name]
+		if c == nil || t == nil {
 			return jsvm.Undefined(), throwToolError(vm, name+" is not available", false, site)
 		}
 		if err := c.admit(t); err != nil {

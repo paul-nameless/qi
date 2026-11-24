@@ -67,11 +67,11 @@ func TestDaemonJobIsNotWaitedFor(t *testing.T) {
 	}
 }
 
-func TestJobsToolKillsProcessGroup(t *testing.T) {
+func TestJobsFuncKillsProcessGroup(t *testing.T) {
 	env := jobEnv(t)
 	runBash(context.Background(), env, bashIn(t, map[string]any{"command": "sleep 30 & sleep 30", "background": true}), nil)
 	pgid := env.Jobs.list[0].cmd.Process.Pid
-	tool := JobsTool()
+	tool := JobsFunc()
 	if res := tool.Run(context.Background(), env, json.RawMessage(`{}`), nil); !strings.Contains(res.Text, "running") {
 		t.Fatalf("list: %+v", res)
 	}
@@ -142,13 +142,13 @@ func TestLeftoverProcessesStayKillable(t *testing.T) {
 	env.Jobs.mu.Lock()
 	pgid := env.Jobs.list[0].cmd.Process.Pid
 	env.Jobs.mu.Unlock()
-	if res := JobsTool().Run(context.Background(), env, json.RawMessage(`{"kill":1}`), nil); res.IsError {
+	if res := JobsFunc().Run(context.Background(), env, json.RawMessage(`{"kill":1}`), nil); res.IsError {
 		t.Fatalf("kill: %+v", res)
 	}
 	if syscall.Kill(-pgid, 0) == nil {
 		t.Fatal("leftover child survived kill")
 	}
-	if res := JobsTool().Run(context.Background(), env, json.RawMessage(`{"kill":1}`), nil); !res.IsError {
+	if res := JobsFunc().Run(context.Background(), env, json.RawMessage(`{"kill":1}`), nil); !res.IsError {
 		t.Fatalf("second kill: %+v", res)
 	}
 }

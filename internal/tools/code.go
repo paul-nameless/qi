@@ -47,8 +47,8 @@ func (silentUI) ToolStart(string, string)      {}
 func (silentUI) ToolProgress(string, string)   {}
 func (silentUI) ToolDone(string, bool, string) {}
 
-func codeInput(vm *jsvm.VM, t *Tool, args []jsvm.Value) (json.RawMessage, error) {
-	spec := t.Code
+func codeInput(vm *jsvm.VM, t *Function, args []jsvm.Value) (json.RawMessage, error) {
+	spec := &t.Code
 	jsonArgs := make([]string, len(args))
 	for i, a := range args {
 		s, err := vm.JSONStringify(a)
@@ -91,7 +91,7 @@ func applyDefaults(fields map[string]json.RawMessage, spec *CodeSpec) {
 
 var jsArgNames = map[string]string{"file_path": "path", "old_string": "old", "new_string": "new", "arguments": "args"}
 
-func checkRequired(t *Tool, fields map[string]json.RawMessage) error {
+func checkRequired(t *Function, fields map[string]json.RawMessage) error {
 	for _, name := range t.Code.Params[:min(t.Code.Required, len(t.Code.Params))] {
 		v, ok := fields[name]
 		switch {
@@ -173,7 +173,7 @@ func aliasConflict(spec *CodeSpec, opts map[string]json.RawMessage) error {
 	return nil
 }
 
-func checkFields(t *Tool, fields map[string]json.RawMessage) error {
+func checkFields(t *Function, fields map[string]json.RawMessage) error {
 	var unknown []string
 	for k := range fields {
 		if !slices.Contains(t.Code.Params, k) && !slices.Contains(t.Code.Options, k) {
@@ -184,7 +184,7 @@ func checkFields(t *Tool, fields map[string]json.RawMessage) error {
 		return nil
 	}
 	sort.Strings(unknown)
-	return fmt.Errorf("%s: unknown option %s (known: %s)", t.Code.Name, strings.Join(unknown, ", "), strings.Join(optionNames(t.Code), ", "))
+	return fmt.Errorf("%s: unknown option %s (known: %s)", t.Code.Name, strings.Join(unknown, ", "), strings.Join(optionNames(&t.Code), ", "))
 }
 
 func optionNames(spec *CodeSpec) []string {

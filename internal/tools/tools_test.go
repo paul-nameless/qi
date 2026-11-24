@@ -25,10 +25,38 @@ func (nopUI) ToolStart(string, string)      {}
 func (nopUI) ToolProgress(string, string)   {}
 func (nopUI) ToolDone(string, bool, string) {}
 
+type funcSet map[string]*Function
+
+func newFuncSet(fs ...*Function) funcSet {
+	s := funcSet{}
+	for _, f := range fs {
+		s[f.Name] = f
+	}
+	return s
+}
+
+func (s funcSet) Execute(ctx context.Context, env *Env, calls []llm.Block, ui UI) []llm.Block {
+	out := make([]llm.Block, len(calls))
+	for i, c := range calls {
+		res := errResult("unknown function %q", c.Name)
+		ui.ToolStart(c.ID, c.Name)
+		if f := s[c.Name]; f != nil {
+			var extra string
+			res, extra = callFunction(ctx, env, f, c, ui)
+			if extra != "" {
+				res.Text += "\n" + extra
+			}
+		}
+		ui.ToolDone(c.ID, !res.IsError, res.Summary)
+		out[i] = llm.Block{Type: llm.BlockToolResult, ToolUseID: c.ID, Text: res.Text, IsError: res.IsError, Images: res.Images}
+	}
+	return out
+}
+
 func TestReadOnlyRefusesWrites(t *testing.T) {
 	dir := t.TempDir()
 	env := &Env{Cwd: dir, ReadOnly: func() bool { return true }}
-	r := NewRegistry(Write(), Edit())
+	r := newFuncSet(Write(), Edit())
 	res := r.Execute(context.Background(), env, []llm.Block{
 		{ID: "w", Name: "write", Input: json.RawMessage(`{"file_path":"x.txt","content":"hi"}`)},
 		{ID: "e", Name: "edit", Input: json.RawMessage(`{"file_path":"x.txt","old_string":"a","new_string":"b"}`)},
@@ -132,7 +160,7 @@ func TestHooksWiring(t *testing.T) {
 		},
 		PostHook: func(ctx context.Context, c HookCall, r Result) string { postCalls.Add(1); return "x" },
 	}
-	res := NewRegistry(Write()).Execute(context.Background(), env, []llm.Block{
+	res := newFuncSet(Write()).Execute(context.Background(), env, []llm.Block{
 		{ID: "blocked", Name: "write", Input: json.RawMessage(`{"file_path":"a.txt","content":"1"}`)},
 		{ID: "ok", Name: "write", Input: json.RawMessage(`{"file_path":"b.txt","content":"2"}`)},
 		{ID: "rewrite", Name: "write", Input: json.RawMessage(`{"file_path":"d.txt","content":"3"}`)},
@@ -176,7 +204,7 @@ func TestStaleFileGuard(t *testing.T) {
 	p := filepath.Join(dir, "f.txt")
 	os.WriteFile(p, []byte("one\ntwo\nthree\n"), 0o600)
 	env := &Env{Cwd: dir}
-	r := NewRegistry(Read(), Write(), Edit())
+	r := newFuncSet(Read(), Write(), Edit())
 	run := func(name, input string) llm.Block {
 		return r.Execute(context.Background(), env, []llm.Block{{ID: "x", Name: name, Input: json.RawMessage(input)}}, nopUI{})[0]
 	}
@@ -221,15 +249,15 @@ func (u *doneUI) ToolDone(id string, ok bool, _ string) {
 }
 
 func TestPanickingToolBecomesErrorResult(t *testing.T) {
-	ok := func(name string) *Tool {
-		return &Tool{Def: llm.ToolDef{Name: name}, Run: func(context.Context, *Env, json.RawMessage, func(string)) Result {
+	ok := func(name string) *Function {
+		return &Function{Name: name, Run: func(context.Context, *Env, json.RawMessage, func(string)) Result {
 			return Result{Text: name + " ran"}
 		}}
 	}
-	boom := &Tool{Def: llm.ToolDef{Name: "boom"}, Run: func(context.Context, *Env, json.RawMessage, func(string)) Result {
+	boom := &Function{Name: "boom", Run: func(context.Context, *Env, json.RawMessage, func(string)) Result {
 		panic(errors.New("boom"))
 	}}
-	r := NewRegistry(ok("fine"), ok("write"), boom)
+	r := newFuncSet(ok("fine"), ok("write"), boom)
 	for _, names := range [][]string{{"boom", "fine"}, {"write", "boom", "fine"}} {
 		calls := make([]llm.Block, len(names))
 		for i, n := range names {
@@ -257,7 +285,7 @@ func TestPanickingToolBecomesErrorResult(t *testing.T) {
 }
 
 func TestMCPCallHookUnwrapAndRewrap(t *testing.T) {
-	call := MCPTools(mcp.NewManager(nil))[1]
+	call := MCPFuncs(mcp.NewManager(nil))[1]
 	hc := call.HookCall(llm.Block{ID: "1", Name: "mcp_call", Input: json.RawMessage(`{"server":"gh","tool":"create","arguments":{"title":"x"}}`)})
 	if hc.Tool != "mcp__gh__create" || len(hc.Names) != 1 || string(hc.Input) != `{"title":"x"}` {
 		t.Errorf("hook call %+v", hc)

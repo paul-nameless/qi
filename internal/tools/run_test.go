@@ -25,24 +25,21 @@ type cellKit struct {
 	dir  string
 	env  *Env
 	run  *Tool
-	reg  *Registry
 	ctx  context.Context
 	tick atomic.Int32
 }
 
-func newCellKit(t *testing.T, extra ...*Tool) *cellKit {
+func newCellKit(t *testing.T, extra ...*Function) *cellKit {
 	k := &cellKit{t: t, dir: t.TempDir(), ctx: context.Background()}
 	k.env = &Env{Cwd: k.dir, SpillDir: t.TempDir()}
-	inner := append([]*Tool{Read(), Write(), Edit(), Bash(), JobsTool(), k.tickTool()}, extra...)
-	k.run = Run(NewRegistry(inner...))
-	k.reg = NewRegistry(k.run)
+	k.run = Run(append([]*Function{Read(), Write(), Edit(), Bash(), JobsFunc(), k.tickTool()}, extra...)...)
 	return k
 }
 
-func (k *cellKit) tickTool() *Tool {
-	return &Tool{
-		Def:  llm.ToolDef{Name: "tick"},
-		Code: &CodeSpec{Name: "tick", Params: []string{"n"}, Doc: "tick(n) → number"},
+func (k *cellKit) tickTool() *Function {
+	return &Function{
+		Name: "tick",
+		Code: CodeSpec{Name: "tick", Params: []string{"n"}, Doc: "tick(n) → number"},
 		Run: func(ctx context.Context, env *Env, in json.RawMessage, _ func(string)) Result {
 			k.tick.Add(1)
 			return Result{Text: "tick", Value: json.RawMessage(`{"ticks":1}`)}
@@ -57,7 +54,7 @@ func (k *cellKit) cell(code string) Result {
 
 func (k *cellKit) cellCtx(ctx context.Context, code string, timeout int) Result {
 	in, _ := json.Marshal(runArgs{Code: code, Timeout: timeout})
-	return k.run.Run(ctx, k.env, in, nil)
+	return k.run.r.run(ctx, k.env, in, nil)
 }
 
 func (k *cellKit) want(code, want string) {
@@ -188,9 +185,9 @@ func TestCellToolError(t *testing.T) {
 func TestCellSerializesCallsOnOnePath(t *testing.T) {
 	var mu sync.Mutex
 	active, overlap := map[string]int{}, false
-	slow := &Tool{
-		Def:  llm.ToolDef{Name: "slow"},
-		Code: &CodeSpec{Name: "slow", Params: []string{"file_path"}, Required: 1},
+	slow := &Function{
+		Name: "slow",
+		Code: CodeSpec{Name: "slow", Params: []string{"file_path"}, Required: 1},
 		Path: pathKey,
 		Run: func(ctx context.Context, env *Env, in json.RawMessage, _ func(string)) Result {
 			p := pathKey(env, in)
@@ -237,7 +234,7 @@ func TestRunFiresHooksOnlyForInnerCalls(t *testing.T) {
 		return ""
 	}
 	in, _ := json.Marshal(runArgs{Code: `await read("f.txt")`})
-	res := k.reg.Execute(k.ctx, k.env, []llm.Block{{ID: "1", Name: "run", Input: in}}, nopUI{})
+	res := k.run.Execute(k.ctx, k.env, []llm.Block{{ID: "1", Name: "run", Input: in}}, nopUI{})
 	if res[0].IsError || strings.Join(seen, ",") != "pre Read,post Read" {
 		t.Errorf("hooks saw %v, result %+v", seen, res[0])
 	}
@@ -407,24 +404,24 @@ func TestCellReset(t *testing.T) {
 	k.run.Reset(true)
 	k.want("typeof z", newVMNote+"\nundefined")
 	k.want("typeof z", "undefined")
-	NewRegistry(k.run).Reset(false)
+	k.run.Reset(false)
 	k.want("1", "1")
 }
 
 func TestRunReplaceAndHint(t *testing.T) {
-	sub := func(model string) *Tool { return Subagent(model, nil, []string{"low"}) }
-	build := func() *Registry {
-		return NewRegistry(Run(NewRegistry(Read(), Write(), Edit(), Bash(), JobsTool(), sub("m1"))))
+	sub := func(model string) *Function { return Subagent(model, nil, []string{"low"}) }
+	build := func() *Tool {
+		return Run(Read(), Write(), Edit(), Bash(), JobsFunc(), sub("m1"))
 	}
 	r := build()
-	if len(r.Defs()) != 1 || r.Defs()[0].Name != "run" {
-		t.Fatalf("defs %+v", r.Defs())
+	if r.Def.Name != "run" {
+		t.Fatalf("def %+v", r.Def)
 	}
-	if !strings.Contains(r.Defs()[0].Description, "- m1: the current model") {
+	if !strings.Contains(r.Def.Description, "- m1: the current model") {
 		t.Error("description lacks the subagent menu")
 	}
 	r.Replace(sub("m2"))
-	desc := r.Defs()[0].Description
+	desc := r.Def.Description
 	if !strings.Contains(desc, "- m2: the current model") || strings.Contains(desc, "m1") {
 		t.Errorf("description after Replace:\n%s", desc)
 	}
@@ -435,8 +432,8 @@ func TestRunReplaceAndHint(t *testing.T) {
 	if res[0].Text != `unknown tool "edit": call await edit(...) inside run` || res[1].Text != `unknown tool "nope"` {
 		t.Errorf("hints: %q %q", res[0].Text, res[1].Text)
 	}
-	a, _ := json.Marshal(build().Defs())
-	b, _ := json.Marshal(build().Defs())
+	a, _ := json.Marshal(build().Def)
+	b, _ := json.Marshal(build().Def)
 	if string(a) != string(b) {
 		t.Error("run description is not byte-stable")
 	}
@@ -490,7 +487,7 @@ func TestCellImages(t *testing.T) {
 func TestCellMCP(t *testing.T) {
 	m := mcp.NewManager(map[string]config.MCPServer{"fake": fakeMCP(config.MCPServer{})})
 	defer m.Close()
-	k := newCellKit(t, MCPTools(m)...)
+	k := newCellKit(t, MCPFuncs(m)...)
 	k.want(`await mcp("fake", "echo", {text: "hi"})`, "echo:hi")
 	k.want(`(await tool_search("echo", "fake")).includes("tool: echo")`, "true")
 	var hookArgs []string
@@ -517,7 +514,7 @@ func TestCellRecordsCalls(t *testing.T) {
 	k := newCellKit(t)
 	big := strings.Repeat("é", 3000)
 	code := fmt.Sprintf(`await write("big.txt", %q); await tick(2)`, big)
-	blocks := k.reg.Execute(context.Background(), k.env, []llm.Block{{ID: "c1", Name: "run", Input: mustJSON(t, runArgs{Code: code})}}, nopUI{})
+	blocks := k.run.Execute(context.Background(), k.env, []llm.Block{{ID: "c1", Name: "run", Input: mustJSON(t, runArgs{Code: code})}}, nopUI{})
 	b := blocks[0]
 	if b.IsError || len(b.Calls) != 2 {
 		t.Fatalf("block %+v", b)
@@ -540,7 +537,7 @@ func TestCellRecordsCalls(t *testing.T) {
 func TestCellInnerUI(t *testing.T) {
 	k := newCellKit(t)
 	ui := &recordUI{}
-	k.reg.Execute(context.Background(), k.env, []llm.Block{{ID: "r9", Name: "run", Input: mustJSON(t, runArgs{Code: "await tick(); await tick()"})}}, ui)
+	k.run.Execute(context.Background(), k.env, []llm.Block{{ID: "r9", Name: "run", Input: mustJSON(t, runArgs{Code: "await tick(); await tick()"})}}, ui)
 	want := []string{"start r9 run await tick(); await tick()", "start r9.1 tick", "done r9.1 tick", "start r9.2 tick", "done r9.2 tick", "done r9 run await tick(); await tick() · 2 calls · 3 lines"}
 	if strings.Join(ui.events, "\n") != strings.Join(want, "\n") {
 		t.Errorf("ui events:\n%s", strings.Join(ui.events, "\n"))
@@ -551,7 +548,7 @@ func TestCellSourceUI(t *testing.T) {
 	k := newCellKit(t)
 	ui := &sourceUI{}
 	code := "await tick()\nreturn 1"
-	k.reg.Execute(context.Background(), k.env, []llm.Block{{ID: "r1", Name: "run", Input: mustJSON(t, runArgs{Code: code})}}, ui)
+	k.run.Execute(context.Background(), k.env, []llm.Block{{ID: "r1", Name: "run", Input: mustJSON(t, runArgs{Code: code})}}, ui)
 	want := []string{"code r1 run await tick() return 1 | " + code, "start r1.1 tick", "done r1.1 tick", "done r1 run await tick() return 1 · 1 call · 1 line"}
 	if strings.Join(ui.events, "\n") != strings.Join(want, "\n") {
 		t.Errorf("ui events:\n%s", strings.Join(ui.events, "\n"))
@@ -669,7 +666,7 @@ func TestSubagentLabelDefaults(t *testing.T) {
 	menu := []config.SubagentModel{{Name: "fast", Model: "m-fast"}}
 	sub := Subagent("main", menu, []string{"low"})
 	for in, want := range map[string]string{`{"prompt":"x"}`: "subagent fast/default x", `{"prompt":"x","model":"m","effort":"low"}`: "subagent m/low x"} {
-		if got := Label(sub, &Env{}, llm.Block{Name: "subagent", Input: json.RawMessage(in)}); got != want {
+		if got := sub.label(&Env{}, llm.Block{Name: "subagent", Input: json.RawMessage(in)}); got != want {
 			t.Errorf("%s: %q, want %q", in, got, want)
 		}
 	}
@@ -677,9 +674,9 @@ func TestSubagentLabelDefaults(t *testing.T) {
 
 func TestCellParallelLimit(t *testing.T) {
 	var active, peak atomic.Int32
-	nap := &Tool{
-		Def:  llm.ToolDef{Name: "nap"},
-		Code: &CodeSpec{Name: "nap"},
+	nap := &Function{
+		Name: "nap",
+		Code: CodeSpec{Name: "nap"},
 		Run: func(ctx context.Context, env *Env, in json.RawMessage, _ func(string)) Result {
 			n := active.Add(1)
 			for p := peak.Load(); n > p && !peak.CompareAndSwap(p, n); p = peak.Load() {
@@ -747,7 +744,7 @@ func TestCellBashErrorResolves(t *testing.T) {
 		return ""
 	}
 	code := `const a = await bash("echo x; exit 3"); const b = await bash("sleep 5", {timeout: 1}); return [a.exit_code, b.timed_out].join(" ")`
-	b := k.reg.Execute(context.Background(), k.env, []llm.Block{{ID: "c1", Name: "run", Input: mustJSON(t, runArgs{Code: code})}}, nopUI{})[0]
+	b := k.run.Execute(context.Background(), k.env, []llm.Block{{ID: "c1", Name: "run", Input: mustJSON(t, runArgs{Code: code})}}, nopUI{})[0]
 	if b.IsError || b.Text != "3 true" {
 		t.Errorf("bash errors did not resolve: %+v", b)
 	}

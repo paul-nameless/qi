@@ -42,7 +42,7 @@ func TestUnifiedDiffSeparateHunks(t *testing.T) {
 	}
 }
 
-func runTool(t *testing.T, tool *Tool, env *Env, args map[string]any) Result {
+func runTool(t *testing.T, tool *Function, env *Env, args map[string]any) Result {
 	t.Helper()
 	in, _ := json.Marshal(args)
 	return tool.Run(context.Background(), env, in, nil)

@@ -35,14 +35,14 @@ func fakeMCP(srv config.MCPServer) config.MCPServer {
 
 const disabledNotice = `server "fake": 1 more tools on this server are disabled by the user; don't try to work around this.`
 
-func runMCP(t *testing.T, r *Registry, name, input string) llm.Block {
+func runMCP(t *testing.T, r funcSet, name, input string) llm.Block {
 	env := &Env{Cwd: t.TempDir()}
 	return r.Execute(context.Background(), env, []llm.Block{{ID: "1", Name: name, Input: json.RawMessage(input)}}, nopUI{})[0]
 }
 
 func TestMCPCallRefusedInReadOnly(t *testing.T) {
 	m := mcp.NewManager(map[string]config.MCPServer{"x": {Command: "/nonexistent"}})
-	r := NewRegistry(MCPTools(m)...)
+	r := newFuncSet(MCPFuncs(m)...)
 	env := &Env{Cwd: t.TempDir(), ReadOnly: func() bool { return true }}
 	res := r.Execute(context.Background(), env, []llm.Block{{ID: "1", Name: "mcp_call", Input: json.RawMessage(`{"server":"x","tool":"t","arguments":{}}`)}}, nopUI{})
 	if !res[0].IsError || !strings.Contains(res[0].Text, "read-only") {
@@ -53,7 +53,7 @@ func TestMCPCallRefusedInReadOnly(t *testing.T) {
 func TestToolSearchByServer(t *testing.T) {
 	m := mcp.NewManager(map[string]config.MCPServer{"fake": fakeMCP(config.MCPServer{ExcludeTools: []string{"delete_*"}})})
 	defer m.Close()
-	r := NewRegistry(MCPTools(m)...)
+	r := newFuncSet(MCPFuncs(m)...)
 	all := runMCP(t, r, "tool_search", `{"server":"fake"}`)
 	for _, want := range []string{"tool: list_issues", "tool: get_issue", "tool: echo"} {
 		if all.IsError || !strings.Contains(all.Text, want) {
@@ -86,7 +86,7 @@ func TestToolSearchDocListsServers(t *testing.T) {
 		"github": {Command: "gh", Description: "GitHub issues", Tools: []string{"get_issue", "list_issues"}},
 		"bare":   {Command: "bare"},
 	})
-	desc := MCPTools(m)[0].Code.Doc
+	desc := MCPFuncs(m)[0].Code.Doc
 	if !strings.HasSuffix(desc, "Servers:\n  - bare: \n  - github: GitHub issues") {
 		t.Errorf("description:\n%s", desc)
 	}
@@ -95,7 +95,7 @@ func TestToolSearchDocListsServers(t *testing.T) {
 func TestToolSearchNoEnabledTools(t *testing.T) {
 	m := mcp.NewManager(map[string]config.MCPServer{"fake": fakeMCP(config.MCPServer{Tools: []string{"nothing_*"}})})
 	defer m.Close()
-	res := runMCP(t, NewRegistry(MCPTools(m)...), "tool_search", `{"server":"fake"}`)
+	res := runMCP(t, newFuncSet(MCPFuncs(m)...), "tool_search", `{"server":"fake"}`)
 	want := "server \"fake\" has no enabled tools\nserver \"fake\": 4 more tools on this server are disabled by the user; don't try to work around this."
 	if res.Text != want {
 		t.Errorf("got:\n%s", res.Text)
@@ -105,7 +105,7 @@ func TestToolSearchNoEnabledTools(t *testing.T) {
 func TestToolSearchLargeServer(t *testing.T) {
 	m := mcp.NewManager(map[string]config.MCPServer{"fake": fakeMCP(config.MCPServer{Env: map[string]string{mcptest.BulkEnv: "200"}})})
 	defer m.Close()
-	r := NewRegistry(MCPTools(m)...)
+	r := newFuncSet(MCPFuncs(m)...)
 	list := runMCP(t, r, "tool_search", `{"server":"fake"}`)
 	if strings.Contains(list.Text, "input schema:") || strings.Contains(list.Text, "omitted") || !strings.Contains(list.Text, "- bulk_000: Bulk tool number 0\n") {
 		t.Errorf("compact listing: %.300s", list.Text)
@@ -145,13 +145,13 @@ func TestMCPToolDefsByteStable(t *testing.T) {
 	}
 	m := mcp.NewManager(cfg)
 	defer m.Close()
-	r := NewRegistry(MCPTools(m)...)
-	before, _ := json.Marshal(r.Defs())
-	if res := runMCP(t, r, "tool_search", `{"server":"fake"}`); res.IsError {
+	funcs := MCPFuncs(m)
+	before, _ := json.Marshal(Run(funcs...).Def)
+	if res := runMCP(t, newFuncSet(funcs...), "tool_search", `{"server":"fake"}`); res.IsError {
 		t.Fatal(res.Text)
 	}
-	after, _ := json.Marshal(r.Defs())
-	fresh, _ := json.Marshal(NewRegistry(MCPTools(mcp.NewManager(cfg))...).Defs())
+	after, _ := json.Marshal(Run(funcs...).Def)
+	fresh, _ := json.Marshal(Run(MCPFuncs(mcp.NewManager(cfg))...).Def)
 	if string(before) != string(after) || string(before) != string(fresh) {
 		t.Errorf("tool definitions changed:\n%s\n%s\n%s", before, after, fresh)
 	}

@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/paul-nameless/qi/internal/config"
-	"github.com/paul-nameless/qi/internal/llm"
 )
 
 type subagentArgs struct {
@@ -46,12 +45,12 @@ func subagentDoc(mainModel string, menu []config.SubagentModel, efforts []string
 	return "subagent(prompt, {model, effort}) → string — " + subagentIntro + " It has the same functions and the current mode. At most " + strconv.Itoa(maxCellSubagents) + " per run call; the run timeout pauses while a subagent runs (each has its own " + strconv.Itoa(int(SubagentTimeout.Minutes())) + " minute limit). model defaults to the first one below.\n  Models:\n" + list
 }
 
-func Subagent(mainModel string, menu []config.SubagentModel, efforts []string) *Tool {
+func Subagent(mainModel string, menu []config.SubagentModel, efforts []string) *Function {
 	_, names := subagentMenu(mainModel, menu, efforts, "")
-	return &Tool{
-		Def:       llm.ToolDef{Name: "subagent"},
+	return &Function{
+		Name:      "subagent",
 		HookNames: []string{"Agent", "Task"},
-		Code: &CodeSpec{
+		Code: CodeSpec{
 			Name:     "subagent",
 			Params:   []string{"prompt"},
 			Required: 1,

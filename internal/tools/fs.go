@@ -42,14 +42,12 @@ type readArgs struct {
 	Crop     []int  `json:"crop"`
 }
 
-func Read() *Tool {
-	return &Tool{
+func Read() *Function {
+	return &Function{
 		HookNames: []string{"Read"},
-		Def: llm.ToolDef{
-			Name: "read",
-		},
-		Path: pathKey,
-		Code: &CodeSpec{
+		Name:      "read",
+		Path:      pathKey,
+		Code: CodeSpec{
 			Name:     "read",
 			Params:   []string{"file_path"},
 			Required: 1,
@@ -238,15 +236,13 @@ func pathKey(env *Env, in json.RawMessage) string {
 	return env.resolve(a.FilePath)
 }
 
-func Write() *Tool {
-	return &Tool{
+func Write() *Function {
+	return &Function{
 		HookNames: []string{"Write"},
-		Def: llm.ToolDef{
-			Name: "write",
-		},
-		Path:  pathKey,
-		Label: func(env *Env, in json.RawMessage) string { return "write " + env.rel(pathKey(env, in)) },
-		Code: &CodeSpec{
+		Name:      "write",
+		Path:      pathKey,
+		Label:     func(env *Env, in json.RawMessage) string { return "write " + env.rel(pathKey(env, in)) },
+		Code: CodeSpec{
 			Name:     "write",
 			Params:   []string{"file_path", "content"},
 			Required: 2,
@@ -297,15 +293,13 @@ type editArgs struct {
 	ReplaceAll bool   `json:"replace_all"`
 }
 
-func Edit() *Tool {
-	return &Tool{
+func Edit() *Function {
+	return &Function{
 		HookNames: []string{"Edit"},
-		Def: llm.ToolDef{
-			Name: "edit",
-		},
-		Path:  pathKey,
-		Label: func(env *Env, in json.RawMessage) string { return "edit " + env.rel(pathKey(env, in)) },
-		Code: &CodeSpec{
+		Name:      "edit",
+		Path:      pathKey,
+		Label:     func(env *Env, in json.RawMessage) string { return "edit " + env.rel(pathKey(env, in)) },
+		Code: CodeSpec{
 			Name:     "edit",
 			Params:   []string{"file_path", "old_string", "new_string"},
 			Required: 3,

@@ -17,7 +17,7 @@ func bgCall(id, cmd string, daemon bool) llm.Message {
 		args = map[string]any{"command": cmd, "daemon": true}
 	}
 	in, _ := json.Marshal(args)
-	return llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockToolUse, ID: id, Name: "bash", Input: in}}}
+	return runCall(id, "return await bash("+string(in)+")")
 }
 
 func textMsg(s string) llm.Message {

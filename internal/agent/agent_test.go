@@ -51,9 +51,14 @@ func (nopDisplay) EndBlock()                     {}
 func (nopDisplay) Info(string)                   {}
 func (nopDisplay) Error(string)                  {}
 
+func runCall(id, code string) llm.Message {
+	in, _ := json.Marshal(map[string]string{"code": code})
+	return llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockToolUse, ID: id, Name: "run", Input: in}}}
+}
+
 func toolCall(id, cmd string) llm.Message {
-	in, _ := json.Marshal(map[string]string{"command": cmd})
-	return llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockToolUse, ID: id, Name: "bash", Input: in}}}
+	q, _ := json.Marshal(cmd)
+	return runCall(id, "return await bash("+string(q)+")")
 }
 
 func newAgent(t *testing.T, p *fakeProvider) *Agent {
@@ -62,7 +67,7 @@ func newAgent(t *testing.T, p *fakeProvider) *Agent {
 		Cwd:      t.TempDir(),
 		Provider: p,
 		UI:       nopDisplay{},
-		Tools:    []*tools.Tool{tools.Bash()},
+		Tool:     tools.Run(tools.Bash(), tools.JobsFunc()),
 		SpillDir: t.TempDir(),
 	})
 }
@@ -267,9 +272,8 @@ func TestRejectedPromptKeepsTurnNotes(t *testing.T) {
 	if err := os.WriteFile(path, []byte("one\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	in, _ := json.Marshal(map[string]string{"file_path": "a.txt"})
-	p := &fakeProvider{replies: []llm.Message{{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockToolUse, ID: "1", Name: "read", Input: in}}}}}
-	a := New(Options{Config: config.Config{CompactAt: config.Threshold{Tokens: 1 << 30}, Model: "m"}, Cwd: dir, Provider: p, UI: nopDisplay{}, Tools: []*tools.Tool{tools.Read()}, SpillDir: t.TempDir()})
+	p := &fakeProvider{replies: []llm.Message{runCall("1", `return await read("a.txt")`)}}
+	a := New(Options{Config: config.Config{CompactAt: config.Threshold{Tokens: 1 << 30}, Model: "m"}, Cwd: dir, Provider: p, UI: nopDisplay{}, Tool: tools.Run(tools.Read()), SpillDir: t.TempDir()})
 	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "read it"}}); err != nil {
 		t.Fatal(err)
 	}
@@ -420,7 +424,7 @@ func TestContextUsageBeforeFirstRequest(t *testing.T) {
 }
 
 func TestContextReport(t *testing.T) {
-	a := New(Options{Tools: []*tools.Tool{tools.Read()}, Config: config.Config{Model: "claude-opus-5-5", ContextWindow: 200000}})
+	a := New(Options{Tool: tools.Run(tools.Read()), Config: config.Config{Model: "claude-opus-5-5", ContextWindow: 200000}})
 	a.SetSystem(SystemPrompt{Text: strings.Repeat("s", 4000), Sections: []Section{{"base prompt", 1000}, {"environment", 3000}}})
 	a.conv.messages = []llm.Message{
 		llm.UserText(strings.Repeat("u", 400)),
@@ -428,7 +432,7 @@ func TestContextReport(t *testing.T) {
 		{Role: llm.RoleUser, Blocks: []llm.Block{{Type: llm.BlockToolResult, ToolUseID: "1", Text: strings.Repeat("r", 2000)}}},
 	}
 	got := a.ContextReport()
-	for _, want := range []string{"context 1.6k/200k (0.8%)", "system prompt", "base prompt", "environment", "tools (1)", "messages (3)", "user text", "read results", "500", "free"} {
+	for _, want := range []string{"context 2.5k/200k (1.2%)", "system prompt", "base prompt", "environment", "tools (1)", "messages (3)", "user text", "read results", "500", "free"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("report misses %q:\n%s", want, got)
 		}
@@ -470,7 +474,7 @@ func TestReconfigureUpdatesBashAllowlistAndTimeout(t *testing.T) {
 	a.SetReadOnly(false)
 	cfg.BashTimeout = 1
 	a.Reconfigure(cfg, p)
-	if got := toolResultOf(t, a, p, "sleep 5"); !strings.Contains(got, "timed out after 1s") {
+	if got := toolResultOf(t, a, p, "sleep 5"); !strings.Contains(got, `"timed_out": true`) {
 		t.Errorf("bash timeout after reconfigure: %q", got)
 	}
 }

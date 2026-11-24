@@ -86,7 +86,7 @@ func TestKeepTail(t *testing.T) {
 	if len(msgs[5].Blocks) != 2 {
 		t.Error("keepTail modified the history")
 	}
-	if tail := keepTail(msgs, 5); len(tail) != 2 || tail[0].ToolUses()[0].ID != "c2" {
+	if tail := keepTail(msgs, 12); len(tail) != 2 || tail[0].ToolUses()[0].ID != "c2" {
 		t.Errorf("small budget should cut at the assistant call, keeping its result: %+v", tail)
 	}
 	if tail := keepTail(msgs, 2); len(tail) != 0 {

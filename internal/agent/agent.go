@@ -36,7 +36,7 @@ type Options struct {
 	UI       Display
 	Headless bool
 	ReadOnly bool
-	Tools    []*tools.Tool
+	Tool     *tools.Tool
 	Subagent tools.SubagentFunc
 	SpillDir string
 }
@@ -67,7 +67,7 @@ type live struct {
 
 type conversation struct {
 	messages     []llm.Message
-	registry     *tools.Registry
+	tool         *tools.Tool
 	onStop       StopHook
 	announced    bool
 	carry        []llm.Block
@@ -81,7 +81,7 @@ func New(o Options) *Agent {
 	a.readOnly.Store(o.ReadOnly)
 	a.env = &tools.Env{Cwd: o.Cwd, ReadOnly: a.ReadOnly, Allow: o.Config.ReadOnlyAllow, BashTimeout: o.Config.BashTimeout, SpillDir: o.SpillDir, Subagent: o.Subagent, Jobs: tools.NewJobs()}
 	a.live = live{cfg: o.Config, provider: o.Provider}
-	a.conv.registry = tools.NewRegistry(o.Tools...)
+	a.conv.tool = o.Tool
 	return a
 }
 
@@ -139,7 +139,7 @@ func (a *Agent) Reset(s *session.Session) {
 	a.busy.Lock()
 	defer a.busy.Unlock()
 	a.env.Jobs.KillAll()
-	a.conv.registry.Reset(false)
+	a.resetVM(false)
 	a.setSession(s)
 	a.resetConversation(nil)
 	a.SetContextTokens(0)
@@ -149,7 +149,7 @@ func (a *Agent) Load(s *session.Session, ld session.Loaded) {
 	a.busy.Lock()
 	defer a.busy.Unlock()
 	a.env.Jobs.KillAll()
-	a.conv.registry.Reset(hasCells(ld.Messages))
+	a.resetVM(hasCells(ld.Messages))
 	a.setSession(s)
 	a.resetConversation(ld.Messages)
 	a.restoreMode()
@@ -182,10 +182,33 @@ func (a *Agent) Reconfigure(cfg config.Config, p llm.Provider) {
 	a.conv.paused, a.conv.thrashAt = false, 0
 }
 
-func (a *Agent) ReplaceTool(t *tools.Tool) {
+func (a *Agent) ReplaceFunction(f *tools.Function) {
 	a.busy.Lock()
 	defer a.busy.Unlock()
-	a.conv.registry.Replace(t)
+	if a.conv.tool != nil {
+		a.conv.tool.Replace(f)
+	}
+}
+
+func (a *Agent) resetVM(hadCells bool) {
+	if a.conv.tool != nil {
+		a.conv.tool.Reset(hadCells)
+	}
+}
+
+func (a *Agent) toolDefs() []llm.ToolDef {
+	if a.conv.tool == nil {
+		return nil
+	}
+	return []llm.ToolDef{a.conv.tool.Def}
+}
+
+func (a *Agent) execute(ctx context.Context, calls []llm.Block) []llm.Block {
+	t := a.conv.tool
+	if t == nil {
+		t = tools.Run()
+	}
+	return t.Execute(ctx, a.env, calls, a.ui)
 }
 
 func (a *Agent) SetHooks(pre tools.Hook, post tools.PostHook, stop StopHook) {
@@ -380,7 +403,7 @@ func (a *Agent) request(l live, msgs []llm.Message) llm.Request {
 		StaticSystem:    l.system.Static,
 		SessionSystem:   l.system.Session,
 		Messages:        msgs,
-		Tools:           a.conv.registry.Defs(),
+		Tools:           a.toolDefs(),
 		MaxTokens:       l.cfg.MaxTokens,
 		ReasoningEffort: l.cfg.ReasoningEffort,
 		SessionID:       sid,
@@ -529,7 +552,7 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 		}
 		var next []llm.Block
 		if len(calls) > 0 {
-			next = a.conv.registry.Execute(ctx, a.env, calls, a.ui)
+			next = a.execute(ctx, calls)
 			if ctx.Err() != nil {
 				a.appendMsg(llm.Message{Role: llm.RoleUser, Blocks: next}, nil)
 				return "", stats, context.Canceled
@@ -658,7 +681,7 @@ func (a *Agent) EstimateTokens() int {
 
 func (a *Agent) estimateTokens() int {
 	n := len(a.System())
-	for _, d := range a.conv.registry.Defs() {
+	for _, d := range a.toolDefs() {
 		n += len(d.Description) + len(d.Schema)
 	}
 	n /= 4

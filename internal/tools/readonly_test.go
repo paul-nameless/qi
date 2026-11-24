@@ -218,10 +218,10 @@ func TestRunBashUsesSandbox(t *testing.T) {
 	}
 }
 
-func TestReadOnlyBashThroughRegistry(t *testing.T) {
+func TestReadOnlyBashThroughHooksPath(t *testing.T) {
 	dir := t.TempDir()
 	env := &Env{Cwd: dir, ReadOnly: func() bool { return true }, SpillDir: t.TempDir()}
-	res := NewRegistry(Bash()).Execute(context.Background(), env, []llm.Block{{ID: "1", Name: "bash", Input: json.RawMessage(`{"command":"touch x"}`)}}, nopUI{})
+	res := newFuncSet(Bash()).Execute(context.Background(), env, []llm.Block{{ID: "1", Name: "bash", Input: json.RawMessage(`{"command":"touch x"}`)}}, nopUI{})
 	if !res[0].IsError || !strings.Contains(res[0].Text, "read-only") {
 		t.Errorf("touch allowed: %+v", res[0])
 	}

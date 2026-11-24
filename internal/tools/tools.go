@@ -91,31 +91,27 @@ func (e *Env) rel(p string) string {
 	return p
 }
 
-type Tool struct {
-	Def       llm.ToolDef
+type Function struct {
+	Name      string
+	Code      CodeSpec
 	Run       func(ctx context.Context, env *Env, input json.RawMessage, progress func(string)) Result
 	Label     func(env *Env, input json.RawMessage) string
 	Path      func(env *Env, input json.RawMessage) string
 	HookNames []string
 	Unwrap    func(input json.RawMessage) (name string, args json.RawMessage)
 	Rewrap    func(input, args json.RawMessage) json.RawMessage
-	Code      *CodeSpec
-	Source    func(input json.RawMessage) string
-	Inner     *Registry
-	Reset     func(hadCells bool)
-	describe  func(inner *Registry) string
 }
 
-func (t *Tool) HookCall(call llm.Block) HookCall {
+func (f *Function) HookCall(call llm.Block) HookCall {
 	hc := HookCall{ID: call.ID, Tool: call.Name, Names: []string{call.Name}, Input: call.Input}
-	if len(t.HookNames) > 0 {
-		hc.Tool = t.HookNames[0]
-		hc.Names = append(hc.Names, t.HookNames...)
+	if len(f.HookNames) > 0 {
+		hc.Tool = f.HookNames[0]
+		hc.Names = append(hc.Names, f.HookNames...)
 	}
-	if t.Unwrap == nil {
+	if f.Unwrap == nil {
 		return hc
 	}
-	name, args := t.Unwrap(call.Input)
+	name, args := f.Unwrap(call.Input)
 	if name != "" {
 		hc.Tool, hc.Names = name, []string{name}
 	}
@@ -125,81 +121,24 @@ func (t *Tool) HookCall(call llm.Block) HookCall {
 	return hc
 }
 
-func (t *Tool) rewrap(input, args json.RawMessage) json.RawMessage {
-	if t.Rewrap == nil {
+func (f *Function) rewrap(input, args json.RawMessage) json.RawMessage {
+	if f.Rewrap == nil {
 		return args
 	}
-	return t.Rewrap(input, args)
+	return f.Rewrap(input, args)
 }
 
-type Registry struct {
-	tools []*Tool
-	byKey map[string]*Tool
-}
-
-func NewRegistry(ts ...*Tool) *Registry {
-	r := &Registry{byKey: map[string]*Tool{}}
-	for _, t := range ts {
-		if t == nil {
-			continue
+func (f *Function) label(env *Env, call llm.Block) (label string) {
+	label = call.Name
+	defer func() {
+		if recover() != nil {
+			label = call.Name
 		}
-		r.tools = append(r.tools, t)
-		r.byKey[t.Def.Name] = t
+	}()
+	if f.Label != nil {
+		label = f.Label(env, call.Input)
 	}
-	return r
-}
-
-func (r *Registry) Replace(t *Tool) {
-	if r.replaceTop(t) {
-		return
-	}
-	for _, outer := range r.tools {
-		if outer.Inner == nil || !outer.Inner.replaceTop(t) {
-			continue
-		}
-		if outer.describe != nil {
-			outer.Def.Description = outer.describe(outer.Inner)
-		}
-	}
-}
-
-func (r *Registry) replaceTop(t *Tool) bool {
-	for i, old := range r.tools {
-		if old.Def.Name == t.Def.Name {
-			r.tools[i] = t
-			r.byKey[t.Def.Name] = t
-			return true
-		}
-	}
-	return false
-}
-
-func (r *Registry) Reset(hadCells bool) {
-	for _, t := range r.tools {
-		if t.Reset != nil {
-			t.Reset(hadCells)
-		}
-	}
-}
-
-func (r *Registry) innerHint(name string) (string, bool) {
-	for _, outer := range r.tools {
-		if outer.Inner == nil {
-			continue
-		}
-		if t := outer.Inner.byKey[name]; t != nil && t.Code != nil {
-			return fmt.Sprintf("unknown tool %q: call await %s(...) inside %s", name, t.Code.Name, outer.Def.Name), true
-		}
-	}
-	return "", false
-}
-
-func (r *Registry) Defs() []llm.ToolDef {
-	defs := make([]llm.ToolDef, 0, len(r.tools))
-	for _, t := range r.tools {
-		defs = append(defs, t.Def)
-	}
-	return defs
+	return label
 }
 
 type UI interface {
@@ -212,29 +151,56 @@ type SourceUI interface {
 	ToolStartCode(id, label, code string)
 }
 
-func startCall(ui UI, t *Tool, call llm.Block, label string) {
-	if s, ok := ui.(SourceUI); ok && t != nil && t.Source != nil {
-		s.ToolStartCode(call.ID, label, t.Source(call.Input))
-		return
-	}
-	ui.ToolStart(call.ID, label)
-}
-
-func (r *Registry) Execute(ctx context.Context, env *Env, calls []llm.Block, ui UI) []llm.Block {
+func (t *Tool) Execute(ctx context.Context, env *Env, calls []llm.Block, ui UI) []llm.Block {
 	results := make([]llm.Block, len(calls))
 	for i, c := range calls {
-		results[i] = r.runOne(ctx, env, c, ui)
+		results[i] = t.runOne(ctx, env, c, ui)
 	}
 	return results
 }
 
-func (r *Registry) runOne(ctx context.Context, env *Env, call llm.Block, ui UI) llm.Block {
-	t := r.byKey[call.Name]
-	label := Label(t, env, call)
-	startCall(ui, t, call, label)
-	res := r.invoke(withCall(ctx, call.ID, ui), env, t, call, ui)
+func (t *Tool) runOne(ctx context.Context, env *Env, call llm.Block, ui UI) llm.Block {
+	label := t.Label(env, call)
+	if s, ok := ui.(SourceUI); ok && call.Name == t.Def.Name {
+		a, _ := decode[runArgs](call.Input)
+		s.ToolStartCode(call.ID, label, a.Code)
+	} else {
+		ui.ToolStart(call.ID, label)
+	}
+	res := t.call(withCall(ctx, call.ID, ui), env, call, ui)
 	ui.ToolDone(call.ID, !res.IsError, DoneLine(label, res.Summary))
 	return llm.Block{Type: llm.BlockToolResult, ToolUseID: call.ID, Text: res.Text, IsError: res.IsError, Images: res.Images, Calls: res.Calls}
+}
+
+func (t *Tool) call(ctx context.Context, env *Env, call llm.Block, ui UI) (res Result) {
+	defer func() {
+		if p := recover(); p != nil {
+			res = errResult("tool %s panicked: %v at %s", call.Name, p, panicSite())
+		}
+	}()
+	switch {
+	case ctx.Err() != nil:
+		return errResult("interrupted by user")
+	case call.Name != t.Def.Name:
+		if f := t.r.funcs[call.Name]; f != nil {
+			return errResult("unknown tool %q: call await %s(...) inside %s", call.Name, f.Code.Name, t.Def.Name)
+		}
+		return errResult("unknown tool %q", call.Name)
+	case llm.InvalidArgs(call.Input):
+		return errResult("invalid JSON arguments: %s", string(call.Input))
+	}
+	return t.r.run(ctx, env, call.Input, func(s string) { ui.ToolProgress(call.ID, s) })
+}
+
+func (t *Tool) Label(env *Env, call llm.Block) string {
+	if call.Name == t.Def.Name {
+		a, _ := decode[runArgs](call.Input)
+		return "run " + OneLine(a.Code, 70)
+	}
+	if f := t.r.funcs[call.Name]; f != nil {
+		return f.label(env, call)
+	}
+	return call.Name
 }
 
 func DoneLine(label, summary string) string {
@@ -244,56 +210,27 @@ func DoneLine(label, summary string) string {
 	return label + " · " + OneLine(summary, 80)
 }
 
-func Label(t *Tool, env *Env, call llm.Block) (label string) {
-	label = call.Name
-	defer func() {
-		if recover() != nil {
-			label = call.Name
-		}
-	}()
-	if t != nil && t.Label != nil {
-		label = t.Label(env, call.Input)
-	}
-	return label
-}
-
-func (r *Registry) invoke(ctx context.Context, env *Env, t *Tool, call llm.Block, ui UI) Result {
-	res, extra := r.invokeSplit(ctx, env, t, call, ui)
-	if extra != "" {
-		res.Text += "\n" + extra
-	}
-	return res
-}
-
-func (r *Registry) invokeSplit(ctx context.Context, env *Env, t *Tool, call llm.Block, ui UI) (res Result, extra string) {
+func callFunction(ctx context.Context, env *Env, f *Function, call llm.Block, ui UI) (res Result, extra string) {
 	defer func() {
 		if p := recover(); p != nil {
 			res = errResult("tool %s panicked: %v at %s", call.Name, p, panicSite())
 		}
 	}()
-	switch {
-	case ctx.Err() != nil:
+	if ctx.Err() != nil {
 		return errResult("interrupted by user"), ""
-	case t == nil:
-		if hint, ok := r.innerHint(call.Name); ok {
-			return errResult("%s", hint), ""
-		}
-		return errResult("unknown tool %q", call.Name), ""
-	case llm.InvalidArgs(call.Input):
-		return errResult("invalid JSON arguments: %s", string(call.Input)), ""
 	}
-	if env.PreHook != nil && t.Inner == nil {
-		block, reason, input := env.PreHook(ctx, t.HookCall(call))
+	if env.PreHook != nil {
+		block, reason, input := env.PreHook(ctx, f.HookCall(call))
 		if block {
 			return deniedResult("blocked by hook: %s", reason), ""
 		}
 		if input != nil {
-			call.Input = t.rewrap(call.Input, input)
+			call.Input = f.rewrap(call.Input, input)
 		}
 	}
-	res = t.Run(ctx, env, call.Input, func(s string) { ui.ToolProgress(call.ID, s) })
-	if env.PostHook != nil && t.Inner == nil {
-		extra = env.PostHook(ctx, t.HookCall(call), res)
+	res = f.Run(ctx, env, call.Input, func(s string) { ui.ToolProgress(call.ID, s) })
+	if env.PostHook != nil {
+		extra = env.PostHook(ctx, f.HookCall(call), res)
 	}
 	return res, extra
 }

@@ -36,22 +36,20 @@ The same change in many files:
 Handle a failure:
   try { await edit("a.go", "old text", "new text") } catch (e) { console.log("edit failed:", e.message) }`, cellParallel, defaultCellTimeout, maxCellTimeout)
 
-func runDescription(inner *Registry) string {
+func runDescription(funcs []*Function) string {
 	var docs []string
-	for _, t := range inner.tools {
-		if t.Code != nil && t.Code.Doc != "" {
-			docs = append(docs, t.Code.Doc)
+	for _, f := range funcs {
+		if f.Code.Doc != "" {
+			docs = append(docs, f.Code.Doc)
 		}
 	}
-	return runIntro + strings.Join(docs, "\n") + strings.Replace(runRules, "{names}", reservedNames(inner), 1)
+	return runIntro + strings.Join(docs, "\n") + strings.Replace(runRules, "{names}", reservedNames(funcs), 1)
 }
 
-func reservedNames(inner *Registry) string {
+func reservedNames(funcs []*Function) string {
 	var names []string
-	for _, t := range inner.tools {
-		if t.Code != nil {
-			names = append(names, t.Code.Name)
-		}
+	for _, f := range funcs {
+		names = append(names, f.Code.Name)
 	}
 	names = append(names, "sleep", "setTimeout", "clearTimeout", "print")
 	return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]

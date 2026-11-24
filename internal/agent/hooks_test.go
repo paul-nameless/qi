@@ -57,9 +57,9 @@ func TestMatches(t *testing.T) {
 	}
 }
 
-var hookTools = map[string]*tools.Tool{
+var hookTools = map[string]*tools.Function{
 	"read": tools.Read(), "write": tools.Write(), "edit": tools.Edit(), "bash": tools.Bash(),
-	"subagent": tools.Subagent("m", nil, nil), "mcp_call": tools.MCPTools(mcp.NewManager(nil))[1],
+	"subagent": tools.Subagent("m", nil, nil), "mcp_call": tools.MCPFuncs(mcp.NewManager(nil))[1],
 }
 
 func hookCall(name, input string) tools.HookCall {

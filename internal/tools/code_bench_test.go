@@ -15,7 +15,7 @@ func BenchmarkArgChecks(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		for _, c := range []struct {
-			t *Tool
+			t *Function
 			f map[string]json.RawMessage
 		}{{read, rf}, {edit, ef}} {
 			if checkFields(c.t, c.f) != nil || checkRequired(c.t, c.f) != nil {
