@@ -2,6 +2,7 @@ package jsvm
 
 import (
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf16"
@@ -544,8 +545,11 @@ func (w *jsonWriter) value(v Value, holder *object, key propKey) bool {
 	if len(w.b) > maxStringLen {
 		w.vm.throwError("RangeError", "Invalid string length")
 	}
-	if cap(w.b)-len(w.b) < 4096 && cap(w.b) > 1<<20 {
-		w.vm.reserve(2 * cap(w.b))
+	if cap(w.b)-len(w.b) < 4096 && cap(w.b) >= 64<<10 {
+		if cap(w.b) > 1<<20 {
+			w.vm.reserve(2 * cap(w.b))
+		}
+		w.b = slices.Grow(w.b, cap(w.b))
 	}
 	if holder != nil {
 		v = w.prepare(v, holder, key)
