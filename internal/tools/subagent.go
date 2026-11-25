@@ -14,40 +14,43 @@ import (
 )
 
 type subagentArgs struct {
-	Prompt string `json:"prompt"`
-	Model  string `json:"model"`
-	Effort string `json:"effort"`
+	Prompt  string `json:"prompt"`
+	Profile string `json:"profile"`
+	Effort  string `json:"effort"`
 }
 
 const SubagentTimeout = 30 * time.Minute
 
 const subagentIntro = "run a task in a separate agent with a fresh context and get back only its final answer. Use it for self-contained side work (searching a codebase, reviewing, summarizing logs) to keep this conversation small, and run several at once for independent tasks. The subagent sees none of this conversation, so put every detail it needs in the prompt."
 
-func subagentMenu(mainModel string, menu []config.SubagentModel, indent string) (string, []string) {
+const selfUseFor = "this agent's own model and settings"
+
+func subagentMenu(choices []config.SubagentChoice) string {
 	var b strings.Builder
-	names := []string{}
-	if len(menu) == 0 {
-		fmt.Fprintf(&b, "%s- %s: the current model\n", indent, mainModel)
-		names = append(names, mainModel)
-	}
-	for _, m := range menu {
-		fmt.Fprintf(&b, "%s- %s (%s): %s\n", indent, m.Name, m.Model, m.UseFor)
-		names = append(names, m.Name)
-	}
-	if indent == "" {
+	for _, c := range choices {
+		useFor := c.UseFor
+		if useFor == "" && c.Self {
+			useFor = selfUseFor
+		}
+		fmt.Fprintf(&b, "  - %s", c)
+		if useFor != "" {
+			fmt.Fprintf(&b, ": %s", useFor)
+		}
 		b.WriteString("\n")
 	}
-	fmt.Fprintf(&b, "%sEfforts: %s. Higher effort thinks longer and costs more; not every model supports none, minimal, xhigh or max.", indent, strings.Join(config.Efforts, ", "))
-	return b.String(), names
+	fmt.Fprintf(&b, "  Efforts: %s. Higher effort thinks longer and costs more; not every model supports none, minimal, xhigh or max.", strings.Join(config.Efforts, ", "))
+	return b.String()
 }
 
-func subagentDoc(mainModel string, menu []config.SubagentModel) string {
-	list, _ := subagentMenu(mainModel, menu, "  ")
-	return "subagent(prompt, {model, effort}) → string — " + subagentIntro + " It has the same functions and the current mode. At most " + strconv.Itoa(maxCellSubagents) + " per run call; the run timeout pauses while a subagent runs (each has its own " + strconv.Itoa(int(SubagentTimeout.Minutes())) + " minute limit). model defaults to the first one below.\n  Models:\n" + list
+func subagentDoc(choices []config.SubagentChoice) string {
+	return "subagent(prompt, {profile, effort}) → string — " + subagentIntro + " It has the same functions and the current mode. At most " + strconv.Itoa(maxCellSubagents) + " per run call; the run timeout pauses while a subagent runs (each has its own " + strconv.Itoa(int(SubagentTimeout.Minutes())) + " minute limit). profile defaults to the first one below, effort to the profile's own.\n  Profiles:\n" + subagentMenu(choices)
 }
 
-func Subagent(mainModel string, menu []config.SubagentModel) *Function {
-	_, names := subagentMenu(mainModel, menu, "")
+func Subagent(choices []config.SubagentChoice) *Function {
+	names := make([]string, len(choices))
+	for i, c := range choices {
+		names[i] = c.Name
+	}
 	return &Function{
 		Name:      "subagent",
 		HookNames: []string{"Agent", "Task"},
@@ -55,12 +58,12 @@ func Subagent(mainModel string, menu []config.SubagentModel) *Function {
 			Name:     "subagent",
 			Params:   []string{"prompt"},
 			Required: 1,
-			Options:  []string{"model", "effort"},
-			Doc:      subagentDoc(mainModel, menu),
+			Options:  []string{"profile", "effort"},
+			Doc:      subagentDoc(choices),
 		},
 		Label: func(env *Env, in json.RawMessage) string {
 			a, _ := decode[subagentArgs](in)
-			return fmt.Sprintf("subagent %s/%s %s", cmp.Or(a.Model, names[0]), cmp.Or(a.Effort, "default"), OneLine(a.Prompt, 50))
+			return fmt.Sprintf("subagent %s/%s %s", cmp.Or(a.Profile, names[0]), cmp.Or(a.Effort, "default"), OneLine(a.Prompt, 50))
 		},
 		Run: func(ctx context.Context, env *Env, in json.RawMessage, progress func(string)) Result {
 			a, err := decode[subagentArgs](in)
@@ -73,11 +76,16 @@ func Subagent(mainModel string, menu []config.SubagentModel) *Function {
 			if env.Subagent == nil {
 				return errResult("subagents are not available here")
 			}
+			i := 0
+			if a.Profile != "" {
+				if i = slices.Index(names, a.Profile); i < 0 {
+					return errResult("unknown profile %q: use one of %s", a.Profile, strings.Join(names, ", "))
+				}
+			}
 			if a.Effort != "" && !slices.Contains(config.Efforts, a.Effort) {
 				return errResult("unknown effort %q: use one of %s", a.Effort, strings.Join(config.Efforts, ", "))
 			}
-			model, provider := subagentModel(a.Model, mainModel, menu)
-			answer, err := env.Subagent(ctx, SubagentTask{Prompt: a.Prompt, Model: model, Provider: provider, Effort: a.Effort}, progress)
+			answer, err := env.Subagent(ctx, subagentTask(choices[i], a), progress)
 			if err != nil {
 				return errResult("subagent failed: %v", err)
 			}
@@ -87,18 +95,12 @@ func Subagent(mainModel string, menu []config.SubagentModel) *Function {
 	}
 }
 
-func subagentModel(name, mainModel string, menu []config.SubagentModel) (string, string) {
-	if name == "" {
-		if len(menu) == 0 {
-			return mainModel, ""
-		}
-		return menu[0].Model, menu[0].Provider
+func subagentTask(c config.SubagentChoice, a subagentArgs) SubagentTask {
+	task := SubagentTask{Prompt: a.Prompt, Effort: a.Effort}
+	if c.Self {
+		task.Model = c.Model
+	} else {
+		task.Profile = c.Name
 	}
-	model, provider := name, ""
-	for _, m := range menu {
-		if m.Name == name {
-			model, provider = m.Model, m.Provider
-		}
-	}
-	return model, provider
+	return task
 }

@@ -475,7 +475,7 @@ func TestCellResultsNotCut(t *testing.T) {
 
 func TestCellInterruptThroughHostCalls(t *testing.T) {
 	t.Parallel()
-	k := newCellKit(t, Subagent("m", nil))
+	k := newCellKit(t, Subagent(config.Config{Model: "m"}.SubagentChoices()))
 	k.second(300 * time.Millisecond)
 	cases := []string{
 		`while (true) { try { console.log({toJSON() { while (true) {} }}) } catch (e) {} }`,
@@ -557,7 +557,7 @@ func TestRunPanicAndReplaceThroughExecute(t *testing.T) {
 
 func TestRunReplaceAndHint(t *testing.T) {
 	t.Parallel()
-	sub := func(model string) *Function { return Subagent(model, nil) }
+	sub := func(model string) *Function { return Subagent(config.Config{Model: model}.SubagentChoices()) }
 	build := func() *Tool {
 		return Run(Read(), Write(), Edit(), Bash(), JobsFunc(), sub("m1"))
 	}
@@ -565,12 +565,12 @@ func TestRunReplaceAndHint(t *testing.T) {
 	if r.Def.Name != "run" {
 		t.Fatalf("def %+v", r.Def)
 	}
-	if !strings.Contains(r.Def.Description, "- m1: the current model") {
+	if !strings.Contains(r.Def.Description, "- current (m1): ") {
 		t.Error("description lacks the subagent menu")
 	}
 	r.Replace(sub("m2"))
 	desc := r.Def.Description
-	if !strings.Contains(desc, "- m2: the current model") || strings.Contains(desc, "m1") {
+	if !strings.Contains(desc, "- current (m2): ") || strings.Contains(desc, "m1") {
 		t.Errorf("description after Replace:\n%s", desc)
 	}
 	res := r.Execute(context.Background(), &Env{Cwd: t.TempDir()}, []llm.Block{
@@ -718,8 +718,8 @@ func mustJSON(t *testing.T, v any) json.RawMessage {
 
 func TestCellSubagents(t *testing.T) {
 	t.Parallel()
-	menu := []config.SubagentModel{{Name: "fast", Model: "m-fast", Provider: "p1"}, {Name: "deep", Model: "m-deep"}}
-	k := newCellKit(t, Subagent("main", menu))
+	menu := []config.SubagentChoice{{Name: "fast", Model: "m-fast"}, {Name: "deep", Model: "m-deep", Effort: "low"}}
+	k := newCellKit(t, Subagent(menu))
 	k.second(300 * time.Millisecond)
 	var mu sync.Mutex
 	var tasks []SubagentTask
@@ -740,14 +740,14 @@ func TestCellSubagents(t *testing.T) {
 	if res.IsError || res.Text != "answer to slow" {
 		t.Errorf("the timeout did not pause for a subagent: %+v", res)
 	}
-	res = k.cellCtx(context.Background(), `await subagent("quick", {model: "deep", effort: "high"}); while (true) {}`, 1)
+	res = k.cellCtx(context.Background(), `await subagent("quick", {profile: "deep", effort: "high"}); while (true) {}`, 1)
 	if !strings.Contains(res.Text, "timed out after 1s") {
 		t.Errorf("the timeout was not re-armed after the subagent: %q", res.Text)
 	}
 	if len(tasks) < 2 {
 		t.Fatalf("tasks %+v", tasks)
 	}
-	if tasks[0].Model != "m-fast" || tasks[0].Provider != "p1" || tasks[0].Effort != "" || tasks[1].Model != "m-deep" || tasks[1].Effort != "high" {
+	if tasks[0] != (SubagentTask{Prompt: "slow", Profile: "fast"}) || tasks[1] != (SubagentTask{Prompt: "quick", Profile: "deep", Effort: "high"}) {
 		t.Errorf("tasks %+v", tasks)
 	}
 	k.want(`let n = 0; try { for (; n < 25; n++) await subagent("q" + n) } catch (e) { return n + " " + e.message }`, "20 too many subagent calls in one run call (limit 20)")
@@ -755,7 +755,7 @@ func TestCellSubagents(t *testing.T) {
 
 func TestSubagentRejectsUnknownEffort(t *testing.T) {
 	t.Parallel()
-	k := newCellKit(t, Subagent("main", nil))
+	k := newCellKit(t, Subagent(config.Config{Model: "main"}.SubagentChoices()))
 	k.env.Subagent = func(ctx context.Context, task SubagentTask, progress func(string)) (string, error) {
 		return "ran " + task.Effort, nil
 	}
@@ -765,11 +765,42 @@ func TestSubagentRejectsUnknownEffort(t *testing.T) {
 	k.want(`return await subagent("x", {effort: "max"})`, "ran max")
 }
 
+func TestSubagentSelfChoice(t *testing.T) {
+	t.Parallel()
+	sub := Subagent(config.Config{Model: "main", ReasoningEffort: "high"}.SubagentChoices())
+	if !strings.Contains(sub.Code.Doc, "  Profiles:\n  - current (main, effort high): this agent's own model and settings\n  Efforts: ") {
+		t.Errorf("doc:\n%s", sub.Code.Doc)
+	}
+	k := newCellKit(t, sub)
+	k.env.Subagent = func(ctx context.Context, task SubagentTask, progress func(string)) (string, error) {
+		return fmt.Sprintf("%+v", task), nil
+	}
+	k.want(`return await subagent("x", {effort: "low"})`, "{Prompt:x Profile: Model:main Effort:low}")
+	k.want(`return await subagent("x", {profile: "current"})`, "{Prompt:x Profile: Model:main Effort:}")
+}
+
+func TestSubagentProfileMenu(t *testing.T) {
+	t.Parallel()
+	menu := []config.SubagentChoice{{Name: "fast", Model: "m-fast", UseFor: "search"}, {Name: "deep", Model: "m-deep", Effort: "high"}}
+	sub := Subagent(menu)
+	if !strings.Contains(sub.Code.Doc, "subagent(prompt, {profile, effort})") || !strings.Contains(sub.Code.Doc, "  Profiles:\n  - fast (m-fast): search\n  - deep (m-deep, effort high)\n  Efforts: ") {
+		t.Errorf("doc:\n%s", sub.Code.Doc)
+	}
+	k := newCellKit(t, sub)
+	k.env.Subagent = func(ctx context.Context, task SubagentTask, progress func(string)) (string, error) {
+		return "ran " + task.Profile, nil
+	}
+	if res := k.cell(`try { await subagent("x", {profile: "slow"}) } catch (e) { return e.message }`); !strings.HasPrefix(res.Text, `unknown profile "slow": use one of fast, deep`+"\n") {
+		t.Errorf("got %q", res.Text)
+	}
+	k.want(`try { await subagent("x", {model: "deep"}) } catch (e) { return e.message.includes("unknown option model") }`, "true")
+	k.want(`return await subagent("x", {profile: "deep"})`, "ran deep")
+}
+
 func TestSubagentLabelDefaults(t *testing.T) {
 	t.Parallel()
-	menu := []config.SubagentModel{{Name: "fast", Model: "m-fast"}}
-	sub := Subagent("main", menu)
-	for in, want := range map[string]string{`{"prompt":"x"}`: "subagent fast/default x", `{"prompt":"x","model":"m","effort":"low"}`: "subagent m/low x"} {
+	sub := Subagent([]config.SubagentChoice{{Name: "fast", Model: "m-fast"}, {Name: "deep", Model: "m-deep"}})
+	for in, want := range map[string]string{`{"prompt":"x"}`: "subagent fast/default x", `{"prompt":"x","profile":"deep","effort":"low"}`: "subagent deep/low x"} {
 		if got := sub.label(&Env{}, llm.Block{Name: "subagent", Input: json.RawMessage(in)}); got != want {
 			t.Errorf("%s: %q, want %q", in, got, want)
 		}

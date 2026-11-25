@@ -56,6 +56,7 @@ func syntaxError(data []byte, e *jsontext.SyntacticError) error {
 
 var removedKeys = map[string]string{
 	"subagent_efforts": "subagents offer the same efforts as reasoning_effort",
+	"subagent_models":  "replaced by subagent_profiles, a list of profile names, and use_for on those profiles",
 }
 
 func semanticError(e *json.SemanticError) error {

@@ -44,18 +44,15 @@ go install github.com/paul-nameless/qi@latest
   "default_profile": "luna",
   "profiles": {
     "luna": {"provider": "openrouter", "model": "openai/gpt-6-luna", "reasoning_effort": "low"},
-    "opus": {
-      "provider": "anthropic",
-      "model": "claude-opus-5-5",
-      "subagent_models": [
-        {"name": "haiku", "model": "claude-haiku-5-5", "use_for": "fast and cheap; search, summaries"}
-      ]
-    }
+    "opus": {"provider": "anthropic", "model": "claude-opus-5-5", "subagent_profiles": ["haiku", "opus"]},
+    "haiku": {"provider": "anthropic", "model": "claude-haiku-5-5", "use_for": "fast and cheap; search, summaries"}
   }
 }
 ```
 
 Top-level keys apply to every profile; a profile overrides them. `qi -p opus` picks a profile for that run; `/profile opus` switches while running and makes it the default for next time; `-model` overrides the model for one run. A provider's key comes from `api_key` (the key itself), `api_key_shell` (a command that prints it, so the key stays out of the file), or the environment: `ANTHROPIC_API_KEY` for `"api": "anthropic"`, `OPENROUTER_API_KEY` only for an openrouter.ai `base_url`, and `OPENAI_API_KEY` for any other host, so an environment key is never sent to a server it doesn't belong to.
+
+`subagent_profiles` lists the profiles the agent may run as subagents (the first is the default); without it subagents run with the agent's own setup. A subagent runs as `qi -p <name>` with that profile's model, provider and effort, but always in the parent's current mode and with its MCP servers. A profile's `use_for` tells the agent when to pick it. qi prints the menu under the banner at start.
 
 A provider's `api` picks the wire protocol: `openai` (chat completions, the default; OpenAI, OpenRouter and compatible servers), `responses` (the OpenAI Responses API, which some models need for tools with reasoning, e.g. `openai.gpt-6.2-sol` on Bedrock at `https://bedrock-mantle.us-east-1.api.aws/openai/v1`) or `anthropic`.
 

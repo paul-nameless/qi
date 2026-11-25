@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/paul-nameless/qi/internal/config"
 )
 
 func TestCellErrorsText(t *testing.T) {
@@ -48,7 +50,7 @@ func TestCellOutputCap(t *testing.T) {
 
 func TestCellFailureSavesSubagentAnswers(t *testing.T) {
 	t.Parallel()
-	k := newCellKit(t, Subagent("m", nil))
+	k := newCellKit(t, Subagent(config.Config{Model: "m"}.SubagentChoices()))
 	k.second(300 * time.Millisecond)
 	failed := make(chan struct{})
 	var failOnce sync.Once
@@ -76,7 +78,7 @@ func TestCellFailureSavesSubagentAnswers(t *testing.T) {
 		t.Errorf("failed cell blames unawaited calls: %q", res.Text)
 	}
 	for _, name := range []string{"quick", "slow"} {
-		m := regexp.MustCompile(`✓ subagent m/default ` + name + ` → answer saved to (\S+)`).FindStringSubmatch(res.Text)
+		m := regexp.MustCompile(`✓ subagent current/default ` + name + ` → answer saved to (\S+)`).FindStringSubmatch(res.Text)
 		if m == nil {
 			t.Fatalf("%s: no saved answer in %q", name, res.Text)
 		}
@@ -84,8 +86,8 @@ func TestCellFailureSavesSubagentAnswers(t *testing.T) {
 			t.Errorf("%s: saved %q, %v", name, data, err)
 		}
 	}
-	k.wantErr(`await subagent("first"); for (let i = 0; i < 35; i++) await tick(); null.x`, "(last 30 of 36):\n✓ subagent m/default first → answer saved to ")
-	if res = k.cellCtx(context.Background(), `await subagent("quick"); while (true) {}`, 1); !strings.Contains(res.Text, "timed out after 1s") || !strings.Contains(res.Text, "✓ subagent m/default quick → answer saved to ") {
+	k.wantErr(`await subagent("first"); for (let i = 0; i < 35; i++) await tick(); null.x`, "(last 30 of 36):\n✓ subagent current/default first → answer saved to ")
+	if res = k.cellCtx(context.Background(), `await subagent("quick"); while (true) {}`, 1); !strings.Contains(res.Text, "timed out after 1s") || !strings.Contains(res.Text, "✓ subagent current/default quick → answer saved to ") {
 		t.Errorf("timeout: %q", res.Text)
 	}
 	k.env.SpillDir = t.TempDir()

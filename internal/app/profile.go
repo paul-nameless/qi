@@ -20,7 +20,7 @@ func (r *repl) switchProfile(name string) error {
 	if err != nil {
 		return err
 	}
-	if err := r.apply(cfg, cfg.Provider); err != nil {
+	if err := r.apply(cfg); err != nil {
 		return err
 	}
 	if cfg.ProfileSetsMode() {
@@ -65,18 +65,7 @@ func (r *repl) setEffort(level string) error {
 	return nil
 }
 
-func withProvider(menu []config.SubagentModel, provider string) []config.SubagentModel {
-	out := make([]config.SubagentModel, len(menu))
-	for i, m := range menu {
-		if m.Provider == "" {
-			m.Provider = provider
-		}
-		out[i] = m
-	}
-	return out
-}
-
-func (r *repl) apply(cfg config.Config, baseProvider string) error {
+func (r *repl) apply(cfg config.Config) error {
 	cfg.DefaultCacheTTL(false)
 	key, err := cfg.ResolveAPIKey()
 	if err != nil {
@@ -84,8 +73,8 @@ func (r *repl) apply(cfg config.Config, baseProvider string) error {
 	}
 	r.agent.Reconfigure(cfg, newProvider(cfg, key))
 	if r.runner != nil {
-		r.runner.Profile, r.runner.Provider = cfg.Profile, baseProvider
-		r.agent.ReplaceFunction(tools.Subagent(cfg.Model, withProvider(cfg.SubagentModels, baseProvider)))
+		r.runner.Profile, r.runner.Provider = cfg.Profile, cfg.Provider
+		r.agent.ReplaceFunction(tools.Subagent(cfg.SubagentChoices()))
 	}
 	return nil
 }

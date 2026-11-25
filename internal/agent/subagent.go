@@ -58,23 +58,24 @@ func (r *SubagentRunner) Env() ([]string, error) {
 	return env, nil
 }
 
-func (r *SubagentRunner) args(task tools.SubagentTask) []string {
-	args := []string{"-q", task.Prompt, "-json", "-model", task.Model}
-	provider := task.Provider
-	if provider == "" {
-		provider = r.Provider
-	}
-	if provider != "" {
-		args = append(args, "-provider", provider)
+func (r *SubagentRunner) Args(task tools.SubagentTask) []string {
+	args := []string{"-q", task.Prompt, "-json"}
+	if task.Profile != "" {
+		args = append(args, "-p", task.Profile)
+	} else {
+		args = append(args, "-model", task.Model)
+		if r.Provider != "" {
+			args = append(args, "-provider", r.Provider)
+		}
+		if r.Profile != "" {
+			args = append(args, "-p", r.Profile)
+		}
 	}
 	if task.Effort != "" {
 		args = append(args, "-effort", task.Effort)
 	}
 	if r.ConfigPath != "" {
 		args = append(args, "-config", r.ConfigPath)
-	}
-	if r.Profile != "" {
-		args = append(args, "-p", r.Profile)
 	}
 	if r.SystemPromptFile != "" {
 		args = append(args, "-system-prompt-file", r.SystemPromptFile)
@@ -141,7 +142,7 @@ func (r *SubagentRunner) command(ctx context.Context, task tools.SubagentTask) (
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.CommandContext(ctx, exe, r.args(task)...)
+	cmd := exec.CommandContext(ctx, exe, r.Args(task)...)
 	cmd.Dir = r.Cwd
 	cmd.Env = env
 	proc.Setup(cmd, proc.Session, r.grace())

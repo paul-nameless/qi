@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/paul-nameless/qi/internal/config"
 	"github.com/paul-nameless/qi/internal/llm"
 	"github.com/paul-nameless/qi/internal/mcp"
 	"github.com/paul-nameless/qi/internal/session"
@@ -69,7 +70,7 @@ func TestMatches(t *testing.T) {
 
 var hookTools = map[string]*tools.Function{
 	"read": tools.Read(), "write": tools.Write(), "edit": tools.Edit(), "bash": tools.Bash(),
-	"subagent": tools.Subagent("m", nil), "mcp_call": tools.MCPFuncs(mcp.NewManager(nil))[1],
+	"subagent": tools.Subagent(config.Config{Model: "m"}.SubagentChoices()), "mcp_call": tools.MCPFuncs(mcp.NewManager(nil))[1],
 }
 
 func hookCall(name, input string) tools.HookCall {

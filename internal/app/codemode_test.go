@@ -151,7 +151,7 @@ func TestCodeModeProfileSwitch(t *testing.T) {
 	t.Setenv("QI_SESSION_DIR", t.TempDir())
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")
-	data := `{"api_key": "k", "model": "m", "subagent_models": [{"name": "one", "model": "m1"}], "profiles": {"b": {"subagent_models": [{"name": "two", "model": "m2"}]}}}`
+	data := `{"api_key": "k", "model": "m", "subagent_profiles": ["one"], "profiles": {"one": {"model": "m1"}, "two": {"model": "m2", "use_for": "second"}, "b": {"subagent_profiles": ["two"]}}}`
 	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +181,7 @@ func TestCodeModeProfileSwitch(t *testing.T) {
 	if names := toolNames(req); len(names) != 1 || names[0] != "run" {
 		t.Fatalf("tools %v", names)
 	}
-	if desc := req.Tools[0].Description; !strings.Contains(desc, "  - two (m2)") || strings.Contains(desc, "one (m1)") {
+	if desc := req.Tools[0].Description; !strings.Contains(desc, "  - two (m2): second\n") || strings.Contains(desc, "one (m1)") {
 		t.Errorf("subagent menu not regenerated:\n%s", desc)
 	}
 }

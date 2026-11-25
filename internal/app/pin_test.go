@@ -86,10 +86,11 @@ func pinConfig(t *testing.T, dir, provider string) config.Config {
   "instruction_files": [],
   "skill_dirs": [],
   "hook_files": [],
-  "subagent_models": [
-    {"name": "luna", "model": "openai/gpt-6-luna", "use_for": "cheap searches"},
-    {"name": "opus", "model": "claude-opus-5-5", "use_for": "hard problems"}
-  ],
+  "subagent_profiles": ["luna", "opus"],
+  "profiles": {
+    "luna": {"model": "openai/gpt-6-luna", "reasoning_effort": "low", "use_for": "cheap searches"},
+    "opus": {"model": "claude-opus-5-5", "use_for": "hard problems"}
+  },
   "mcp": {"notes": {"command": "notes-server", "description": "personal notes"}}
 }`, "http://placeholder/openrouter.ai/api/v1", "http://placeholder/v1", provider)
 	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {

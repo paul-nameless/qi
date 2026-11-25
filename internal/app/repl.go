@@ -201,9 +201,23 @@ func (r *repl) runQueued(draft string) string {
 
 func (r *repl) banner() {
 	r.display.Line(r.bannerLine())
+	if line := subagentsLine(r.agent.Config().SubagentChoices()); line != "" {
+		r.display.Info(line)
+	}
 	if n := len(r.agent.Messages()); n > 0 {
 		r.printHistory()
 	}
+}
+
+func subagentsLine(choices []config.SubagentChoice) string {
+	if len(choices) == 0 || choices[0].Self {
+		return ""
+	}
+	names := make([]string, len(choices))
+	for i, c := range choices {
+		names[i] = c.String()
+	}
+	return "subagents: " + strings.Join(names, ", ")
 }
 
 func bannerVersion(v string) string {

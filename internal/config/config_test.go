@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -20,10 +21,7 @@ const sample = `{
       "provider": "openrouter",
       "model": "openai/gpt-6.1-sol",
       "reasoning_effort": "medium",
-      "subagent_models": [
-        {"name": "luna", "model": "openai/gpt-6-luna", "use_for": "cheap"},
-        {"name": "haiku", "provider": "anthropic", "model": "claude-haiku-5-5", "use_for": "claude"}
-      ]
+      "subagent_profiles": ["glm", "local"]
     },
     "glm": {"provider": "openrouter", "model": "z-ai/glm-5.3"},
     "local": {"provider": "openrouter", "base_url": "http://localhost:8080/v1", "model": "qwen"}
@@ -47,7 +45,7 @@ func TestProfiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Profile != "smart" || c.Model != "openai/gpt-6.1-sol" || c.ReasoningEffort != "medium" || c.BaseURL != "https://openrouter.ai/api/v1" || c.APIKey != "or-key" || len(c.SubagentModels) != 2 {
+	if c.Profile != "smart" || c.Model != "openai/gpt-6.1-sol" || c.ReasoningEffort != "medium" || c.BaseURL != "https://openrouter.ai/api/v1" || c.APIKey != "or-key" || len(c.SubagentChoices()) != 2 {
 		t.Errorf("default profile: %+v", c)
 	}
 	c, err = Load(path, "glm")
@@ -72,6 +70,64 @@ func TestProfiles(t *testing.T) {
 	if names := c.ProfileNames(); len(names) != 3 || names[0] != "glm" {
 		t.Errorf("names %v", names)
 	}
+}
+
+func TestSubagentChoices(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("QI_CONFIG_DIR", dir)
+	path := writeConfig(t, dir, "config.json", `{
+  "providers": {"anth": {"api": "anthropic", "api_key": "k"}},
+  "reasoning_effort": "low",
+  "default_profile": "main",
+  "profiles": {
+    "main": {"model": "main-model", "reasoning_effort": "high", "use_for": "general", "subagent_profiles": ["fast", "main", "claude"]},
+    "fast": {"model": "fast-model", "use_for": "search"},
+    "claude": {"provider": "anth", "reasoning_effort": "max"},
+    "solo": {"model": "solo-model"}
+  }
+}`)
+	c, err := Resolve(Options{Path: path, Model: "cli-model", Effort: "minimal"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []SubagentChoice{
+		{Name: "fast", Model: "fast-model", Effort: "low", UseFor: "search"},
+		{Name: "main", Model: "main-model", Effort: "high", UseFor: "general"},
+		{Name: "claude", Model: "claude-sonnet-5-5", Effort: "max"},
+	}
+	if got := c.SubagentChoices(); !slices.Equal(got, want) {
+		t.Errorf("choices %+v", got)
+	}
+	c, err = Resolve(Options{Path: path, Profile: "solo", Model: "cli-model", Effort: "minimal"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.SubagentChoices(); !slices.Equal(got, []SubagentChoice{{Name: SelfChoice, Model: "cli-model", Effort: "low", Self: true}}) {
+		t.Errorf("self choice %+v", got)
+	}
+	if got := (Config{Model: "m", ReasoningEffort: "high"}).SubagentChoices(); !slices.Equal(got, []SubagentChoice{{Name: SelfChoice, Model: "m", Effort: "high", Self: true}}) {
+		t.Errorf("self choice of an unresolved config %+v", got)
+	}
+	if s := (SubagentChoice{Name: "a", Model: "m"}).String() + " " + want[0].String(); s != "a (m) fast (fast-model, effort low)" {
+		t.Errorf("String %q", s)
+	}
+}
+
+func TestSubagentProfilesMustExist(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("QI_CONFIG_DIR", dir)
+	path := writeConfig(t, dir, "config.json", `{"subagent_profiles": ["a", "haiko"], "profiles": {"a": {}, "b": {}}}`)
+	_, err := Load(path, "")
+	wantErr(t, err, path+`: key "subagent_profiles.1": unknown profile "haiko" (profiles: a, b)`)
+	path = writeConfig(t, dir, "config.json", `{"profiles": {"a": {}, "b": {"subagent_profiles": ["zz"]}}}`)
+	_, err = Load(path, "b")
+	wantErr(t, err, path+`: profile "b": key "subagent_profiles.0": unknown profile "zz" (profiles: a, b)`)
+	path = writeConfig(t, dir, "config.json", `{"subagent_profiles": ["x"]}`)
+	_, err = Load(path, "")
+	wantErr(t, err, `unknown profile "x" (profiles: none defined)`)
+	path = writeConfig(t, dir, "config.json", `{"subagent_profiles": ["bad"], "profiles": {"bad": {"provider": "nope"}}}`)
+	_, err = Load(path, "")
+	wantErr(t, err, `profile "bad": key "provider": unknown provider "nope"`)
 }
 
 func TestUseProviderBuiltinsResetConnection(t *testing.T) {

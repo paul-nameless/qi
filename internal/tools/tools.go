@@ -61,10 +61,10 @@ type ToolOutput struct {
 }
 
 type SubagentTask struct {
-	Prompt   string
-	Model    string
-	Provider string
-	Effort   string
+	Prompt  string
+	Profile string
+	Model   string
+	Effort  string
 }
 
 type SubagentFunc func(ctx context.Context, task SubagentTask, progress func(string)) (string, error)

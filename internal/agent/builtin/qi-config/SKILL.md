@@ -25,9 +25,13 @@ qi is the agent you are running in. Its settings are JSON files.
 ## How settings combine
 
 1. The top-level keys are the shared settings.
-2. The profile is `-p name`, else `default_profile`. Every key a profile sets replaces the top-level value as a whole, including objects (`providers`) and arrays (`subagent_models`); `mcp` is the exception (see MCP servers). `null` resets a key to its default. A profile cannot contain `profiles` or `default_profile`.
+2. The profile is `-p name`, else `default_profile`. Every key a profile sets replaces the top-level value as a whole, including objects (`providers`) and arrays (`subagent_profiles`); `mcp` is the exception (see MCP servers). `null` resets a key to its default. A profile cannot contain `profiles` or `default_profile`.
 3. `provider` names an entry in `providers` (or the built-ins `claude`, `anthropic`, `openai`) and sets `api`, `base_url`, `api_key`, `api_key_shell` and `cache_control` from it. Connection keys set in the profile itself win over the provider's. A provider's `api` is `openai` (chat completions, default), `responses` (OpenAI Responses API) or `anthropic`.
 4. The flags `-provider`, `-model`, `-effort` and `-system-prompt-file` override everything for one run; `-system-prompt-file` also holds across `/profile` and reaches subagents. `/effort` switches at runtime without saving anything. `/profile <name>` switches and also saves it as `default_profile` in the config file (only that value changes; formatting is kept); `-p` never saves.
+
+## Subagents
+
+`subagent_profiles` lists the profiles the agent may run as subagents, by name; each must exist in `profiles`, and the current profile may be listed. A subagent runs `qi -p <name>`, so it takes that profile's model, provider, effort and limits, but always gets the parent's current mode and MCP servers. Give each listed profile a `use_for` saying when to pick it; the menu shows it with the profile's model and effort. Without `subagent_profiles`, subagents run with the agent's own setup. The old `subagent_models` key is gone: move each entry into a profile and list its name.
 
 ## Check your change
 

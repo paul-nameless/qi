@@ -127,18 +127,20 @@ func TestTrustFingerprint(t *testing.T) {
 func TestSubagentArgs(t *testing.T) {
 	t.Parallel()
 	mode := config.ModeReadOnly
-	r := &SubagentRunner{Profile: "p", Provider: "openrouter", SystemPromptFile: "/x/prompt.md", Mode: func() config.Mode { return mode }}
-	args := strings.Join(r.args(tools.SubagentTask{Prompt: "do it", Model: "m", Effort: "low"}), " ")
-	if !strings.Contains(args, "-read-only") || !strings.Contains(args, "-provider openrouter") || !strings.Contains(args, "-p p") || !strings.Contains(args, "-system-prompt-file /x/prompt.md") {
-		t.Errorf("args %q", args)
+	r := &SubagentRunner{ConfigPath: "/c.json", Profile: "p", Provider: "openrouter", SystemPromptFile: "/x/prompt.md", Mode: func() config.Mode { return mode }}
+	args := strings.Join(r.Args(tools.SubagentTask{Prompt: "do it", Model: "m", Effort: "low"}), " ")
+	if args != "-q do it -json -model m -provider openrouter -p p -effort low -config /c.json -system-prompt-file /x/prompt.md -read-only" {
+		t.Errorf("self args %q", args)
 	}
 	mode = config.ModeYolo
-	if a := strings.Join(r.args(tools.SubagentTask{Prompt: "x", Model: "m", Provider: "anth"}), " "); strings.Contains(a, "-read-only") || strings.Contains(a, "-project") {
-		t.Error("mode flag without a mode")
+	args = strings.Join(r.Args(tools.SubagentTask{Prompt: "x", Profile: "haiku"}), " ")
+	if args != "-q x -json -p haiku -config /c.json -system-prompt-file /x/prompt.md -yolo" {
+		t.Errorf("profile args %q", args)
 	}
 	mode = config.ModeProject
-	if !strings.Contains(strings.Join(r.args(tools.SubagentTask{Prompt: "x", Model: "m"}), " "), "-project") {
-		t.Error("project mode not passed to subagents")
+	args = strings.Join(r.Args(tools.SubagentTask{Prompt: "x", Profile: "haiku", Effort: "max"}), " ")
+	if args != "-q x -json -p haiku -effort max -config /c.json -system-prompt-file /x/prompt.md -project" {
+		t.Errorf("profile args in project mode %q", args)
 	}
 }
 

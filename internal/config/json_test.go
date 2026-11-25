@@ -135,31 +135,30 @@ func TestValidateMirrorsSchema(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("QI_CONFIG_DIR", dir)
 	cases := map[string][]string{
-		`{"api": "antropic"}`:                                                 {`key "api"`, `"antropic" is not one of openai, responses, anthropic`},
-		`{"cache_ttl": "2h"}`:                                                 {`key "cache_ttl"`},
-		`{"max_tokens": -5}`:                                                  {`key "max_tokens"`, "at least 1, got -5"},
-		`{"bash_timeout": -1}`:                                                {`key "bash_timeout"`},
-		`{"max_rounds": -1}`:                                                  {`key "max_rounds"`},
-		`{"reasoning_effort": "huge"}`:                                        {`key "reasoning_effort"`},
-		`{"subagent_efforts": ["low"]}`:                                       {`key "subagent_efforts" was removed`, "delete it"},
-		`{"profiles": {"p": {"subagent_efforts": ["low"]}}}`:                  {`profile "p": key "subagent_efforts" was removed`},
-		`{"subagent_effortz": ["low"]}`:                                       {`unknown key "subagent_effortz"`},
-		`{"providers": {"x": {"api": "openai", "subagent_efforts": []}}}`:     {`unknown key "providers.x.subagent_efforts"`},
-		`{"subagent_models": [{"model": "m"}]}`:                               {`key "subagent_models.0"`, "name is required"},
-		`{"subagent_models": [{"name": "n"}]}`:                                {"model is required"},
-		`{"subagent_models": [{"name": "n", "model": "m", "provider": "x"}]}`: {`key "subagent_models.0.provider"`, `unknown provider "x"`},
-		`{"mcp": {"gh": {"args": ["stdio"]}}}`:                                {`key "mcp.gh"`, "command is required"},
-		`{"mcp": {"gh": {"command": "gh", "tools": ["list_[a"]}}}`:            {`key "mcp.gh.tools.0"`, `invalid glob pattern "list_[a"`},
-		`{"mcp": {"gh": {"command": "gh", "exclude_tools": ["ok", ""]}}}`:     {`key "mcp.gh.exclude_tools.1"`, "empty pattern"},
-		`{"mcp": {"gh": {"command": "gh", "tools": []}}}`:                     {`key "mcp.gh.tools"`, "omit the key to allow all tools"},
-		`{"profiles": {"p": {"api": "nope"}}, "default_profile": "p"}`:        {`profile "p"`, `key "api"`},
+		`{"api": "antropic"}`:                                             {`key "api"`, `"antropic" is not one of openai, responses, anthropic`},
+		`{"cache_ttl": "2h"}`:                                             {`key "cache_ttl"`},
+		`{"max_tokens": -5}`:                                              {`key "max_tokens"`, "at least 1, got -5"},
+		`{"bash_timeout": -1}`:                                            {`key "bash_timeout"`},
+		`{"max_rounds": -1}`:                                              {`key "max_rounds"`},
+		`{"reasoning_effort": "huge"}`:                                    {`key "reasoning_effort"`},
+		`{"subagent_efforts": ["low"]}`:                                   {`key "subagent_efforts" was removed`, "delete it"},
+		`{"profiles": {"p": {"subagent_efforts": ["low"]}}}`:              {`profile "p": key "subagent_efforts" was removed`},
+		`{"subagent_effortz": ["low"]}`:                                   {`unknown key "subagent_effortz"`},
+		`{"providers": {"x": {"api": "openai", "subagent_efforts": []}}}`: {`unknown key "providers.x.subagent_efforts"`},
+		`{"subagent_models": [{"name": "n", "model": "m"}]}`:              {`key "subagent_models" was removed (replaced by subagent_profiles`, "delete it"},
+		`{"profiles": {"p": {"subagent_models": []}}}`:                    {`profile "p": key "subagent_models" was removed`},
+		`{"mcp": {"gh": {"args": ["stdio"]}}}`:                            {`key "mcp.gh"`, "command is required"},
+		`{"mcp": {"gh": {"command": "gh", "tools": ["list_[a"]}}}`:        {`key "mcp.gh.tools.0"`, `invalid glob pattern "list_[a"`},
+		`{"mcp": {"gh": {"command": "gh", "exclude_tools": ["ok", ""]}}}`: {`key "mcp.gh.exclude_tools.1"`, "empty pattern"},
+		`{"mcp": {"gh": {"command": "gh", "tools": []}}}`:                 {`key "mcp.gh.tools"`, "omit the key to allow all tools"},
+		`{"profiles": {"p": {"api": "nope"}}, "default_profile": "p"}`:    {`profile "p"`, `key "api"`},
 	}
 	for in, parts := range cases {
 		path := writeConfig(t, dir, "config.json", in)
 		_, err := Load(path, "")
 		wantErr(t, err, append(parts, path)...)
 	}
-	path := writeConfig(t, dir, "config.json", `{"api": "anthropic", "cache_ttl": "5m", "reasoning_effort": "max", "max_rounds": 0, "subagent_models": [{"name": "n", "model": "m", "provider": "claude"}], "mcp": {"gh": {"command": "gh", "tools": ["get_*", "list_issues"], "exclude_tools": ["*delete*"]}}}`)
+	path := writeConfig(t, dir, "config.json", `{"api": "anthropic", "cache_ttl": "5m", "reasoning_effort": "max", "max_rounds": 0, "subagent_profiles": ["p"], "profiles": {"p": {"use_for": "x"}}, "mcp": {"gh": {"command": "gh", "tools": ["get_*", "list_issues"], "exclude_tools": ["*delete*"]}}}`)
 	if _, err := Load(path, ""); err != nil {
 		t.Error(err)
 	}
@@ -184,14 +183,14 @@ func TestProfileKeysReplaceWholeValues(t *testing.T) {
 	path := writeConfig(t, dir, "config.json", `{
   "providers": {"a": {"base_url": "http://a", "cache_control": true}, "b": {"base_url": "http://b"}},
   "mcp": {"x": {"command": "x", "args": ["1", "2"], "env": {"K": "v"}}},
-  "subagent_models": [{"name": "s1", "model": "m1"}, {"name": "s2", "model": "m2"}],
+  "subagent_profiles": ["p", "q"],
   "read_only_allow": ["a", "b"],
   "provider": "a",
   "profiles": {
     "p": {
       "providers": {"a": {"base_url": "http://a2"}, "c": {"base_url": "http://c"}},
       "mcp": {"x": {"command": "x2"}},
-      "subagent_models": [{"name": "s3", "model": "m3"}],
+      "subagent_profiles": ["q"],
       "read_only_allow": ["c"],
       "cache_control": false
     },
@@ -208,8 +207,8 @@ func TestProfileKeysReplaceWholeValues(t *testing.T) {
 	if len(c.MCP) != 1 || c.MCP["x"].Command != "x2" || c.MCP["x"].Args != nil || c.MCP["x"].Env != nil {
 		t.Errorf("mcp not replaced: %+v", c.MCP)
 	}
-	if len(c.SubagentModels) != 1 || !slices.Equal(c.ReadOnlyAllow, []string{"c"}) {
-		t.Errorf("arrays not replaced: %+v %v", c.SubagentModels, c.ReadOnlyAllow)
+	if !slices.Equal(c.SubagentProfiles, []string{"q"}) || !slices.Equal(c.ReadOnlyAllow, []string{"c"}) {
+		t.Errorf("arrays not replaced: %+v %v", c.SubagentProfiles, c.ReadOnlyAllow)
 	}
 	if c.CacheControl == nil || *c.CacheControl {
 		t.Errorf("profile cache_control: %v", c.CacheControl)
@@ -218,7 +217,7 @@ func TestProfileKeysReplaceWholeValues(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(q.Providers) != 2 || len(q.MCP) != 1 || len(q.SubagentModels) != 2 || q.CacheControl == nil || !*q.CacheControl {
+	if len(q.Providers) != 2 || len(q.MCP) != 1 || len(q.SubagentProfiles) != 2 || q.CacheControl == nil || !*q.CacheControl {
 		t.Errorf("profile without those keys must keep the shared values: %+v", q)
 	}
 	if err := q.UseProvider("b"); err != nil || q.CacheControl != nil {
@@ -325,7 +324,7 @@ func TestSchemaMatchesConfig(t *testing.T) {
 		t.Fatalf("schema.json: %v", err)
 	}
 	checkObject(t, "root", root, reflect.TypeFor[Config]())
-	defs := map[string]reflect.Type{"provider": reflect.TypeFor[Provider](), "mcp_server": reflect.TypeFor[MCPServer](), "subagent_model": reflect.TypeFor[SubagentModel]()}
+	defs := map[string]reflect.Type{"provider": reflect.TypeFor[Provider](), "mcp_server": reflect.TypeFor[MCPServer]()}
 	nodes := map[string]schemaNode{}
 	for name, typ := range defs {
 		var node schemaNode
@@ -344,9 +343,6 @@ func TestSchemaMatchesConfig(t *testing.T) {
 	}
 	if err := json.Unmarshal(root.Properties["mcp"].AdditionalProperties, &mcpValue); err != nil || !reflect.DeepEqual(mcpValue.AnyOf, []map[string]string{{"$ref": "#/$defs/mcp_server"}, {"type": "null"}}) {
 		t.Errorf("mcp values must be an mcp_server or null (to remove a global server in a profile): %+v %v", mcpValue, err)
-	}
-	if items := root.Properties["subagent_models"].Items; items == nil || items.Ref != "#/$defs/subagent_model" {
-		t.Errorf("subagent_models items: %+v", items)
 	}
 	enums := map[string][2][]string{
 		"api":              {root.Properties["api"].Enum, apis},

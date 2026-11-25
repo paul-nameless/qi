@@ -54,7 +54,7 @@ Minimal Go coding agent for the terminal. The model's only tool is `run`: JavaSc
 
 ## Adding X
 
-- **Config key**: field in `config/config.go` (`Config`, `Provider`, `MCPServer` or `SubagentModel`); `schema.json` (type, default, description); enum or minimum in `validate.go`; default in `applyDefaults`
+- **Config key**: field in `config/config.go` (`Config`, `Provider` or `MCPServer`); `schema.json` (type, default, description); enum or minimum in `validate.go`; default in `applyDefaults`
   - then: `/config` toggle in `app/settings.go` if it is a live boolean; `agent/builtin/qi-config/SKILL.md` if it covers the area; readme "Configure"; run `TestSchemaMatchesConfig`
 - **Slash command**: entry in `commandList` (`app/commands.go`: `name`, `args`, `help`, `short`, `run`, `pickArg`); help and picker derive from it; readme "Commands" (hand-kept); tests in `app/commands_test.go`
 - **Code-mode function**: constructor returning `*tools.Function` with a `CodeSpec` (`Name`, `Params`, `Options`, `Doc`), `HookNames` (Claude Code names, e.g. `Bash`) and `Path` (per-path locks)
@@ -94,7 +94,7 @@ Minimal Go coding agent for the terminal. The model's only tool is `run`: JavaSc
 - `hooks.go` Claude Code hooks: files parsed once (missing skipped, malformed stops startup), one event's hooks run in parallel, `async` ones detached; `Hooks.Attach` wires session, mode, spill
 - Hook text the model sees goes through `capText` (cut, rest spilled); `onFailure` and `updatedToolOutput` follow Claude Code (`TestOnFailureBlock`, `TestPostToolUseUpdatedOutput`)
 - `trust.go` project hooks need trust: the trust file pins each dir to a fingerprint of its project hooks (`async` included)
-- `subagent.go` `SubagentRunner` runs `qi -q … -json` with `SubagentEnv`, `ParentSessionEnv` (meta `parent_session`) and `QI_MCP`; the child writes to `subagents/`, answers with its last text
+- `subagent.go` `SubagentRunner` runs `qi -q … -json` (`Args`: `-p <profile>` for a listed profile, else the parent's `-model`/`-provider`/`-p`; always the parent's current mode flag, which wins over the profile's `mode`) with `SubagentEnv`, `ParentSessionEnv` (meta `parent_session`) and `QI_MCP`; the child writes to `subagents/`, answers with its last text
 
 ### internal/tools
 - `tools.go` `Function` (one async JS function: `Name`, `Code`, `Run`, `Label`, `Path`, `HookNames`), `Env` (cwd, mode, scratch, jobs), `Result`, hooks types, `Tool.Execute`, `OneLine`, `DoneLine`
@@ -108,7 +108,7 @@ Minimal Go coding agent for the terminal. The model's only tool is `run`: JavaSc
 - `checkWritable` guards write/edit after resolving symlinks; hooks and MCP run outside the sandbox
 - `jobs.go` background bash (`background`, 1h default, 24h max): output to the spill dir, a `<background-job>` notice when it exits, times out or is killed from outside qi (none when qi kills it), all killed on /clear, session load, exit
 - A headless answer that ends with jobs running gets one `<background-jobs>` note, then waits for them (tests: `TestBackgroundJob*`, `TestLeftoverProcessesStayKillable`)
-- `subagent.go` the `subagent` function (models, efforts, 30 min `SubagentTimeout`); `mcp.go` `tool_search` and `mcp` (`MCPFuncs`), compact listing past 10 tools, never cut by the output cap
+- `subagent.go` the `subagent` function (`{profile, effort}` from `config.SubagentChoices`, 30 min `SubagentTimeout`); `mcp.go` `tool_search` and `mcp` (`MCPFuncs`), compact listing past 10 tools, never cut by the output cap
 - `image.go` scales images to ≤1568px (`imgutil.Resize`); `embedded.go` `Embed`/`Embedded` for `qi://` paths
 
 ### internal/jsvm (biggest package; read `doc.go` first)
@@ -127,9 +127,10 @@ Minimal Go coding agent for the terminal. The model's only tool is `run`: JavaSc
 - `llmtest/` the shared scripted fake `Provider` (`Script`, `Steps`, `Fail`, `Requests`) and `Text`/`Call` message helpers
 
 ### internal/config
-- `config.go` `Config`, `Provider`, `MCPServer`, `SubagentModel`; `Load`, `Resolve`, `Check`, profile overlay, `UseProvider`, `applyDefaults`, `toolDefaults`; `Dir`, `DataDir`, `ShortHome`
+- `config.go` `Config`, `Provider`, `MCPServer`; `Load`, `Resolve`, `Check`, profile overlay, `UseProvider`, `applyDefaults`, `toolDefaults`; `Dir`, `DataDir`, `ShortHome`
 - `decode.go` strict, case-sensitive decoding (encoding/json/v2) with file/key errors, embeds `Schema`; `schema.json` the JSON Schema; `validate.go` its enums, minimums, required fields
 - `default.go` `SetValue` edits one key in the file (into the profile when it sets the key); `limits.go` `compact_at`/`compact_idle_at` (tokens or %) against `context_window` or a model table
+- `subagent.go` `SubagentChoices`: the `subagent_profiles` menu, each listed profile resolved over the base config (no CLI overrides), else one `current` choice for the agent's own setup
 - `mcp.go` per-server tool globs, per-profile `mcp` merge by name (null removes), `QI_MCP` for subagents; `mode.go` `Mode`, `Next` cycles yolo → read-only → project (shift+tab)
 
 ### internal/session

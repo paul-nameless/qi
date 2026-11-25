@@ -110,10 +110,14 @@
       "description": "File whose text replaces qi's built-in base prompt; instruction files, skills and the environment block are still added. A relative path is relative to the config file's directory. -system-prompt-file overrides it for one run.",
       "type": "string"
     },
-    "subagent_models": {
-      "description": "Models the agent can pick for a subagent.",
+    "subagent_profiles": {
+      "description": "Profiles the agent can run as subagents, by name; each must be in profiles, and the current profile may be listed too. A subagent takes its model, provider, effort and limits from its profile, but always the mode the agent has when it starts it, and the agent's MCP servers. The first is the default. Unset or empty: subagents run with the agent's own setup.",
       "type": "array",
-      "items": { "$ref": "#/$defs/subagent_model" }
+      "items": { "type": "string" }
+    },
+    "use_for": {
+      "description": "When to use this profile as a subagent, shown next to its name in the subagent menu of profiles that list it in subagent_profiles.",
+      "type": "string"
     },
     "instruction_files": {
       "description": "Instruction files added to the system prompt. Relative paths are looked up in the git root and the working directory; ~ is expanded. Default: [\"~/.claude/CLAUDE.md\", \"CLAUDE.md\", \"AGENTS.md\", \"CLAUDE.local.md\"].",
@@ -229,29 +233,6 @@
         "cache_control": {
           "description": "Send prompt cache breakpoints on the openai API. Default: true for OpenRouter, false otherwise.",
           "type": "boolean"
-        }
-      }
-    },
-    "subagent_model": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["name", "model"],
-      "properties": {
-        "name": {
-          "description": "Short name the agent uses.",
-          "type": "string"
-        },
-        "model": {
-          "description": "Model id.",
-          "type": "string"
-        },
-        "provider": {
-          "description": "Provider for this model. Default: the provider of the profile.",
-          "type": "string"
-        },
-        "use_for": {
-          "description": "When the agent should pick this model, shown in the subagent tool description.",
-          "type": "string"
         }
       }
     },

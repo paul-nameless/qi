@@ -27,8 +27,10 @@ func (c Config) validate() error {
 			checks = append(checks, fmt.Errorf("key \"project_writable.%d\": %q must be an absolute path or start with ~/", i, p))
 		}
 	}
-	for i, m := range c.SubagentModels {
-		checks = append(checks, c.checkSubagentModel(fmt.Sprintf("subagent_models.%d", i), m))
+	for i, name := range c.SubagentProfiles {
+		if _, ok := c.Profiles[name]; !ok {
+			checks = append(checks, fmt.Errorf("key \"subagent_profiles.%d\": %w", i, c.unknownProfile(name)))
+		}
 	}
 	for _, name := range sortedKeys(c.MCP) {
 		checks = append(checks, c.MCP[name].validate("mcp."+name))
@@ -36,20 +38,6 @@ func (c Config) validate() error {
 	for _, err := range checks {
 		if err != nil {
 			return err
-		}
-	}
-	return nil
-}
-
-func (c Config) checkSubagentModel(key string, m SubagentModel) error {
-	switch {
-	case m.Name == "":
-		return fmt.Errorf("key %q: name is required", key)
-	case m.Model == "":
-		return fmt.Errorf("key %q: model is required", key)
-	case m.Provider != "":
-		if _, err := c.provider(m.Provider); err != nil {
-			return fmt.Errorf("key %q: %w", key+".provider", err)
 		}
 	}
 	return nil

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"image"
 	"image/png"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -76,10 +77,7 @@ func TestProfileSwitchDropsCLIProvider(t *testing.T) {
     "p": {
       "provider": "or",
       "model": "openai/gpt-6-luna",
-      "subagent_models": [
-        {"name": "luna", "model": "openai/gpt-6-luna", "use_for": "x"},
-        {"name": "haiku", "provider": "anth", "model": "claude-haiku-5-5", "use_for": "y"}
-      ]
+      "subagent_profiles": ["p", "q"]
     },
     "q": {"provider": "anth", "model": "claude-haiku-5-5"}
   }
@@ -100,6 +98,42 @@ func TestProfileSwitchDropsCLIProvider(t *testing.T) {
 	}
 	if a.Config().Provider != "or" || runner.Provider != "or" {
 		t.Errorf("CLI -provider came back after /profile: agent %q, subagent default %q", a.Config().Provider, runner.Provider)
+	}
+}
+
+func TestSubagentModeFlagWinsOverProfile(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("QI_CONFIG_DIR", dir)
+	path := filepath.Join(dir, "config.json")
+	os.WriteFile(path, []byte(`{"model": "m", "subagent_profiles": ["wild", "locked"], "profiles": {"wild": {"mode": "yolo"}, "locked": {"read_only": true}}}`), 0o600)
+	cfg, err := config.Resolve(config.Options{Path: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		profile string
+		parent  config.Mode
+	}{{"wild", config.ModeReadOnly}, {"wild", config.ModeProject}, {"locked", config.ModeYolo}} {
+		mode := c.parent
+		runner := &agent.SubagentRunner{ConfigPath: path, Mode: func() config.Mode { return mode }}
+		task := tools.SubagentTask{Prompt: "x", Profile: c.profile}
+		args, err := parseArgs(runner.Args(task), io.Discard)
+		if err != nil {
+			t.Fatal(err)
+		}
+		child, err := resolveConfig(args.opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if child.Profile != c.profile || child.StartMode() == c.parent {
+			t.Fatalf("profile %s should set its own mode: %+v", c.profile, child)
+		}
+		if got := startMode(args.opts, child); got != c.parent {
+			t.Errorf("profile %s under a %s parent starts in %s", c.profile, c.parent, got)
+		}
+	}
+	if choices := cfg.SubagentChoices(); len(choices) != 2 {
+		t.Errorf("choices %+v", choices)
 	}
 }
 

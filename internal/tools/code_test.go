@@ -5,11 +5,13 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/paul-nameless/qi/internal/config"
 )
 
 func TestCellRequiredArgs(t *testing.T) {
 	t.Parallel()
-	k := newCellKit(t, Subagent("m", nil))
+	k := newCellKit(t, Subagent(config.Config{Model: "m"}.SubagentChoices()))
 	k.env.Subagent = func(ctx context.Context, task SubagentTask, progress func(string)) (string, error) { return "ok", nil }
 	k.file("out.txt", "keep\n")
 	res := k.wantErr(`const obj = {}; await write("out.txt", obj.typo)`, "ToolError: write: content is undefined\n    at cell.js:1:")

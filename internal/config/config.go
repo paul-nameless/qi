@@ -15,13 +15,6 @@ import (
 	"strings"
 )
 
-type SubagentModel struct {
-	Name     string `json:"name"`
-	Model    string `json:"model"`
-	Provider string `json:"provider"`
-	UseFor   string `json:"use_for"`
-}
-
 type Provider struct {
 	API          string `json:"api"`
 	BaseURL      string `json:"base_url"`
@@ -68,7 +61,8 @@ type Config struct {
 	SystemPromptFile string    `json:"system_prompt_file"`
 	SystemPrompt     string    `json:"-"`
 	systemPromptPath string
-	SubagentModels   []SubagentModel           `json:"subagent_models"`
+	SubagentProfiles []string                  `json:"subagent_profiles"`
+	UseFor           string                    `json:"use_for"`
 	InstructionFile  []string                  `json:"instruction_files"`
 	SkillDirs        []string                  `json:"skill_dirs"`
 	HookFiles        []string                  `json:"hook_files"`
@@ -88,6 +82,7 @@ type Config struct {
 	profileRaw       []byte
 	globalMCP        map[string]MCPServer
 	source           string
+	subagents        []SubagentChoice
 }
 
 func Dir() string {
@@ -168,19 +163,11 @@ func Resolve(o Options) (Config, error) {
 	if profile == "" {
 		profile = c.DefaultProfile
 	}
-	if profile != "" {
-		if err := c.applyProfile(profile); err != nil {
-			return c, err
-		}
+	base := c
+	if err := c.useProfile(profile); err != nil {
+		return c, err
 	}
-	if err := c.loadProvider(c.Provider); err != nil {
-		return c, fmt.Errorf("%s: key \"provider\": %w", c.source, err)
-	}
-	if c.profileRaw != nil {
-		if err := c.overlay(c.profileRaw); err != nil {
-			return c, fmt.Errorf("%s: %w", c.source, err)
-		}
-	}
+	profileEffort := c.ReasoningEffort
 	if o.Provider != "" {
 		if err := c.UseProvider(o.Provider); err != nil {
 			return c, fmt.Errorf("-provider: %w", err)
@@ -203,7 +190,29 @@ func Resolve(o Options) (Config, error) {
 	if err := c.validate(); err != nil {
 		return c, fmt.Errorf("%s: %w", c.source, err)
 	}
+	subagents, err := base.subagentChoices(c.SubagentProfiles, SubagentChoice{Name: SelfChoice, Model: c.Model, Effort: profileEffort, UseFor: c.UseFor, Self: true})
+	if err != nil {
+		return c, err
+	}
+	c.subagents = subagents
 	return c, nil
+}
+
+func (c *Config) useProfile(name string) error {
+	if name != "" {
+		if err := c.applyProfile(name); err != nil {
+			return err
+		}
+	}
+	if err := c.loadProvider(c.Provider); err != nil {
+		return fmt.Errorf("%s: key \"provider\": %w", c.source, err)
+	}
+	if c.profileRaw != nil {
+		if err := c.overlay(c.profileRaw); err != nil {
+			return fmt.Errorf("%s: %w", c.source, err)
+		}
+	}
+	return nil
 }
 
 func Check(path, profile string) error {
@@ -234,11 +243,7 @@ func (c *Config) applyProfile(name string) error {
 func (c *Config) profileData(name string) ([]byte, string, error) {
 	raw, ok := c.Profiles[name]
 	if !ok {
-		known := "none defined"
-		if names := c.ProfileNames(); len(names) > 0 {
-			known = strings.Join(names, ", ")
-		}
-		return nil, "", fmt.Errorf("%s: unknown profile %q (profiles: %s)", c.source, name, known)
+		return nil, "", fmt.Errorf("%s: %w", c.source, c.unknownProfile(name))
 	}
 	return raw, fmt.Sprintf("%s: profile %q", c.source, name), nil
 }
@@ -296,6 +301,14 @@ func (c *Config) provider(name string) (Provider, error) {
 		return p, nil
 	}
 	return Provider{}, fmt.Errorf("unknown provider %q", name)
+}
+
+func (c Config) unknownProfile(name string) error {
+	known := "none defined"
+	if names := c.ProfileNames(); len(names) > 0 {
+		known = strings.Join(names, ", ")
+	}
+	return fmt.Errorf("unknown profile %q (profiles: %s)", name, known)
 }
 
 func (c Config) ProfileNames() []string {
