@@ -139,7 +139,7 @@ func (r *repl) run() error {
 			return nil
 		}
 		if errors.Is(err, ui.ErrWake) {
-			draft = r.jobTurn(line)
+			draft = r.jobTurn()
 			continue
 		}
 		if errors.Is(err, ui.ErrInterrupt) {
@@ -170,12 +170,12 @@ func (r *repl) run() error {
 	}
 }
 
-func (r *repl) jobTurn(draft string) string {
-	if !r.agent.HasJobNotices() {
-		return draft
+func (r *repl) jobTurn() string {
+	if !r.agent.JobExited() {
+		return ""
 	}
 	r.stopIdle()
-	draft = r.runQueued(r.turn(func(context.Context) ([]llm.Block, error) { return nil, nil }, draft))
+	draft := r.runQueued(r.turn(func(context.Context) ([]llm.Block, error) { return nil, nil }, ""))
 	r.armIdle()
 	return draft
 }

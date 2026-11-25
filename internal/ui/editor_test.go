@@ -282,7 +282,7 @@ func TestReadLineInterruptAndEOF(t *testing.T) {
 	}
 }
 
-func TestReadLineWakeKeepsDraft(t *testing.T) {
+func TestReadLineWakesOnlyWhenEmpty(t *testing.T) {
 	e := testEditor(t)
 	e.T.Keys = make(chan Key)
 	wake := make(chan struct{})
@@ -291,16 +291,31 @@ func TestReadLineWakeKeepsDraft(t *testing.T) {
 	var line string
 	go func() {
 		var err error
-		line, err = e.ReadLine("> ", "typed")
+		line, err = e.ReadLine("> ", "ab")
 		done <- err
 	}()
-	e.T.Keys <- Key{Kind: KeyRune, Rune: 'x'}
 	wake <- struct{}{}
-	if err := <-done; !errors.Is(err, ErrWake) || line != "typedx" {
-		t.Fatalf("wake: %q %v", line, err)
+	e.T.Keys <- Key{Kind: KeyBackspace}
+	select {
+	case err := <-done:
+		t.Fatalf("woke while text was typed: %q %v", line, err)
+	default:
 	}
-	if slices.Contains(e.history, "typedx") {
-		t.Error("a woken draft went into history")
+	e.T.Keys <- Key{Kind: KeyBackspace}
+	if err := <-done; !errors.Is(err, ErrWake) || line != "" {
+		t.Fatalf("wake once the line is empty: %q %v", line, err)
+	}
+	go func() {
+		var err error
+		line, err = e.ReadLine("> ", "")
+		done <- err
+	}()
+	wake <- struct{}{}
+	if err := <-done; !errors.Is(err, ErrWake) {
+		t.Fatalf("wake on an empty line: %v", err)
+	}
+	if slices.Contains(e.history, "") {
+		t.Error("a wake went into history")
 	}
 }
 

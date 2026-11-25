@@ -54,7 +54,6 @@ type Agent struct {
 
 	busy sync.Mutex
 	conv conversation
-	wake chan struct{}
 }
 
 type live struct {
@@ -78,7 +77,7 @@ type conversation struct {
 }
 
 func New(o Options) *Agent {
-	a := &Agent{cwd: o.Cwd, ui: o.UI, headless: o.Headless, wake: make(chan struct{}, 1)}
+	a := &Agent{cwd: o.Cwd, ui: o.UI, headless: o.Headless}
 	a.mode.Store(int32(o.Mode))
 	a.env = &tools.Env{Cwd: o.Cwd, ReadOnly: a.ReadOnly, Project: a.Project, Scratch: a.scratch, Writable: o.Config.ProjectWritable, Allow: o.Config.ReadOnlyAllow, BashTimeout: o.Config.BashTimeout, SpillDir: o.SpillDir, Subagent: o.Subagent, Jobs: tools.NewJobs()}
 	a.live = live{cfg: o.Config, provider: o.Provider}
@@ -321,16 +320,6 @@ func (a *Agent) Queue(blocks []llm.Block) {
 	a.mu.Lock()
 	a.live.steer = append(a.live.steer, blocks...)
 	a.mu.Unlock()
-	select {
-	case a.wake <- struct{}{}:
-	default:
-	}
-}
-
-func (a *Agent) queued() bool {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return len(a.live.steer) > 0
 }
 
 func (a *Agent) KillJobs() {
@@ -341,8 +330,8 @@ func (a *Agent) JobsChanged() <-chan struct{} {
 	return a.env.Jobs.Changed()
 }
 
-func (a *Agent) HasJobNotices() bool {
-	return a.env.Jobs.HasNotices()
+func (a *Agent) JobExited() bool {
+	return a.env.Jobs.Exited()
 }
 
 func (a *Agent) jobBlocks() []llm.Block {
@@ -367,21 +356,33 @@ func (a *Agent) awaitJobs(ctx context.Context) bool {
 		if len(ids) == 0 {
 			return false
 		}
-		if a.queued() {
-			return true
-		}
 		if !announced {
 			announced = true
-			a.ui.Info(fmt.Sprintf("waiting for background %s (Ctrl-C stops waiting, the job keeps running)", jobList(ids)))
+			a.ui.Info(fmt.Sprintf("waiting for background %s to finish before the run ends", jobList(ids)))
 		}
 		select {
 		case <-ctx.Done():
-			a.env.Jobs.StopWaiting()
 			return false
 		case <-a.env.Jobs.Changed():
-		case <-a.wake:
 		}
 	}
+}
+
+func (a *Agent) jobsNudge(nudged *bool) ([]llm.Block, bool) {
+	if !a.headless || *nudged || a.env.Jobs.HasNotices() {
+		return nil, false
+	}
+	ids := a.env.Jobs.Waiting()
+	if len(ids) == 0 {
+		return nil, false
+	}
+	*nudged = true
+	verb := "is"
+	if len(ids) > 1 {
+		verb = "are"
+	}
+	text := fmt.Sprintf("<background-jobs>Background %s %s still running, and this run waits for running jobs before it ends. Kill servers and anything else you no longer need with jobs({kill: N}), then answer again; to wait for the rest, just answer again.</background-jobs>", jobList(ids), verb)
+	return []llm.Block{{Type: llm.BlockText, Text: text}}, true
 }
 
 func jobList(ids []int) string {
@@ -583,6 +584,7 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 	maxRounds := a.Config().MaxRounds
 	stopActive := false
 	overflowRetried := false
+	nudged := false
 	for round := 0; ; round++ {
 		if maxRounds > 0 && round >= maxRounds {
 			return "", stats, fmt.Errorf("stopped after %d model requests (max_rounds)", maxRounds)
@@ -634,6 +636,8 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 			if cb, ok := a.changesBlock(); ok {
 				next = append(next, cb)
 			}
+		} else if nudge, ok := a.jobsNudge(&nudged); ok {
+			next = nudge
 		} else if !a.awaitJobs(ctx) {
 			if ctx.Err() != nil {
 				return "", stats, context.Canceled

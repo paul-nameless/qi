@@ -70,6 +70,9 @@ func TestBackgroundJobKilledOutsideNotifies(t *testing.T) {
 	if err := syscall.Kill(-env.Jobs.list[0].cmd.Process.Pid, syscall.SIGTERM); err != nil {
 		t.Fatal(err)
 	}
+	for !env.Jobs.Exited() {
+		<-env.Jobs.Changed()
+	}
 	if n := waitNotice(t, env.Jobs); n.Status != "signal: terminated" || !strings.Contains(n.Text, `status="signal: terminated"`) {
 		t.Fatalf("notice %+v", n)
 	}
@@ -116,7 +119,13 @@ func TestBackgroundJobTimeout(t *testing.T) {
 	t.Parallel()
 	env := jobEnv(t)
 	runBash(context.Background(), env, bashIn(t, map[string]any{"command": "sleep 30", "background": true, "timeout": 1}), nil)
-	if n := waitNotice(t, env.Jobs); n.Status != "timed out after 1s" {
+	for !env.Jobs.HasNotices() {
+		<-env.Jobs.Changed()
+	}
+	if env.Jobs.Exited() {
+		t.Error("a timeout counts as an exit, so it would start a turn")
+	}
+	if n := waitNotice(t, env.Jobs); n.Status != "timed out after 1s" || !n.TimedOut {
 		t.Fatalf("notice %+v", n)
 	}
 }

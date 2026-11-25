@@ -40,13 +40,16 @@ func TestHeadlessTurnWaitsForBackgroundJob(t *testing.T) {
 	a := newHeadlessAgent(t, p, onJobWait(func() { openGate(t, gate) }))
 	t.Cleanup(a.KillJobs)
 	final, stats, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "go"}})
-	if err != nil || final != "done" || stats.Requests != 3 {
+	if err != nil || final != "done" || stats.Requests != 4 {
 		t.Fatalf("final %q stats %+v err %v", final, stats, err)
 	}
 	if res := p.requests[1][len(p.requests[1])-1].Blocks[0]; !strings.Contains(res.Text, "Started background job 1") {
 		t.Fatalf("start result %q", res.Text)
 	}
-	last := p.requests[2][len(p.requests[2])-1]
+	if !strings.Contains(lastText(p.requests[2][len(p.requests[2])-1]), "<background-jobs>Background job 1 is still running") {
+		t.Fatal("the run should say a job is still running before it waits")
+	}
+	last := p.requests[3][len(p.requests[3])-1]
 	if last.Role != llm.RoleUser || !strings.Contains(lastText(last), `<background-job id="1" status="exit 0"`) || !strings.Contains(lastText(last), "finished") {
 		t.Fatalf("notice not delivered: %+v", last)
 	}
@@ -63,14 +66,11 @@ func TestCancelWhileHeadlessWaitsForJob(t *testing.T) {
 	if !errors.Is(err, context.Canceled) || time.Since(start) > 5*time.Second {
 		t.Fatalf("err %v after %s", err, time.Since(start))
 	}
-	if ids := a.env.Jobs.Waiting(); len(ids) != 0 {
-		t.Fatalf("after Ctrl-C later turns should not wait for the job again: %v", ids)
-	}
 	if !strings.Contains(a.env.Jobs.Describe(), "running") {
 		t.Fatal("Ctrl-C should leave the job running")
 	}
 	msgs := a.Messages()
-	if msgs[len(msgs)-1].Text() != "waiting" {
+	if msgs[len(msgs)-1].Text() != "done" {
 		t.Fatalf("history should end with the assistant reply: %+v", msgs[len(msgs)-1])
 	}
 }
@@ -85,38 +85,23 @@ func TestInteractiveTurnDoesNotWaitForJobs(t *testing.T) {
 	if err != nil || final != "server up" || stats.Requests != 2 || time.Since(start) > 5*time.Second {
 		t.Fatalf("final %q stats %+v err %v after %s", final, stats, err, time.Since(start))
 	}
-	if a.HasJobNotices() {
+	if a.JobExited() {
 		t.Fatal("a running job left a notice")
 	}
 }
 
-func TestSteeringWakesHeadlessJobWait(t *testing.T) {
+func TestHeadlessNudgeLetsModelKillServer(t *testing.T) {
 	t.Parallel()
-	gate := filepath.Join(t.TempDir(), "gate")
-	p := &fakeProvider{replies: []llm.Message{bgCall("c1", gated(gate, "true")), textMsg("waiting")}}
-	var a *Agent
-	asked := false
-	a = newHeadlessAgent(t, p, onJobWait(func() {
-		if !asked {
-			asked = true
-			a.Queue([]llm.Block{{Type: llm.BlockText, Text: "status?"}})
-		}
-	}))
+	p := &fakeProvider{replies: []llm.Message{bgCall("c1", "sleep 30"), textMsg("server checked"), runCall("c2", "return await jobs({kill: 1})"), textMsg("final")}}
+	a := newHeadlessAgent(t, p, nopDisplay{})
 	t.Cleanup(a.KillJobs)
-	p.onCall = func(n int) {
-		if n == 2 {
-			openGate(t, gate)
-		}
-	}
+	start := time.Now()
 	final, stats, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "go"}})
-	if err != nil || final != "done" || stats.Requests != 4 {
-		t.Fatalf("final %q stats %+v err %v", final, stats, err)
+	if err != nil || final != "final" || stats.Requests != 4 || time.Since(start) > 5*time.Second {
+		t.Fatalf("final %q stats %+v err %v after %s", final, stats, err, time.Since(start))
 	}
-	if got := lastText(p.requests[2][len(p.requests[2])-1]); !strings.Contains(got, "status?") || strings.Contains(got, "<background-job") {
-		t.Fatalf("queued message should wake the wait before the job ends: %q", got)
-	}
-	if !strings.Contains(lastText(p.requests[3][len(p.requests[3])-1]), "<background-job") {
-		t.Fatal("turn should keep waiting for the job after answering")
+	if got := lastText(p.requests[2][len(p.requests[2])-1]); !strings.Contains(got, "Background job 1 is still running") || !strings.Contains(got, "jobs({kill: N})") {
+		t.Fatalf("nudge %q", got)
 	}
 }
 
@@ -131,7 +116,7 @@ func TestNoticeOfIdleJobJoinsNextTurn(t *testing.T) {
 	}
 	openGate(t, gate)
 	timeout := time.After(10 * time.Second)
-	for !a.HasJobNotices() {
+	for !a.JobExited() {
 		select {
 		case <-a.JobsChanged():
 		case <-timeout:

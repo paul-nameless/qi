@@ -546,21 +546,21 @@ func TestFinishedJobStartsTurn(t *testing.T) {
 	r.turn(func(context.Context) ([]llm.Block, error) {
 		return []llm.Block{{Type: llm.BlockText, Text: "go"}}, nil
 	}, "")
-	if got := r.jobTurn("half typed"); got != "half typed" || len(p.requests) != 2 {
-		t.Fatalf("a wake without notices started a turn: %q after %d requests", got, len(p.requests))
+	if got := r.jobTurn(); got != "" || len(p.requests) != 2 {
+		t.Fatalf("a wake without an exited job started a turn: %q after %d requests", got, len(p.requests))
 	}
 	if err := os.WriteFile(gate, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	timeout := time.After(10 * time.Second)
-	for !r.agent.HasJobNotices() {
+	for !r.agent.JobExited() {
 		select {
 		case <-r.agent.JobsChanged():
 		case <-timeout:
 			t.Fatal("the job never finished")
 		}
 	}
-	if got := r.jobTurn("half typed"); got != "half typed" || len(p.requests) != 3 {
+	if got := r.jobTurn(); got != "" || len(p.requests) != 3 {
 		t.Fatalf("draft %q after %d requests", got, len(p.requests))
 	}
 	msgs := p.request(2).Messages

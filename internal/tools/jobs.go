@@ -40,7 +40,6 @@ type job struct {
 	id      int
 	command string
 	path    string
-	nowait  bool
 	start   time.Time
 	cmd     *exec.Cmd
 	cancel  context.CancelFunc
@@ -50,9 +49,10 @@ type job struct {
 }
 
 type Notice struct {
-	ID     int
-	Status string
-	Text   string
+	ID       int
+	Status   string
+	Text     string
+	TimedOut bool
 }
 
 func NewJobs() *Jobs {
@@ -66,7 +66,7 @@ func (j *Jobs) Waiting() []int {
 	defer j.mu.Unlock()
 	var ids []int
 	for _, jb := range j.list {
-		if jb.status == "" && !jb.nowait {
+		if jb.status == "" {
 			ids = append(ids, jb.id)
 		}
 	}
@@ -85,18 +85,21 @@ func (j *Jobs) Running() int {
 	return n
 }
 
-func (j *Jobs) StopWaiting() {
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	for _, jb := range j.list {
-		jb.nowait = true
-	}
-}
-
 func (j *Jobs) HasNotices() bool {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	return len(j.notices) > 0
+}
+
+func (j *Jobs) Exited() bool {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	for _, n := range j.notices {
+		if !n.TimedOut {
+			return true
+		}
+	}
+	return false
 }
 
 func (j *Jobs) TakeNotices() []Notice {
@@ -235,13 +238,13 @@ func (j *Jobs) finish(jb *job, err error, timedOut bool, timeout time.Duration) 
 		notice = jb.notice(status, !timedOut && proc.Alive(jb.cmd.Process.Pid), timeout)
 	}
 	j.mu.Lock()
+	defer j.mu.Unlock()
 	if jb.killed {
 		jb.status = "killed"
-	} else {
-		jb.status = status
-		j.notices = append(j.notices, Notice{ID: jb.id, Status: status, Text: notice})
+		return
 	}
-	j.mu.Unlock()
+	jb.status = status
+	j.notices = append(j.notices, Notice{ID: jb.id, Status: status, Text: notice, TimedOut: timedOut})
 	select {
 	case j.changed <- struct{}{}:
 	default:

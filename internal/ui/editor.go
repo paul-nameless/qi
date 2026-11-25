@@ -104,6 +104,7 @@ func (e *Editor) ReadLine(prompt, initial string) (string, error) {
 	defer e.P.SetPrompt(nil, nil)
 	histIdx := len(e.history)
 	draft := ""
+	woken := false
 	drain(e.Interrupt)
 	for {
 		var k Key
@@ -123,9 +124,11 @@ func (e *Editor) ReadLine(prompt, initial string) (string, error) {
 			e.P.FinishPrompt()
 			return "", ErrInterrupt
 		case <-e.Wake:
-			var line string
-			e.P.Locked(func() { line = string(st.buf) })
-			return line, ErrWake
+			woken = true
+			if e.emptyLine(st) {
+				return "", ErrWake
+			}
+			continue
 		case k = <-e.T.Keys:
 		}
 		if submit, handled := e.hook(st, k); handled {
@@ -173,8 +176,17 @@ func (e *Editor) ReadLine(prompt, initial string) (string, error) {
 			e.P.ClearScreen()
 		}
 		e.P.Locked(func() { e.apply(st, k, &histIdx, &draft) })
+		if woken && e.emptyLine(st) {
+			return "", ErrWake
+		}
 		e.P.RenderPrompt()
 	}
+}
+
+func (e *Editor) emptyLine(st *lineState) bool {
+	empty := false
+	e.P.Locked(func() { empty = len(st.buf) == 0 })
+	return empty
 }
 
 func (e *Editor) hook(st *lineState, k Key) (submit, handled bool) {
