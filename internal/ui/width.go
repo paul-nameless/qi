@@ -64,18 +64,35 @@ func runeWidth(r rune) int {
 	case r <= 0x36F, r == 0x200B, r == 0x200D, r >= 0xFE00 && r <= 0xFE0F:
 		return 0
 	}
-	for _, w := range wideRanges {
-		if r >= w[0] && r <= w[1] {
-			return 2
-		}
+	if r >= 0x1100 && isWide(r) {
+		return 2
 	}
 	return 1
+}
+
+func isWide(r rune) bool {
+	lo, hi := 0, len(wideRanges)
+	for lo < hi {
+		m := int(uint(lo+hi) >> 1)
+		switch w := wideRanges[m]; {
+		case r < w[0]:
+			hi = m
+		case r > w[1]:
+			lo = m + 1
+		default:
+			return true
+		}
+	}
+	return false
 }
 
 func displayWidth(s string) int {
 	n, last := 0, 0
 	for _, r := range s {
-		w := runeWidth(r)
+		w := 1
+		if r >= 0x300 {
+			w = runeWidth(r)
+		}
 		if r == 0xFE0F && last == 1 {
 			n++
 		}
