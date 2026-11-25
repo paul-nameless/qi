@@ -105,7 +105,7 @@ func TestSubagentModeFlagWinsOverProfile(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("QI_CONFIG_DIR", dir)
 	path := filepath.Join(dir, "config.json")
-	os.WriteFile(path, []byte(`{"model": "m", "subagent_profiles": ["wild", "locked"], "profiles": {"wild": {"mode": "yolo"}, "locked": {"read_only": true}}}`), 0o600)
+	os.WriteFile(path, []byte(`{"model": "m", "subagent_profiles": ["wild", "locked", "proj"], "profiles": {"wild": {"mode": "yolo"}, "locked": {"read_only": true}, "proj": {"mode": "project"}}}`), 0o600)
 	cfg, err := config.Resolve(config.Options{Path: path})
 	if err != nil {
 		t.Fatal(err)
@@ -113,7 +113,7 @@ func TestSubagentModeFlagWinsOverProfile(t *testing.T) {
 	for _, c := range []struct {
 		profile string
 		parent  config.Mode
-	}{{"wild", config.ModeReadOnly}, {"wild", config.ModeProject}, {"locked", config.ModeYolo}} {
+	}{{"wild", config.ModeReadOnly}, {"wild", config.ModeProject}, {"locked", config.ModeYolo}, {"proj", config.ModeReadOnly}, {"proj", config.ModeYolo}} {
 		mode := c.parent
 		runner := &agent.SubagentRunner{ConfigPath: path, Mode: func() config.Mode { return mode }}
 		task := tools.SubagentTask{Prompt: "x", Profile: c.profile}
@@ -132,7 +132,7 @@ func TestSubagentModeFlagWinsOverProfile(t *testing.T) {
 			t.Errorf("profile %s under a %s parent starts in %s", c.profile, c.parent, got)
 		}
 	}
-	if choices := cfg.SubagentChoices(); len(choices) != 2 {
+	if choices := cfg.SubagentChoices(); len(choices) != 3 {
 		t.Errorf("choices %+v", choices)
 	}
 }
@@ -305,6 +305,119 @@ func TestSubagentKeepsParentMCPFilters(t *testing.T) {
 	t.Setenv("QI_SUBAGENT", "")
 	if cfg, _ := resolveConfig(options{configPath: path, profile: "p"}); !reflect.DeepEqual(sortedNames(cfg.MCP), []string{"extra", "gh2", "notes"}) {
 		t.Errorf("top-level agent took %s: %+v", config.MCPEnv, cfg.MCP)
+	}
+}
+
+func childEnv(t *testing.T, runner *agent.SubagentRunner) {
+	t.Helper()
+	env, err := runner.Env()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, kv := range env {
+		for _, key := range []string{agent.SubagentEnv, config.MCPEnv, config.AccessEnv} {
+			if v, ok := strings.CutPrefix(kv, key+"="); ok {
+				t.Setenv(key, v)
+			}
+		}
+	}
+}
+
+func TestSubagentTakesParentAccess(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("QI_CONFIG_DIR", dir)
+	path := filepath.Join(dir, "config.json")
+	os.WriteFile(path, []byte(`{"api_key": "k", "model": "m",
+  "project_writable": ["/parent"], "read_only_allow": ["make"], "hook_files": ["~/parent.json", ".qi/hooks.json"],
+  "subagent_profiles": ["wide"],
+  "profiles": {
+    "wide": {"model": "w", "project_writable": ["/", "~/"], "read_only_allow": ["rm", "curl"], "hook_files": ["/other.json"]},
+    "next": {"project_writable": ["/next"], "read_only_allow": null, "hook_files": ["/next.json"], "subagent_profiles": ["wide"]}
+  }}`), 0o600)
+	o := options{configPath: path}
+	parent, err := resolveConfig(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, runner := buildAgent(parent, o, dir, nopProvider{}, devNullPrinter(t), true, false)
+	hookFiles := agent.ExpandPaths(agent.ProjectRoots(dir), parent.HookFiles)
+	child := func() config.Config {
+		t.Helper()
+		childEnv(t, runner)
+		args, err := parseArgs(runner.Args(tools.SubagentTask{Prompt: "x", Profile: "wide"}), io.Discard)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg, err := resolveConfig(args.opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, set := os.LookupEnv(config.AccessEnv); set {
+			t.Error(config.AccessEnv + " left for tools and hooks")
+		}
+		t.Setenv(agent.SubagentEnv, "")
+		return cfg
+	}
+	got := child()
+	if got.Profile != "wide" || got.Model != "w" {
+		t.Errorf("child did not run the listed profile: %q %q", got.Profile, got.Model)
+	}
+	if !reflect.DeepEqual(got.ProjectWritable, []string{"/parent"}) || !reflect.DeepEqual(got.ReadOnlyAllow, []string{"make"}) || !reflect.DeepEqual(got.HookFiles, hookFiles) {
+		t.Errorf("child access: writable %v, allow %v, hooks %v; want the parent's %v", got.ProjectWritable, got.ReadOnlyAllow, got.HookFiles, hookFiles)
+	}
+	if !reflect.DeepEqual(agent.ExpandPaths(agent.ProjectRoots(dir), got.HookFiles), hookFiles) {
+		t.Errorf("child expands the hook files differently: %v", got.HookFiles)
+	}
+	r := &repl{agent: a, display: devNullPrinter(t), runner: runner, opts: o}
+	if err := r.switchProfile("next"); err != nil {
+		t.Fatal(err)
+	}
+	got = child()
+	if !reflect.DeepEqual(got.ProjectWritable, []string{"/next"}) || got.ReadOnlyAllow != nil || !reflect.DeepEqual(got.HookFiles, hookFiles) {
+		t.Errorf("after /profile next: writable %v, allow %v, hooks %v (hooks stay those loaded at start)", got.ProjectWritable, got.ReadOnlyAllow, got.HookFiles)
+	}
+	childEnv(t, runner)
+	t.Setenv(agent.SubagentEnv, "")
+	top, err := resolveConfig(options{configPath: path, profile: "wide"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(top.ProjectWritable, []string{"/", "~/"}) {
+		t.Errorf("top-level agent took %s: %v", config.AccessEnv, top.ProjectWritable)
+	}
+	t.Setenv(agent.SubagentEnv, "1")
+	t.Setenv(config.AccessEnv, `{"project_writable": ["rel"]}`)
+	if _, err := resolveConfig(options{configPath: path}); err == nil || !strings.Contains(err.Error(), config.AccessEnv+" from the parent agent") {
+		t.Errorf("bad %s: %v", config.AccessEnv, err)
+	}
+}
+
+func TestProfileSwitchPrintsSubagents(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("QI_CONFIG_DIR", dir)
+	path := filepath.Join(dir, "config.json")
+	os.WriteFile(path, []byte(`{"api_key": "k", "model": "m", "default_profile": "main", "profiles": {
+  "main": {"subagent_profiles": ["a", "b"]},
+  "twin": {"subagent_profiles": ["a", "b"]},
+  "solo": {},
+  "a": {"model": "ma"},
+  "b": {"model": "mb"}
+}}`), 0o600)
+	o := options{configPath: path}
+	cfg, err := resolveConfig(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, runner := buildAgent(cfg, o, dir, nopProvider{}, devNullPrinter(t), true, false)
+	display, out := capturePrinter(t)
+	r := &repl{agent: a, display: display, runner: runner, opts: o}
+	for _, p := range []string{"twin", "solo", "main"} {
+		if err := r.switchProfile(p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n := strings.Count(out.String(), "subagents: a (ma), b (mb)"); n != 1 {
+		t.Errorf("subagents line printed %d times, want once (back from solo):\n%s", n, out.String())
 	}
 }
 

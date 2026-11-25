@@ -55,8 +55,8 @@ func syntaxError(data []byte, e *jsontext.SyntacticError) error {
 }
 
 var removedKeys = map[string]string{
-	"subagent_efforts": "subagents offer the same efforts as reasoning_effort",
-	"subagent_models":  "replaced by subagent_profiles, a list of profile names, and use_for on those profiles",
+	"subagent_efforts": "(subagents offer the same efforts as reasoning_effort): delete it",
+	"subagent_models":  "(replaced by subagent_profiles): move each entry into a profile with its model, provider and use_for, then list that profile's name in subagent_profiles",
 }
 
 func semanticError(e *json.SemanticError) error {
@@ -65,7 +65,7 @@ func semanticError(e *json.SemanticError) error {
 	switch {
 	case errors.Is(e, json.ErrUnknownName):
 		if why, ok := removedKeys[key]; ok {
-			return fmt.Errorf("key %q was removed (%s): delete it", key, why)
+			return fmt.Errorf("key %q was removed %s", key, why)
 		}
 		return fmt.Errorf("unknown key %q", key)
 	case key == "":

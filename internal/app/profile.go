@@ -20,8 +20,12 @@ func (r *repl) switchProfile(name string) error {
 	if err != nil {
 		return err
 	}
+	before := subagentsLine(r.agent.Config().SubagentChoices())
 	if err := r.apply(cfg); err != nil {
 		return err
+	}
+	if line := subagentsLine(cfg.SubagentChoices()); r.runner != nil && line != "" && line != before {
+		r.display.Info(line)
 	}
 	if cfg.ProfileSetsMode() {
 		m := cfg.StartMode()
@@ -74,6 +78,7 @@ func (r *repl) apply(cfg config.Config) error {
 	r.agent.Reconfigure(cfg, newProvider(cfg, key))
 	if r.runner != nil {
 		r.runner.Profile, r.runner.Provider = cfg.Profile, cfg.Provider
+		r.runner.Access.ProjectWritable, r.runner.Access.ReadOnlyAllow = cfg.ProjectWritable, cfg.ReadOnlyAllow
 		r.agent.ReplaceFunction(tools.Subagent(cfg.SubagentChoices()))
 	}
 	return nil

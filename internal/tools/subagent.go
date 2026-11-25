@@ -23,7 +23,7 @@ const SubagentTimeout = 30 * time.Minute
 
 const subagentIntro = "run a task in a separate agent with a fresh context and get back only its final answer. Use it for self-contained side work (searching a codebase, reviewing, summarizing logs) to keep this conversation small, and run several at once for independent tasks. The subagent sees none of this conversation, so put every detail it needs in the prompt."
 
-const selfUseFor = "this agent's own model and settings"
+const selfUseFor = "runs the current profile at its default effort"
 
 func subagentMenu(choices []config.SubagentChoice) string {
 	var b strings.Builder

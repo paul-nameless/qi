@@ -22,22 +22,34 @@ func (c Config) validate() error {
 		atLeast("bash_timeout", c.BashTimeout, 1),
 		atLeast("max_rounds", c.MaxRounds, 0),
 	}
-	for i, p := range c.ProjectWritable {
-		if !strings.HasPrefix(p, "/") && !strings.HasPrefix(p, "~/") {
-			checks = append(checks, fmt.Errorf("key \"project_writable.%d\": %q must be an absolute path or start with ~/", i, p))
-		}
-	}
-	for i, name := range c.SubagentProfiles {
-		if _, ok := c.Profiles[name]; !ok {
-			checks = append(checks, fmt.Errorf("key \"subagent_profiles.%d\": %w", i, c.unknownProfile(name)))
-		}
-	}
+	checks = append(checks, c.checkWritable())
 	for _, name := range sortedKeys(c.MCP) {
 		checks = append(checks, c.MCP[name].validate("mcp."+name))
 	}
 	for _, err := range checks {
 		if err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func (c Config) checkWritable() error {
+	for i, p := range c.ProjectWritable {
+		if !strings.HasPrefix(p, "/") && !strings.HasPrefix(p, "~/") {
+			return fmt.Errorf("key \"project_writable.%d\": %q must be an absolute path or start with ~/", i, p)
+		}
+	}
+	return nil
+}
+
+func (c Config) checkSubagentProfiles() error {
+	for i, name := range c.SubagentProfiles {
+		if _, ok := c.Profiles[name]; !ok {
+			return fmt.Errorf("key \"subagent_profiles.%d\": %w", i, c.unknownProfile(name))
+		}
+		if slices.Index(c.SubagentProfiles, name) < i {
+			return fmt.Errorf("key \"subagent_profiles.%d\": %q is listed twice", i, name)
 		}
 	}
 	return nil

@@ -135,6 +135,7 @@ type Options struct {
 	Model            string
 	Effort           string
 	SystemPromptFile string
+	Subagent         bool
 }
 
 func Load(path, profile string) (Config, error) {
@@ -190,27 +191,49 @@ func Resolve(o Options) (Config, error) {
 	if err := c.validate(); err != nil {
 		return c, fmt.Errorf("%s: %w", c.source, err)
 	}
-	subagents, err := base.subagentChoices(c.SubagentProfiles, SubagentChoice{Name: SelfChoice, Model: c.Model, Effort: profileEffort, UseFor: c.UseFor, Self: true})
+	if o.Subagent {
+		return c, nil
+	}
+	if err := c.checkSubagentProfiles(); err != nil {
+		return c, fmt.Errorf("%s: %w", c.source, err)
+	}
+	self := SubagentChoice{Name: SelfChoice, Model: c.Model, Effort: profileEffort, UseFor: c.UseFor, Self: true}
+	subagents, err := base.subagentChoices(c.SubagentProfiles, self, filepath.Dir(path), o.SystemPromptFile == "")
 	if err != nil {
-		return c, err
+		return c, fmt.Errorf("%s: %w", c.source, err)
 	}
 	c.subagents = subagents
 	return c, nil
 }
 
 func (c *Config) useProfile(name string) error {
+	source := c.source
 	if name != "" {
-		if err := c.applyProfile(name); err != nil {
+		if _, ok := c.Profiles[name]; !ok {
+			return fmt.Errorf("%s: %w", source, c.unknownProfile(name))
+		}
+		source = fmt.Sprintf("%s: profile %q", source, name)
+	}
+	if err := c.enterProfile(name); err != nil {
+		return fmt.Errorf("%s: %w", source, err)
+	}
+	c.source = source
+	return nil
+}
+
+func (c *Config) enterProfile(name string) error {
+	if name != "" {
+		raw := c.Profiles[name]
+		if err := c.overlay(raw); err != nil {
 			return err
 		}
+		c.Profile, c.profileRaw = name, raw
 	}
 	if err := c.loadProvider(c.Provider); err != nil {
-		return fmt.Errorf("%s: key \"provider\": %w", c.source, err)
+		return fmt.Errorf("key \"provider\": %w", err)
 	}
 	if c.profileRaw != nil {
-		if err := c.overlay(c.profileRaw); err != nil {
-			return fmt.Errorf("%s: %w", c.source, err)
-		}
+		return c.overlay(c.profileRaw)
 	}
 	return nil
 }
@@ -226,26 +249,6 @@ func Check(path, profile string) error {
 		}
 	}
 	return nil
-}
-
-func (c *Config) applyProfile(name string) error {
-	raw, source, err := c.profileData(name)
-	if err != nil {
-		return err
-	}
-	if err := c.overlay(raw); err != nil {
-		return fmt.Errorf("%s: %w", source, err)
-	}
-	c.Profile, c.profileRaw, c.source = name, raw, source
-	return nil
-}
-
-func (c *Config) profileData(name string) ([]byte, string, error) {
-	raw, ok := c.Profiles[name]
-	if !ok {
-		return nil, "", fmt.Errorf("%s: %w", c.source, c.unknownProfile(name))
-	}
-	return raw, fmt.Sprintf("%s: profile %q", c.source, name), nil
 }
 
 func (c *Config) overlay(raw []byte) error {

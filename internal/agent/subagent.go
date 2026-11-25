@@ -40,6 +40,7 @@ type SubagentRunner struct {
 	SessionID        func() string
 	Cwd              string
 	MCP              map[string]config.MCPServer
+	Access           config.Access
 	Label            func(llm.Block) string
 	Exe              string
 	Grace            time.Duration
@@ -51,7 +52,11 @@ func (r *SubagentRunner) Env() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	env := append(os.Environ(), SubagentEnv+"=1", config.MCPEnv+"="+servers)
+	access, err := config.EncodeAccess(r.Access)
+	if err != nil {
+		return nil, err
+	}
+	env := append(os.Environ(), SubagentEnv+"=1", config.MCPEnv+"="+servers, config.AccessEnv+"="+access)
 	if r.SessionID != nil {
 		env = append(env, ParentSessionEnv+"="+r.SessionID())
 	}

@@ -768,7 +768,7 @@ func TestSubagentRejectsUnknownEffort(t *testing.T) {
 func TestSubagentSelfChoice(t *testing.T) {
 	t.Parallel()
 	sub := Subagent(config.Config{Model: "main", ReasoningEffort: "high"}.SubagentChoices())
-	if !strings.Contains(sub.Code.Doc, "  Profiles:\n  - current (main, effort high): this agent's own model and settings\n  Efforts: ") {
+	if !strings.Contains(sub.Code.Doc, "  Profiles:\n  - current (main, effort high): runs the current profile at its default effort\n  Efforts: ") {
 		t.Errorf("doc:\n%s", sub.Code.Doc)
 	}
 	k := newCellKit(t, sub)

@@ -145,7 +145,7 @@ func TestValidateMirrorsSchema(t *testing.T) {
 		`{"profiles": {"p": {"subagent_efforts": ["low"]}}}`:              {`profile "p": key "subagent_efforts" was removed`},
 		`{"subagent_effortz": ["low"]}`:                                   {`unknown key "subagent_effortz"`},
 		`{"providers": {"x": {"api": "openai", "subagent_efforts": []}}}`: {`unknown key "providers.x.subagent_efforts"`},
-		`{"subagent_models": [{"name": "n", "model": "m"}]}`:              {`key "subagent_models" was removed (replaced by subagent_profiles`, "delete it"},
+		`{"subagent_models": [{"name": "n", "model": "m"}]}`:              {`key "subagent_models" was removed (replaced by subagent_profiles)`, "into a profile with its model, provider and use_for", "list that profile's name in subagent_profiles"},
 		`{"profiles": {"p": {"subagent_models": []}}}`:                    {`profile "p": key "subagent_models" was removed`},
 		`{"mcp": {"gh": {"args": ["stdio"]}}}`:                            {`key "mcp.gh"`, "command is required"},
 		`{"mcp": {"gh": {"command": "gh", "tools": ["list_[a"]}}}`:        {`key "mcp.gh.tools.0"`, `invalid glob pattern "list_[a"`},

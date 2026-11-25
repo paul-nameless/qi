@@ -92,12 +92,12 @@
       "enum": ["yolo", "project", "read-only"]
     },
     "project_writable": {
-      "description": "Extra directories that stay writable in project mode, e.g. [\"~/.gradle\"]. Always writable: the working directory, the repo's git dir (but not its config or hooks), temp, the Go build and module caches, ~/.npm, the cargo registry, uv and golangci-lint caches and ~/.Trash.",
+      "description": "Extra directories that stay writable in project mode, e.g. [\"~/.gradle\"]. Always writable: the working directory, the repo's git dir (but not its config or hooks), temp, the Go build and module caches, ~/.npm, the cargo registry, uv and golangci-lint caches and ~/.Trash. Subagents use the agent's value, not their profile's.",
       "type": "array",
       "items": { "type": "string" }
     },
     "read_only_allow": {
-      "description": "Extra command prefixes bash may run in read-only mode, e.g. [\"make lint\", \"go test\"].",
+      "description": "Extra command prefixes bash may run in read-only mode, e.g. [\"make lint\", \"go test\"]. Subagents use the agent's value, not their profile's.",
       "type": "array",
       "items": { "type": "string" }
     },
@@ -111,7 +111,7 @@
       "type": "string"
     },
     "subagent_profiles": {
-      "description": "Profiles the agent can run as subagents, by name; each must be in profiles, and the current profile may be listed too. A subagent takes its model, provider, effort and limits from its profile, but always the mode the agent has when it starts it, and the agent's MCP servers. The first is the default. Unset or empty: subagents run with the agent's own setup.",
+      "description": "Profiles the agent can run as subagents, by name; each must be in profiles, and the current profile may be listed too. A subagent takes the model side from its profile (model, provider, effort, limits, system_prompt_file, instruction_files, skill_dirs); the mode, MCP servers, project_writable, read_only_allow and hook_files are always the agent's when it starts the subagent. Each listed profile is validated at startup; no duplicates. The first is the default. Unset or empty: subagents run the current profile.",
       "type": "array",
       "items": { "type": "string" }
     },
@@ -130,7 +130,7 @@
       "items": { "type": "string" }
     },
     "hook_files": {
-      "description": "Claude Code settings files whose hooks run. Project files run only after the project is trusted. Default: [\"~/.claude/settings.json\", \".claude/settings.json\", \".claude/settings.local.json\", \"~/.config/qi/settings.json\"].",
+      "description": "Claude Code settings files whose hooks run. Project files run only after the project is trusted. Default: [\"~/.claude/settings.json\", \".claude/settings.json\", \".claude/settings.local.json\", \"~/.config/qi/settings.json\"]. Subagents use the hook files the agent started with, not their profile's.",
       "type": "array",
       "items": { "type": "string" }
     },

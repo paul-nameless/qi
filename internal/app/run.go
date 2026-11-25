@@ -201,16 +201,24 @@ func openSession(a *agent.Agent, o options, cfg config.Config, cwd, resume strin
 }
 
 func resolveConfig(o options) (config.Config, error) {
-	parentMCP, fromParent, err := config.MCPFromEnv()
+	parentMCP, mcpFromParent, err := config.MCPFromEnv()
 	if err != nil {
 		return config.Config{}, err
 	}
-	cfg, err := config.Resolve(config.Options{Path: o.configPath, Profile: o.profile, Provider: o.provider, Model: o.model, Effort: o.effort, SystemPromptFile: o.systemPromptFile})
+	access, accessFromParent, err := config.AccessFromEnv()
+	if err != nil {
+		return config.Config{}, err
+	}
+	isSub := os.Getenv(agent.SubagentEnv) != ""
+	cfg, err := config.Resolve(config.Options{Path: o.configPath, Profile: o.profile, Provider: o.provider, Model: o.model, Effort: o.effort, SystemPromptFile: o.systemPromptFile, Subagent: isSub})
 	if err != nil {
 		return cfg, err
 	}
-	if fromParent && os.Getenv(agent.SubagentEnv) != "" {
+	if mcpFromParent && isSub {
 		cfg.MCP = parentMCP
+	}
+	if accessFromParent && isSub {
+		cfg.ApplyAccess(access)
 	}
 	return cfg, nil
 }
@@ -265,7 +273,8 @@ func buildAgent(cfg config.Config, o options, cwd string, p llm.Provider, displa
 	funcs := []*tools.Function{tools.Read(), tools.Write(), tools.Edit(), tools.Bash(), tools.JobsFunc()}
 	var runner *agent.SubagentRunner
 	if !isSub {
-		runner = &agent.SubagentRunner{ConfigPath: o.configPath, Profile: cfg.Profile, Provider: cfg.Provider, SystemPromptFile: o.systemPromptFile, Cwd: cwd, MCP: cfg.MCP}
+		access := config.Access{ProjectWritable: cfg.ProjectWritable, ReadOnlyAllow: cfg.ReadOnlyAllow, HookFiles: agent.ExpandPaths(agent.ProjectRoots(cwd), cfg.HookFiles)}
+		runner = &agent.SubagentRunner{ConfigPath: o.configPath, Profile: cfg.Profile, Provider: cfg.Provider, SystemPromptFile: o.systemPromptFile, Cwd: cwd, MCP: cfg.MCP, Access: access}
 		opts.Subagent = runner.Run
 		funcs = append(funcs, tools.Subagent(cfg.SubagentChoices()))
 	}

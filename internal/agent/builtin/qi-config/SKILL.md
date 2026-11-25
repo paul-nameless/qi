@@ -31,7 +31,7 @@ qi is the agent you are running in. Its settings are JSON files.
 
 ## Subagents
 
-`subagent_profiles` lists the profiles the agent may run as subagents, by name; each must exist in `profiles`, and the current profile may be listed. A subagent runs `qi -p <name>`, so it takes that profile's model, provider, effort and limits, but always gets the parent's current mode and MCP servers. Give each listed profile a `use_for` saying when to pick it; the menu shows it with the profile's model and effort. Without `subagent_profiles`, subagents run with the agent's own setup. The old `subagent_models` key is gone: move each entry into a profile and list its name.
+`subagent_profiles` lists the profiles the agent may run as subagents, by name; each must exist in `profiles`, and the current profile may be listed. A subagent runs `qi -p <name>`: from that profile it takes only the model side (model, provider, effort, limits, `system_prompt_file`, `instruction_files`, `skill_dirs`); from the parent, as it is when the subagent starts, it always takes the mode, MCP servers, `project_writable`, `read_only_allow` and `hook_files`, so a listed profile never widens access. Listed profiles are validated at startup like the active one. Give each listed profile a `use_for` saying when to pick it; the menu shows it with the profile's model and effort. Without `subagent_profiles`, subagents run the current profile (`current`). `Agent`/`Task` hooks see `tool_input.profile` instead of the old `model`. The old `subagent_models` key is gone: move each entry into a profile with its model, provider and `use_for`, then list the profile's name in `subagent_profiles`.
 
 ## Check your change
 

@@ -127,7 +127,48 @@ func TestSubagentProfilesMustExist(t *testing.T) {
 	wantErr(t, err, `unknown profile "x" (profiles: none defined)`)
 	path = writeConfig(t, dir, "config.json", `{"subagent_profiles": ["bad"], "profiles": {"bad": {"provider": "nope"}}}`)
 	_, err = Load(path, "")
-	wantErr(t, err, `profile "bad": key "provider": unknown provider "nope"`)
+	wantErr(t, err, path+`: subagent_profiles.0 "bad": key "provider": unknown provider "nope"`)
+	path = writeConfig(t, dir, "config.json", `{"subagent_profiles": ["a", "b", "a"], "profiles": {"a": {}, "b": {}}}`)
+	_, err = Load(path, "")
+	wantErr(t, err, path+`: key "subagent_profiles.2": "a" is listed twice`)
+}
+
+func TestSubagentProfilesAreValidated(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("QI_CONFIG_DIR", dir)
+	path := writeConfig(t, dir, "config.json", `{"default_profile": "main", "profiles": {
+  "main": {"subagent_profiles": ["ok", "fast"]},
+  "ok": {"subagent_profiles": ["typo"]},
+  "fast": {"reasoning_effort": "huge"}
+}}`)
+	_, err := Load(path, "")
+	wantErr(t, err, path+`: profile "main": subagent_profiles.1 "fast": key "reasoning_effort": "huge" is not one of`)
+	writeConfig(t, dir, "config.json", `{"default_profile": "main", "profiles": {
+  "main": {"subagent_profiles": ["ok", "fast"]},
+  "ok": {"subagent_profiles": ["typo"]},
+  "fast": {"system_prompt_file": "missing.md", "mode": "loose"}
+}}`)
+	_, err = Load(path, "")
+	wantErr(t, err, path+`: profile "main": subagent_profiles.1 "fast": key "system_prompt_file": `, "missing.md")
+	prompt := writeConfig(t, dir, "prompt.md", "be brief")
+	_, err = Resolve(Options{Path: path, SystemPromptFile: prompt})
+	wantErr(t, err, `subagent_profiles.1 "fast": key "mode": "loose" is not one of`)
+	writeConfig(t, dir, "config.json", `{"default_profile": "main", "profiles": {
+  "main": {"subagent_profiles": ["ok", "fast"]},
+  "ok": {"subagent_profiles": ["typo"]},
+  "fast": {"system_prompt_file": "missing.md"}
+}}`)
+	if _, err := Resolve(Options{Path: path, SystemPromptFile: prompt}); err != nil {
+		t.Errorf("-system-prompt-file wins over a listed profile's prompt file: %v", err)
+	}
+	writeConfig(t, dir, "config.json", `{"default_profile": "main", "profiles": {"main": {"model": "m", "subagent_profiles": ["typo", "typo"]}}}`)
+	c, err := Resolve(Options{Path: path, Subagent: true})
+	if err != nil {
+		t.Fatalf("a subagent never runs subagents, so it skips subagent_profiles: %v", err)
+	}
+	if got := c.SubagentChoices(); len(got) != 1 || !got[0].Self {
+		t.Errorf("subagent choices %+v", got)
+	}
 }
 
 func TestUseProviderBuiltinsResetConnection(t *testing.T) {

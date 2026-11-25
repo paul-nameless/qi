@@ -94,7 +94,7 @@ Minimal Go coding agent for the terminal. The model's only tool is `run`: JavaSc
 - `hooks.go` Claude Code hooks: files parsed once (missing skipped, malformed stops startup), one event's hooks run in parallel, `async` ones detached; `Hooks.Attach` wires session, mode, spill
 - Hook text the model sees goes through `capText` (cut, rest spilled); `onFailure` and `updatedToolOutput` follow Claude Code (`TestOnFailureBlock`, `TestPostToolUseUpdatedOutput`)
 - `trust.go` project hooks need trust: the trust file pins each dir to a fingerprint of its project hooks (`async` included)
-- `subagent.go` `SubagentRunner` runs `qi -q … -json` (`Args`: `-p <profile>` for a listed profile, else the parent's `-model`/`-provider`/`-p`; always the parent's current mode flag, which wins over the profile's `mode`) with `SubagentEnv`, `ParentSessionEnv` (meta `parent_session`) and `QI_MCP`; the child writes to `subagents/`, answers with its last text
+- `subagent.go` `SubagentRunner` runs `qi -q … -json` (`Args`: `-p <profile>` for a listed profile, else the parent's `-model`/`-provider`/`-p`; always the parent's current mode flag, which wins over the profile's `mode`) with `SubagentEnv`, `ParentSessionEnv` (meta `parent_session`), `QI_MCP` and `QI_ACCESS` (`config.Access`: the parent's current `project_writable`/`read_only_allow` and its startup `hook_files`, expanded; the child replaces its profile's values, so sandbox, allowlist, hooks and trust fingerprint match the parent); the child writes to `subagents/`, answers with its last text
 
 ### internal/tools
 - `tools.go` `Function` (one async JS function: `Name`, `Code`, `Run`, `Label`, `Path`, `HookNames`), `Env` (cwd, mode, scratch, jobs), `Result`, hooks types, `Tool.Execute`, `OneLine`, `DoneLine`
@@ -130,8 +130,8 @@ Minimal Go coding agent for the terminal. The model's only tool is `run`: JavaSc
 - `config.go` `Config`, `Provider`, `MCPServer`; `Load`, `Resolve`, `Check`, profile overlay, `UseProvider`, `applyDefaults`, `toolDefaults`; `Dir`, `DataDir`, `ShortHome`
 - `decode.go` strict, case-sensitive decoding (encoding/json/v2) with file/key errors, embeds `Schema`; `schema.json` the JSON Schema; `validate.go` its enums, minimums, required fields
 - `default.go` `SetValue` edits one key in the file (into the profile when it sets the key); `limits.go` `compact_at`/`compact_idle_at` (tokens or %) against `context_window` or a model table
-- `subagent.go` `SubagentChoices`: the `subagent_profiles` menu, each listed profile resolved over the base config (no CLI overrides), else one `current` choice for the agent's own setup
-- `mcp.go` per-server tool globs, per-profile `mcp` merge by name (null removes), `QI_MCP` for subagents; `mode.go` `Mode`, `Next` cycles yolo → read-only → project (shift+tab)
+- `subagent.go` `SubagentChoices`: the `subagent_profiles` menu, each listed profile resolved over the base config (no CLI overrides) and validated like the active one (its own `subagent_profiles` aside), errors naming `subagent_profiles.N "name"`; `Options.Subagent` (a child) skips them; else one `current` choice for the agent's own setup
+- `mcp.go` per-server tool globs, per-profile `mcp` merge by name (null removes), `QI_MCP` for subagents; `access.go` `QI_ACCESS`; `mode.go` `Mode`, `Next` cycles yolo → read-only → project (shift+tab)
 
 ### internal/session
 - `session.go` append-only JSONL: `Type*` entry constants, `Create`, `Open` (repairs for appending), read-only `Load`/`Entries`, `Replay`, `Repair`, `NewScanner`, `Tee`, `Root`/`Dir`

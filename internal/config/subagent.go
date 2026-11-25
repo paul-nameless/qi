@@ -26,18 +26,33 @@ func (c Config) SubagentChoices() []SubagentChoice {
 	return []SubagentChoice{{Name: SelfChoice, Model: c.Model, Effort: c.ReasoningEffort, UseFor: c.UseFor, Self: true}}
 }
 
-func (c Config) subagentChoices(names []string, self SubagentChoice) ([]SubagentChoice, error) {
+func (c Config) subagentChoices(names []string, self SubagentChoice, dir string, ownPrompt bool) ([]SubagentChoice, error) {
 	if len(names) == 0 {
 		return []SubagentChoice{self}, nil
 	}
 	choices := make([]SubagentChoice, 0, len(names))
-	for _, name := range names {
-		p := c
-		if err := p.useProfile(name); err != nil {
-			return nil, err
+	for i, name := range names {
+		choice, err := c.subagentChoice(name, dir, ownPrompt)
+		if err != nil {
+			return nil, fmt.Errorf("subagent_profiles.%d %q: %w", i, name, err)
 		}
-		p.applyDefaults()
-		choices = append(choices, SubagentChoice{Name: name, Model: p.Model, Effort: p.ReasoningEffort, UseFor: p.UseFor})
+		choices = append(choices, choice)
 	}
 	return choices, nil
+}
+
+func (c Config) subagentChoice(name, dir string, ownPrompt bool) (SubagentChoice, error) {
+	if err := c.enterProfile(name); err != nil {
+		return SubagentChoice{}, err
+	}
+	if ownPrompt {
+		if err := c.loadSystemPrompt(dir); err != nil {
+			return SubagentChoice{}, fmt.Errorf("key \"system_prompt_file\": %w", err)
+		}
+	}
+	c.applyDefaults()
+	if err := c.validate(); err != nil {
+		return SubagentChoice{}, err
+	}
+	return SubagentChoice{Name: name, Model: c.Model, Effort: c.ReasoningEffort, UseFor: c.UseFor}, nil
 }
