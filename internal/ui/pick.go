@@ -23,6 +23,7 @@ type PickOptions struct {
 	SearchDesc bool
 	OnPick     func(i int) *PickList
 	OnBack     func() *PickList
+	OnErase    func()
 }
 
 type match struct {
@@ -82,6 +83,10 @@ func (e *Editor) Pick(list PickList, opts PickOptions) (i int, ok, completed boo
 					e.P.Locked(func() { st.show(next) })
 				}
 				break
+			}
+			if k.Kind == KeyBackspace && len(st.query) == 0 && st.opts.OnErase != nil {
+				st.opts.OnErase()
+				return -1, false, false
 			}
 			fallthrough
 		default:

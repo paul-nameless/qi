@@ -92,6 +92,18 @@ func TestPickMovesAndCancels(t *testing.T) {
 	}
 }
 
+func TestPickBackspaceOnEmptyQueryErases(t *testing.T) {
+	erased := 0
+	e := pickEditor(t, append(typed("c"), Key{Kind: KeyBackspace}, Key{Kind: KeyBackspace}, Key{Kind: KeyEsc})...)
+	if _, ok, _ := e.Pick(PickList{Items: items("a")}, PickOptions{OnErase: func() { erased++ }}); ok || erased != 1 {
+		t.Errorf("backspace deletes the query first, then erases: ok %v, erased %d", ok, erased)
+	}
+	e = pickEditor(t, Key{Kind: KeyBackspace}, Key{Kind: KeyEnter})
+	if i, ok, _ := e.Pick(PickList{Items: items("a")}, PickOptions{}); !ok || i != 0 {
+		t.Errorf("without OnErase backspace keeps the picker open: %d %v", i, ok)
+	}
+}
+
 func TestPickStaysOpenAndNavigates(t *testing.T) {
 	var picked []int
 	e := pickEditor(t, Key{Kind: KeyEnter}, Key{Kind: KeyDown}, Key{Kind: KeyEnter}, Key{Kind: KeyEsc})

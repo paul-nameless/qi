@@ -125,4 +125,18 @@ func TestTabCompletesInsteadOfRunning(t *testing.T) {
 	if text, submit := r.slashPicker(); text != "/copy id" || !submit {
 		t.Errorf("enter in the argument picker: %q %v", text, submit)
 	}
+	keys("c", ui.KeyBackspace)
+	r.editor.T.Keys <- ui.Key{Kind: ui.KeyBackspace}
+	if text, submit := r.slashPicker(); text != "" || submit {
+		t.Errorf("backspace on an empty filter removes the slash: %q %v", text, submit)
+	}
+	keys("copy", ui.KeyEnter)
+	r.editor.T.Keys <- ui.Key{Kind: ui.KeyBackspace}
+	if text, submit := r.slashPicker(); text != "/copy" || submit {
+		t.Errorf("backspace in the argument picker removes the space: %q %v", text, submit)
+	}
+	keys("", ui.KeyEsc)
+	if text, _ := r.slashPicker(); text != "/" {
+		t.Errorf("esc keeps the slash: %q", text)
+	}
 }

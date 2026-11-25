@@ -29,11 +29,11 @@ func uiItems(items []pickItem) []ui.PickItem {
 }
 
 func pick(run runner, ed *ui.Editor, command, picker, prompt string, items []pickItem, searchDesc bool) (string, bool) {
-	name, ok, _ := pickOrComplete(run, ed, command, picker, prompt, items, searchDesc)
+	name, ok, _ := pickOrComplete(run, ed, command, picker, prompt, items, ui.PickOptions{SearchDesc: searchDesc})
 	return name, ok
 }
 
-func pickOrComplete(run runner, ed *ui.Editor, command, picker, prompt string, items []pickItem, searchDesc bool) (string, bool, bool) {
+func pickOrComplete(run runner, ed *ui.Editor, command, picker, prompt string, items []pickItem, opts ui.PickOptions) (string, bool, bool) {
 	if len(items) == 0 {
 		return "", false, false
 	}
@@ -41,7 +41,7 @@ func pickOrComplete(run runner, ed *ui.Editor, command, picker, prompt string, i
 		if ed == nil {
 			return "", false, false
 		}
-		i, ok, completed := ed.Pick(ui.PickList{Prompt: prompt, Items: uiItems(items)}, ui.PickOptions{SearchDesc: searchDesc})
+		i, ok, completed := ed.Pick(ui.PickList{Prompt: prompt, Items: uiItems(items)}, opts)
 		if !ok {
 			return "", false, false
 		}
@@ -130,14 +130,18 @@ func quotePath(p string) string {
 	return "'" + p + "'"
 }
 
-func (r *repl) pickComplete(prompt string, items []pickItem) (string, bool, bool) {
+func (r *repl) pickComplete(prompt string, items []pickItem, erased *bool) (string, bool, bool) {
 	cfg := r.agent.Config()
-	return pickOrComplete(r.runTTY, r.editor, cfg.Picker, cfg.Picker, prompt, items, false)
+	return pickOrComplete(r.runTTY, r.editor, cfg.Picker, cfg.Picker, prompt, items, ui.PickOptions{OnErase: func() { *erased = true }})
 }
 
 func (r *repl) slashPicker() (string, bool) {
-	name, ok, completed := r.pickComplete("/", pickerItems())
-	if !ok {
+	erased := false
+	name, ok, completed := r.pickComplete("/", pickerItems(), &erased)
+	switch {
+	case erased:
+		return "", false
+	case !ok:
 		return "/", false
 	}
 	if completed {
@@ -171,7 +175,12 @@ func (r *repl) pickSkill() (string, bool) {
 }
 
 func (r *repl) pickArg(cmd string, items []pickItem) (string, bool) {
-	if v, ok, completed := r.pickComplete(cmd+" ", items); ok {
+	erased := false
+	v, ok, completed := r.pickComplete(cmd+" ", items, &erased)
+	switch {
+	case erased:
+		return "/" + cmd, false
+	case ok:
 		return "/" + cmd + " " + v, !completed
 	}
 	return "/" + cmd + " ", false
