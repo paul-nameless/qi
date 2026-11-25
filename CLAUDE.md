@@ -18,8 +18,8 @@ Minimal Go coding agent for the terminal.
 
 ## Commands
 - Build: `go build -o qi .`
-- Test: `go test ./...`
-- Format, vet, lint, test: `task ch` (lint runs golangci-lint v2.15.0 via `go run`, same as CI)
+- Test: `go test ./...`; `task test` runs every test uncached and fails when the suite takes 5s or more (a local budget, ~4s now; CI runs `go test -race` without it)
+- Format, vet, lint, test: `task ch` (fmt and lint in parallel, then `task test`; lint runs golangci-lint v2.15.0 via `go run`, same as CI)
 - Headless smoke test: `./qi -q "prompt" </dev/null` (uses `~/.config/qi/config.json`); `./qi -check-config [-config f] [-p name]` validates config without calling the API; to trigger compaction, run with `-config` pointing at a copy of the config with a small `compact_at` (e.g. `20000` or `1.5%`); the system prompt and tools alone are ~5k tokens, so lower values pause auto-compaction
 - UI testing: run in tmux (`tmux new-session -d -s ai -x 120 -y 40 './qi'`, then `send-keys`/`capture-pane`); shift+tab is `$'\e[Z'`, bracketed paste via `tmux paste-buffer -p`
 

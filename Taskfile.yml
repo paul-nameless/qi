@@ -10,7 +10,19 @@ tasks:
     - go build -o qi .
 
   test:
-    - go test ./...
+    desc: Run every test uncached; fails when the suite takes 5s or more on this machine
+    silent: true
+    cmds:
+      - |
+        now() { perl -MTime::HiRes=time -e 'printf "%d", time * 1000'; }
+        start=$(now)
+        go test -count=1 ./... || exit 1
+        ms=$(( $(now) - start ))
+        echo "tests took ${ms}ms (limit 5000ms)"
+        if [ "$ms" -ge 5000 ]; then
+          echo "the test suite is over 5s; find the slow tests with: go test -count=1 -v ./... | grep -E -- '--- (PASS|FAIL).*\([1-9]'"
+          exit 1
+        fi
 
   fmt:
     - go fmt ./...
@@ -20,7 +32,9 @@ tasks:
     - GOTOOLCHAIN=$(go env GOVERSION) go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0 run
 
   ch:
-    deps: [fmt, lint, test]
+    deps: [fmt, lint]
+    cmds:
+      - task: test
 
   release:
     - |
