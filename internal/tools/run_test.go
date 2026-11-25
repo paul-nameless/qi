@@ -475,7 +475,7 @@ func TestCellResultsNotCut(t *testing.T) {
 
 func TestCellInterruptThroughHostCalls(t *testing.T) {
 	t.Parallel()
-	k := newCellKit(t, Subagent("m", nil, nil))
+	k := newCellKit(t, Subagent("m", nil))
 	k.second(300 * time.Millisecond)
 	cases := []string{
 		`while (true) { try { console.log({toJSON() { while (true) {} }}) } catch (e) {} }`,
@@ -557,7 +557,7 @@ func TestRunPanicAndReplaceThroughExecute(t *testing.T) {
 
 func TestRunReplaceAndHint(t *testing.T) {
 	t.Parallel()
-	sub := func(model string) *Function { return Subagent(model, nil, []string{"low"}) }
+	sub := func(model string) *Function { return Subagent(model, nil) }
 	build := func() *Tool {
 		return Run(Read(), Write(), Edit(), Bash(), JobsFunc(), sub("m1"))
 	}
@@ -719,7 +719,7 @@ func mustJSON(t *testing.T, v any) json.RawMessage {
 func TestCellSubagents(t *testing.T) {
 	t.Parallel()
 	menu := []config.SubagentModel{{Name: "fast", Model: "m-fast", Provider: "p1"}, {Name: "deep", Model: "m-deep"}}
-	k := newCellKit(t, Subagent("main", menu, []string{"low", "high"}))
+	k := newCellKit(t, Subagent("main", menu))
 	k.second(300 * time.Millisecond)
 	var mu sync.Mutex
 	var tasks []SubagentTask
@@ -756,7 +756,7 @@ func TestCellSubagents(t *testing.T) {
 func TestSubagentLabelDefaults(t *testing.T) {
 	t.Parallel()
 	menu := []config.SubagentModel{{Name: "fast", Model: "m-fast"}}
-	sub := Subagent("main", menu, []string{"low"})
+	sub := Subagent("main", menu)
 	for in, want := range map[string]string{`{"prompt":"x"}`: "subagent fast/default x", `{"prompt":"x","model":"m","effort":"low"}`: "subagent m/low x"} {
 		if got := sub.label(&Env{}, llm.Block{Name: "subagent", Input: json.RawMessage(in)}); got != want {
 			t.Errorf("%s: %q, want %q", in, got, want)

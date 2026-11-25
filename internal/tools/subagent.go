@@ -22,7 +22,7 @@ const SubagentTimeout = 30 * time.Minute
 
 const subagentIntro = "run a task in a separate agent with a fresh context and get back only its final answer. Use it for self-contained side work (searching a codebase, reviewing, summarizing logs) to keep this conversation small, and run several at once for independent tasks. The subagent sees none of this conversation, so put every detail it needs in the prompt."
 
-func subagentMenu(mainModel string, menu []config.SubagentModel, efforts []string, indent string) (string, []string) {
+func subagentMenu(mainModel string, menu []config.SubagentModel, indent string) (string, []string) {
 	var b strings.Builder
 	names := []string{}
 	if len(menu) == 0 {
@@ -36,17 +36,17 @@ func subagentMenu(mainModel string, menu []config.SubagentModel, efforts []strin
 	if indent == "" {
 		b.WriteString("\n")
 	}
-	fmt.Fprintf(&b, "%sEfforts: %s. Higher effort thinks longer and costs more.", indent, strings.Join(efforts, ", "))
+	fmt.Fprintf(&b, "%sEfforts: %s. Higher effort thinks longer and costs more.", indent, strings.Join(config.Efforts, ", "))
 	return b.String(), names
 }
 
-func subagentDoc(mainModel string, menu []config.SubagentModel, efforts []string) string {
-	list, _ := subagentMenu(mainModel, menu, efforts, "  ")
+func subagentDoc(mainModel string, menu []config.SubagentModel) string {
+	list, _ := subagentMenu(mainModel, menu, "  ")
 	return "subagent(prompt, {model, effort}) → string — " + subagentIntro + " It has the same functions and the current mode. At most " + strconv.Itoa(maxCellSubagents) + " per run call; the run timeout pauses while a subagent runs (each has its own " + strconv.Itoa(int(SubagentTimeout.Minutes())) + " minute limit). model defaults to the first one below.\n  Models:\n" + list
 }
 
-func Subagent(mainModel string, menu []config.SubagentModel, efforts []string) *Function {
-	_, names := subagentMenu(mainModel, menu, efforts, "")
+func Subagent(mainModel string, menu []config.SubagentModel) *Function {
+	_, names := subagentMenu(mainModel, menu, "")
 	return &Function{
 		Name:      "subagent",
 		HookNames: []string{"Agent", "Task"},
@@ -55,7 +55,7 @@ func Subagent(mainModel string, menu []config.SubagentModel, efforts []string) *
 			Params:   []string{"prompt"},
 			Required: 1,
 			Options:  []string{"model", "effort"},
-			Doc:      subagentDoc(mainModel, menu, efforts),
+			Doc:      subagentDoc(mainModel, menu),
 		},
 		Label: func(env *Env, in json.RawMessage) string {
 			a, _ := decode[subagentArgs](in)

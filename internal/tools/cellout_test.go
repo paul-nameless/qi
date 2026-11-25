@@ -48,7 +48,7 @@ func TestCellOutputCap(t *testing.T) {
 
 func TestCellFailureSavesSubagentAnswers(t *testing.T) {
 	t.Parallel()
-	k := newCellKit(t, Subagent("m", nil, nil))
+	k := newCellKit(t, Subagent("m", nil))
 	k.second(300 * time.Millisecond)
 	failed := make(chan struct{})
 	var failOnce sync.Once

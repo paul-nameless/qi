@@ -115,14 +115,6 @@
       "type": "array",
       "items": { "$ref": "#/$defs/subagent_model" }
     },
-    "subagent_efforts": {
-      "description": "Reasoning efforts the agent can pick for a subagent. Default: [\"low\", \"medium\", \"high\"].",
-      "type": "array",
-      "items": {
-        "type": "string",
-        "enum": ["none", "minimal", "low", "medium", "high", "xhigh", "max"]
-      }
-    },
     "instruction_files": {
       "description": "Instruction files added to the system prompt. Relative paths are looked up in the git root and the working directory; ~ is expanded. Default: [\"~/.claude/CLAUDE.md\", \"CLAUDE.md\", \"AGENTS.md\", \"CLAUDE.local.md\"].",
       "type": "array",

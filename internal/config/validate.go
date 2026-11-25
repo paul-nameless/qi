@@ -27,9 +27,6 @@ func (c Config) validate() error {
 			checks = append(checks, fmt.Errorf("key \"project_writable.%d\": %q must be an absolute path or start with ~/", i, p))
 		}
 	}
-	for i, e := range c.SubagentEfforts {
-		checks = append(checks, oneOf(fmt.Sprintf("subagent_efforts.%d", i), e, Efforts))
-	}
 	for i, m := range c.SubagentModels {
 		checks = append(checks, c.checkSubagentModel(fmt.Sprintf("subagent_models.%d", i), m))
 	}

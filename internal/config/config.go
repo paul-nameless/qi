@@ -69,7 +69,6 @@ type Config struct {
 	SystemPrompt     string    `json:"-"`
 	systemPromptPath string
 	SubagentModels   []SubagentModel           `json:"subagent_models"`
-	SubagentEfforts  []string                  `json:"subagent_efforts"`
 	InstructionFile  []string                  `json:"instruction_files"`
 	SkillDirs        []string                  `json:"skill_dirs"`
 	HookFiles        []string                  `json:"hook_files"`
@@ -369,9 +368,6 @@ func (c *Config) applyDefaults() {
 	c.toolDefaults()
 	if c.BashTimeout == 0 {
 		c.BashTimeout = 120
-	}
-	if len(c.SubagentEfforts) == 0 {
-		c.SubagentEfforts = []string{"low", "medium", "high"}
 	}
 	if len(c.InstructionFile) == 0 {
 		c.InstructionFile = []string{"~/.claude/CLAUDE.md", "CLAUDE.md", "AGENTS.md", "CLAUDE.local.md"}

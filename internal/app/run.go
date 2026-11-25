@@ -267,7 +267,7 @@ func buildAgent(cfg config.Config, o options, cwd string, p llm.Provider, displa
 	if !isSub {
 		runner = &agent.SubagentRunner{ConfigPath: o.configPath, Profile: cfg.Profile, Provider: cfg.Provider, SystemPromptFile: o.systemPromptFile, Cwd: cwd, MCP: cfg.MCP}
 		opts.Subagent = runner.Run
-		funcs = append(funcs, tools.Subagent(cfg.Model, cfg.SubagentModels, cfg.SubagentEfforts))
+		funcs = append(funcs, tools.Subagent(cfg.Model, cfg.SubagentModels))
 	}
 	funcs = append(funcs, extra...)
 	opts.Tool = tools.Run(funcs...)

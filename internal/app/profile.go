@@ -85,7 +85,7 @@ func (r *repl) apply(cfg config.Config, baseProvider string) error {
 	r.agent.Reconfigure(cfg, newProvider(cfg, key))
 	if r.runner != nil {
 		r.runner.Profile, r.runner.Provider = cfg.Profile, baseProvider
-		r.agent.ReplaceFunction(tools.Subagent(cfg.Model, withProvider(cfg.SubagentModels, baseProvider), cfg.SubagentEfforts))
+		r.agent.ReplaceFunction(tools.Subagent(cfg.Model, withProvider(cfg.SubagentModels, baseProvider)))
 	}
 	return nil
 }

@@ -141,7 +141,6 @@ func TestValidateMirrorsSchema(t *testing.T) {
 		`{"bash_timeout": -1}`:                  {`key "bash_timeout"`},
 		`{"max_rounds": -1}`:                    {`key "max_rounds"`},
 		`{"reasoning_effort": "huge"}`:          {`key "reasoning_effort"`},
-		`{"subagent_efforts": ["low", "lots"]}`: {`key "subagent_efforts.1"`},
 		`{"subagent_models": [{"model": "m"}]}`: {`key "subagent_models.0"`, "name is required"},
 		`{"subagent_models": [{"name": "n"}]}`:  {"model is required"},
 		`{"subagent_models": [{"name": "n", "model": "m", "provider": "x"}]}`: {`key "subagent_models.0.provider"`, `unknown provider "x"`},
@@ -350,7 +349,6 @@ func TestSchemaMatchesConfig(t *testing.T) {
 		"provider.api":     {nodes["provider"].Properties["api"].Enum, apis},
 		"cache_ttl":        {root.Properties["cache_ttl"].Enum, cacheTTLs},
 		"reasoning_effort": {root.Properties["reasoning_effort"].Enum, Efforts},
-		"subagent_efforts": {root.Properties["subagent_efforts"].Items.Enum, Efforts},
 		"mode":             {root.Properties["mode"].Enum, modeNames},
 	}
 	for key, e := range enums {
