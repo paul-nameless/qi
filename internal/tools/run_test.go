@@ -356,6 +356,7 @@ func TestCellTimeoutSparesFormatting(t *testing.T) {
 		if res.IsError || res.Text != `"slow"` {
 			t.Errorf("a value finished in time was cut by the cell timeout: %+v", res)
 		}
+		k.want("1 + 1", "2")
 	})
 	t.Run("endless", func(t *testing.T) {
 		t.Parallel()
@@ -365,9 +366,9 @@ func TestCellTimeoutSparesFormatting(t *testing.T) {
 
 func testEndlessFormatStopped(t *testing.T) {
 	k := newCellKit(t)
-	k.second(300 * time.Millisecond)
+	k.second(100 * time.Millisecond)
 	done := make(chan Result, 1)
-	go func() { done <- k.cellCtx(context.Background(), `return {toJSON() { while (true) {} }}`, 1) }()
+	go func() { done <- k.cellCtx(context.Background(), `return {toJSON() { while (true) {} }}`, 0) }()
 	select {
 	case res := <-done:
 		if !strings.Contains(res.Text, "the value could not be shown") {
@@ -971,7 +972,7 @@ func TestCellFormatJobsDoNotLeak(t *testing.T) {
 
 func testEndlessFormatJobs(t *testing.T) {
 	k := newCellKit(t)
-	k.second(300 * time.Millisecond)
+	k.second(100 * time.Millisecond)
 	start := time.Now()
 	k.want(`return {toJSON() { const spin = () => Promise.resolve().then(spin); spin(); return 3 }}`, "3")
 	if d := time.Since(start); d > formatSeconds*k.run.r.unit()+5*time.Second {
