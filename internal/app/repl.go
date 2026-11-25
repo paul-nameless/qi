@@ -196,7 +196,6 @@ func (r *repl) jobTurn() string {
 
 func (r *repl) runQueued(draft string) string {
 	for q := r.agent.DrainQueue(); len(q) > 0 && !r.lastCancelled; q = r.agent.DrainQueue() {
-		r.autoTurns = 0
 		draft = r.turn(func(context.Context) ([]llm.Block, error) { return q, nil }, draft)
 	}
 	if q := r.agent.DrainQueue(); len(q) > 0 {
@@ -457,6 +456,7 @@ func (r *repl) turn(prepare func(context.Context) ([]llm.Block, error), draft st
 	r.lastCancelled = errors.Is(err, context.Canceled)
 	if r.lastCancelled {
 		r.agent.HoldJobNotices()
+		r.autoTurns = maxAutoTurns + 1
 	}
 	if !r.lastCancelled {
 		r.notifyTurn(final, err, time.Since(start))
@@ -506,6 +506,7 @@ func (r *repl) queueMessage(ctx context.Context, s string) {
 		r.display.Error(err.Error())
 		return
 	}
+	r.autoTurns = 0
 	r.agent.Queue(blocks)
 	r.display.Info("queued: " + tools.OneLine(s, 80))
 }

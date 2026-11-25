@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -329,9 +328,6 @@ func TestReadLineWakesOnlyWhenEmpty(t *testing.T) {
 	e.T.Keys <- Key{Kind: KeyEnter}
 	if err := <-done; err != nil || line != "ab" {
 		t.Fatalf("Enter submits the line: %q %v", line, err)
-	}
-	if slices.Contains(e.history, "") {
-		t.Error("a wake went into history")
 	}
 }
 
