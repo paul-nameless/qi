@@ -331,7 +331,7 @@ func TestSubagentTakesParentAccess(t *testing.T) {
   "project_writable": ["/parent"], "read_only_allow": ["make"], "hook_files": ["~/parent.json", ".qi/hooks.json"],
   "subagent_profiles": ["wide"],
   "profiles": {
-    "wide": {"model": "w", "project_writable": ["/", "~/"], "read_only_allow": ["rm", "curl"], "hook_files": ["/other.json"]},
+    "wide": {"model": "w", "project_writable": ["/", "~/"], "read_only_allow": ["rm", "curl"], "hook_files": ["/other.json"], "subagent_profiles": ["missing"]},
     "next": {"project_writable": ["/next"], "read_only_allow": null, "hook_files": ["/next.json"], "subagent_profiles": ["wide"]}
   }}`), 0o600)
 	o := options{configPath: path}
@@ -378,11 +378,16 @@ func TestSubagentTakesParentAccess(t *testing.T) {
 	}
 	childEnv(t, runner)
 	t.Setenv(agent.SubagentEnv, "")
-	top, err := resolveConfig(options{configPath: path, profile: "wide"})
+	if _, err := resolveConfig(options{configPath: path, profile: "wide"}); err == nil || !strings.Contains(err.Error(), `unknown profile "missing"`) {
+		t.Errorf("a top-level agent checks its subagent_profiles: %v", err)
+	}
+	childEnv(t, runner)
+	t.Setenv(agent.SubagentEnv, "")
+	top, err := resolveConfig(options{configPath: path, profile: "next"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(top.ProjectWritable, []string{"/", "~/"}) {
+	if !reflect.DeepEqual(top.ProjectWritable, []string{"/next"}) {
 		t.Errorf("top-level agent took %s: %v", config.AccessEnv, top.ProjectWritable)
 	}
 	t.Setenv(agent.SubagentEnv, "1")
