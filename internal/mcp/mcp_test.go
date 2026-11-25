@@ -272,7 +272,7 @@ func TestWriteToExitedServerReportsExit(t *testing.T) {
 	stderr := &tailWriter{}
 	stderr.Write([]byte("missing API token\n"))
 	c := &client{name: "bad", stdin: w, stderr: stderr, pending: map[int64]chan rpcMsg{}, done: make(chan struct{})}
-	close(c.done)
+	go close(c.done)
 	_, err = c.request(context.Background(), "initialize", nil)
 	if err = c.withStderr(err); err == nil || err.Error() != "mcp server bad exited; stderr: missing API token" {
 		t.Errorf("got %v", err)

@@ -134,6 +134,17 @@ func (c *client) send(m rpcMsg) error {
 	return err
 }
 
+func (c *client) post(ctx context.Context, m rpcMsg) error {
+	err := c.send(m)
+	switch {
+	case err == nil:
+		return nil
+	case c.gone(ctx):
+		return fmt.Errorf("mcp server %s exited", c.name)
+	}
+	return fmt.Errorf("mcp %s: %w", c.name, err)
+}
+
 func (c *client) request(ctx context.Context, method string, params any) (json.RawMessage, error) {
 	c.mu.Lock()
 	c.nextID++
@@ -146,11 +157,8 @@ func (c *client) request(ctx context.Context, method string, params any) (json.R
 		delete(c.pending, id)
 		c.mu.Unlock()
 	}()
-	if err := c.send(rpcMsg{JSONRPC: "2.0", ID: &id, Method: method, Params: params}); err != nil {
-		if c.gone(ctx) {
-			return nil, fmt.Errorf("mcp server %s exited", c.name)
-		}
-		return nil, fmt.Errorf("mcp %s: %w", c.name, err)
+	if err := c.post(ctx, rpcMsg{JSONRPC: "2.0", ID: &id, Method: method, Params: params}); err != nil {
+		return nil, err
 	}
 	select {
 	case m := <-ch:
@@ -174,7 +182,7 @@ func (c *client) initialize(ctx context.Context) error {
 	if _, err := c.request(ctx, "initialize", params); err != nil {
 		return err
 	}
-	if err := c.send(rpcMsg{JSONRPC: "2.0", Method: "notifications/initialized"}); err != nil {
+	if err := c.post(ctx, rpcMsg{JSONRPC: "2.0", Method: "notifications/initialized"}); err != nil {
 		return err
 	}
 	cursor := ""
