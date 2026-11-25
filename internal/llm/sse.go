@@ -19,9 +19,10 @@ import (
 var httpClient = &http.Client{Transport: &http.Transport{
 	Proxy:                 http.ProxyFromEnvironment,
 	ResponseHeaderTimeout: 3 * time.Minute,
-	IdleConnTimeout:       90 * time.Second,
+	IdleConnTimeout:       10 * time.Minute,
 	TLSHandshakeTimeout:   15 * time.Second,
 	ForceAttemptHTTP2:     true,
+	HTTP2:                 &http.HTTP2Config{SendPingTimeout: 30 * time.Second, PingTimeout: 15 * time.Second},
 }}
 
 const streamIdleTimeout = 5 * time.Minute
