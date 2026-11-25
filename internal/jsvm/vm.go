@@ -224,6 +224,12 @@ func (b *sbuf) add(s string) {
 	b.WriteString(s)
 }
 
+func (b *sbuf) presize(n int) {
+	n = min(n, maxStringLen)
+	b.vm.reserve(n)
+	b.Grow(n)
+}
+
 func (b *sbuf) value() Value {
 	b.vm.track(b.Len())
 	return strV(b.String())

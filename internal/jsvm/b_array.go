@@ -564,6 +564,22 @@ func (vm *VM) splice(src []Value, args []Value, dst *[]Value) []Value {
 	return removed
 }
 
+func joinSize(arr []Value, sep string) int {
+	if len(arr) == 0 {
+		return 0
+	}
+	n := len(sep) * (len(arr) - 1)
+	for _, v := range arr {
+		switch r := v.r.(type) {
+		case *jstr:
+			n += r.size()
+		case nil:
+			n += 8
+		}
+	}
+	return n
+}
+
 func (vm *VM) join(a *object, sep string) string {
 	if vm.joining == nil {
 		vm.joining = map[*object]bool{}
@@ -575,6 +591,7 @@ func (vm *VM) join(a *object, sep string) string {
 	vm.joining[a] = true
 	defer vm.leaveJoin(a)
 	b := sbuf{vm: vm}
+	b.presize(joinSize(a.arr, sep))
 	var num []byte
 	for i, v := range a.arr {
 		if i > 0 {
