@@ -290,7 +290,11 @@ func (r *repl) usage(string) {
 		text, err = usageReport(ctx, usageOptions{root: session.Root(), session: r.agent.Session(), subagent: session.Dir(r.agent.Cwd()), now: time.Now(), book: book})
 		return err
 	})
-	if err != nil {
+	switch {
+	case errors.Is(err, context.Canceled):
+		r.display.Info("usage cancelled")
+		return
+	case err != nil:
 		r.report(err)
 		return
 	}

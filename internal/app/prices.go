@@ -72,10 +72,12 @@ func (b *priceBook) lookup(model string) (price, bool) {
 
 func (p price) estimate(u llm.Usage, longCache bool) float64 {
 	in, out, read, write := p.Input, p.Output, p.CacheRead, p.CacheWrite
+	size := -1
 	for _, t := range p.Tiers {
-		if t.Tier.Type == "context" && u.Input > t.Tier.Size {
+		if t.Tier.Type == "context" && u.Input > t.Tier.Size && t.Tier.Size > size {
+			size = t.Tier.Size
 			in, out = t.Input, t.Output
-			read, write = cmpPrice(t.CacheRead, read), cmpPrice(t.CacheWrite, write)
+			read, write = cmpPrice(t.CacheRead, p.CacheRead), cmpPrice(t.CacheWrite, p.CacheWrite)
 		}
 	}
 	writePrice := orPrice(write, in)
@@ -204,22 +206,24 @@ func (s *priceSource) fetch(ctx context.Context) (*priceBook, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
-	var all map[string]struct {
-		Models map[string]struct {
-			Cost json.RawMessage `json:"cost"`
-		} `json:"models"`
-	}
+	var all map[string]json.RawMessage
 	if err := json.NewDecoder(io.LimitReader(resp.Body, pricesMaxBody)).Decode(&all); err != nil {
 		return nil, fmt.Errorf("decode: %w", err)
 	}
 	b := &priceBook{Fetched: s.now(), Providers: map[string]map[string]modelCost{}}
 	n := 0
 	for _, p := range priceProviders {
+		var provider struct {
+			Models map[string]json.RawMessage `json:"models"`
+		}
+		_ = json.Unmarshal(all[p], &provider)
 		models := map[string]modelCost{}
-		for id, m := range all[p].Models {
-			var c modelCost
-			if len(m.Cost) > 0 && json.Unmarshal(m.Cost, &c) == nil && string(m.Cost) != "null" {
-				models[id] = c
+		for id, raw := range provider.Models {
+			var m struct {
+				Cost *modelCost `json:"cost"`
+			}
+			if json.Unmarshal(raw, &m) == nil && m.Cost != nil {
+				models[id] = *m.Cost
 			}
 		}
 		b.Providers[p] = models

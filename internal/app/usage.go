@@ -17,6 +17,7 @@ import (
 	"github.com/paul-nameless/qi/internal/config"
 	"github.com/paul-nameless/qi/internal/llm"
 	"github.com/paul-nameless/qi/internal/session"
+	"github.com/paul-nameless/qi/internal/ui"
 )
 
 const (
@@ -328,11 +329,21 @@ func breakdown(b *strings.Builder, title string, m map[string]*spend, limit int,
 	fmt.Fprintf(b, "\n| %s, last %d days | spend | requests | cached |\n|:--|--:|--:|--:|\n", title, usageDays)
 	for _, k := range keys {
 		s := m[k]
-		fmt.Fprintf(b, "| `%s` | %s | %s | %s |\n", name(k), s.amount(), s.count(), s.cached())
+		fmt.Fprintf(b, "| `%s` | %s | %s | %s |\n", cellName(name(k)), s.amount(), s.count(), s.cached())
 	}
 	if more > 0 {
 		fmt.Fprintf(b, "| … %d more | | | |\n", more)
 	}
+}
+
+const usageNameMax = 40
+
+func cellName(s string) string {
+	s = strings.NewReplacer("|", "/", "`", "'").Replace(ui.Sanitize(s))
+	if r := []rune(s); len(r) > usageNameMax {
+		s = "…" + string(r[len(r)-usageNameMax+1:])
+	}
+	return s
 }
 
 func shortHome(path string) string {

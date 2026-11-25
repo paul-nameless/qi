@@ -22,11 +22,12 @@ const testModelsDev = `{
   "amazon-bedrock": {"models": {"openai.gpt-x": {"cost": {"input": 2, "output": 10, "cache_read": 0.1}}}},
   "anthropic": {"models": {
     "claude-x": {"cost": {"input": 4, "output": 20, "cache_read": 0.2, "cache_write": 5}},
-    "claude-tiered": {"cost": {"input": 1, "output": 5, "cache_read": 0.1, "tiers": [{"input": 2, "output": 10, "tier": {"type": "context", "size": 1000}}]}},
+    "claude-tiered": {"cost": {"input": 1, "output": 5, "cache_read": 0.1, "tiers": [{"input": 3, "output": 10, "tier": {"type": "context", "size": 5000}}, {"input": 2, "output": 10, "tier": {"type": "context", "size": 1000}}]}},
     "claude-broken": {"cost": {"input": "cheap"}},
     "claude-free": {}
   }},
-  "reseller": {"models": {"qwen-x": {"cost": {"input": 1, "output": 1}}}}
+  "reseller": {"models": {"qwen-x": {"cost": {"input": 1, "output": 1}}}},
+  "weird": {"models": "not an object"}
 }`
 
 func testBook(t *testing.T) *priceBook {
@@ -65,6 +66,7 @@ func TestEstimate(t *testing.T) {
 		{"openai.gpt-x", llm.Usage{Input: 1_000_000, CacheRead: 500_000, CacheWrite: 100_000}, true, 0.8 + 0.05 + 0.2},
 		{"claude-tiered", llm.Usage{Input: 1000, Output: 1000}, false, (1000*1 + 1000*5) / 1e6},
 		{"claude-tiered", llm.Usage{Input: 2000, CacheRead: 1000, Output: 1000}, false, (1000*2 + 1000*0.1 + 1000*10) / 1e6},
+		{"claude-tiered", llm.Usage{Input: 6000, Output: 0}, false, 6000 * 3 / 1e6},
 	}
 	for _, c := range cases {
 		p, _ := b.lookup(c.model)
@@ -214,6 +216,19 @@ of which subagents (1) · **~$4.00** · 1 request · input 1M (0% cached) · out
 	cancel()
 	if _, err := usageReport(ctx, usageOptions{root: root, now: now, book: b}); err == nil {
 		t.Error("a cancelled report should stop")
+	}
+}
+
+func TestCellName(t *testing.T) {
+	t.Parallel()
+	for in, want := range map[string]string{
+		"a|b`c":                         "a/b'c",
+		"x\x1b[31my":                   "xy",
+		strings.Repeat("d/", 30) + "end": "…" + (strings.Repeat("d/", 30) + "end")[63-usageNameMax+1:],
+	} {
+		if got := cellName(in); got != want {
+			t.Errorf("cellName(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
 
