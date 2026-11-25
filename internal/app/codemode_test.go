@@ -11,22 +11,17 @@ import (
 	"github.com/paul-nameless/qi/internal/agent"
 	"github.com/paul-nameless/qi/internal/config"
 	"github.com/paul-nameless/qi/internal/llm"
+	"github.com/paul-nameless/qi/internal/llm/llmtest"
 	"github.com/paul-nameless/qi/internal/session"
 	"github.com/paul-nameless/qi/internal/ui"
 )
 
 func runCall(id, code string) llm.Message {
-	in, _ := json.Marshal(map[string]string{"code": code})
-	return llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockToolUse, ID: id, Name: "run", Input: in}}}
+	return llmtest.Call(id, "run", map[string]string{"code": code})
 }
 
-func scripted(replies ...llm.Message) *scriptProvider {
-	return &scriptProvider{reply: func(_ context.Context, n int, _ llm.Request) (llm.Message, error) {
-		if n < len(replies) {
-			return replies[n], nil
-		}
-		return textReply("done"), nil
-	}}
+func scripted(replies ...llm.Message) *llmtest.Provider {
+	return script(llmtest.Script(replies...))
 }
 
 func toolNames(req llm.Request) []string {
@@ -60,13 +55,13 @@ func TestCodeModeRunReadsAndEdits(t *testing.T) {
 		t.Fatal(err)
 	}
 	goTurn(r)
-	if got := toolNames(p.request(0)); strings.Join(got, ",") != "run" {
+	if got := toolNames(p.Request(0)); strings.Join(got, ",") != "run" {
 		t.Errorf("tools %v, want [run]", got)
 	}
 	if data, _ := os.ReadFile(path); string(data) != "new text\n" {
 		t.Errorf("file %q", data)
 	}
-	res := lastResult(t, p.request(1))
+	res := lastResult(t, p.Request(1))
 	if res.IsError || res.Text != "old text" || len(res.Calls) != 2 || res.Calls[1].Tool != "edit" {
 		t.Errorf("result %+v", res)
 	}
@@ -101,36 +96,36 @@ func TestCodeModeRunReadsAndEdits(t *testing.T) {
 
 func TestCodeModeVMNoteAfterLoadNotClear(t *testing.T) {
 	cell := `typeof kept`
-	p := scripted(runCall("c1", cell), textReply("ok"), runCall("c2", cell), textReply("ok"), runCall("c3", cell))
+	p := scripted(runCall("c1", cell), llmtest.Text("ok"), runCall("c2", cell), llmtest.Text("ok"), runCall("c3", cell))
 	r, _ := testRepl(t, config.Config{Model: "m"}, p)
-	setMessages(r.agent, []llm.Message{llm.UserText("x"), runCall("old", "globalThis.kept = 1"), {Role: llm.RoleUser, Blocks: []llm.Block{{Type: llm.BlockToolResult, ToolUseID: "old", Text: "(no output)"}}}, textReply("ok")})
+	setMessages(r.agent, []llm.Message{llm.UserText("x"), runCall("old", "globalThis.kept = 1"), {Role: llm.RoleUser, Blocks: []llm.Block{{Type: llm.BlockToolResult, ToolUseID: "old", Text: "(no output)"}}}, llmtest.Text("ok")})
 	goTurn(r)
-	if res := lastResult(t, p.request(1)); res.Text != "Note: this is a new VM; variables and functions from earlier run calls are gone.\nundefined" {
+	if res := lastResult(t, p.Request(1)); res.Text != "Note: this is a new VM; variables and functions from earlier run calls are gone.\nundefined" {
 		t.Errorf("after load: %q", res.Text)
 	}
 	if err := r.newSession(); err != nil {
 		t.Fatal(err)
 	}
 	goTurn(r)
-	if res := lastResult(t, p.request(3)); res.Text != "undefined" {
+	if res := lastResult(t, p.Request(3)); res.Text != "undefined" {
 		t.Errorf("after clear: %q", res.Text)
 	}
-	setMessages(r.agent, []llm.Message{llm.UserText("x"), bashCall("b", "ls"), {Role: llm.RoleUser, Blocks: []llm.Block{{Type: llm.BlockToolResult, ToolUseID: "b", Text: "a"}}}, textReply("ok")})
+	setMessages(r.agent, []llm.Message{llm.UserText("x"), bashCall("b", "ls"), {Role: llm.RoleUser, Blocks: []llm.Block{{Type: llm.BlockToolResult, ToolUseID: "b", Text: "a"}}}, llmtest.Text("ok")})
 	goTurn(r)
-	if res := lastResult(t, p.request(5)); res.Text != "undefined" {
+	if res := lastResult(t, p.Request(5)); res.Text != "undefined" {
 		t.Errorf("after loading a history without run: %q", res.Text)
 	}
 }
 
 func TestCodeModeCompactionKeepsVM(t *testing.T) {
-	p := scripted(runCall("c1", "globalThis.kept = 7"), textReply("ok"), textReply("summary"), runCall("c2", "kept"))
+	p := scripted(runCall("c1", "globalThis.kept = 7"), llmtest.Text("ok"), llmtest.Text("summary"), runCall("c2", "kept"))
 	r, _ := testRepl(t, config.Config{Model: "m"}, p)
 	goTurn(r)
 	if err := r.agent.Compact(context.Background(), ""); err != nil {
 		t.Fatal(err)
 	}
 	goTurn(r)
-	if res := lastResult(t, p.request(4)); res.Text != "7" {
+	if res := lastResult(t, p.Request(4)); res.Text != "7" {
 		t.Errorf("after compaction: %q", res.Text)
 	}
 }
@@ -141,7 +136,7 @@ func TestCodeModeSubagentRunHasNoSubagent(t *testing.T) {
 	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "hi"}}); err != nil {
 		t.Fatal(err)
 	}
-	req := p.request(0)
+	req := p.Request(0)
 	if names := toolNames(req); len(names) != 1 || names[0] != "run" || strings.Contains(req.Tools[0].Description, "subagent(") {
 		t.Errorf("subagent tools %v:\n%s", names, req.Tools[0].Description)
 	}
@@ -177,7 +172,7 @@ func TestCodeModeProfileSwitch(t *testing.T) {
 	}
 	r.agent.Reconfigure(r.agent.Config(), p)
 	goTurn(r)
-	req := p.request(0)
+	req := p.Request(0)
 	if names := toolNames(req); len(names) != 1 || names[0] != "run" {
 		t.Fatalf("tools %v", names)
 	}
@@ -203,7 +198,7 @@ func TestRenderRunCell(t *testing.T) {
 }
 
 func TestConfigTogglesRunCode(t *testing.T) {
-	p := scripted(runCall("c1", "await read(\"a.txt\")\nreturn 1"), textReply("one"), runCall("c2", "await read(\"a.txt\")\nreturn 2"))
+	p := scripted(runCall("c1", "await read(\"a.txt\")\nreturn 1"), llmtest.Text("one"), runCall("c2", "await read(\"a.txt\")\nreturn 2"))
 	r, out := testRepl(t, config.Config{Model: "m", Picker: "grep '^run_code'"}, p)
 	if err := os.WriteFile(filepath.Join(r.agent.Cwd(), "a.txt"), []byte("x\n"), 0o600); err != nil {
 		t.Fatal(err)

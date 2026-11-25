@@ -6,39 +6,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/paul-nameless/qi/internal/config"
 	"github.com/paul-nameless/qi/internal/llm"
+	"github.com/paul-nameless/qi/internal/llm/llmtest"
 	"github.com/paul-nameless/qi/internal/tools"
 )
-
-type fakeProvider struct {
-	mu       sync.Mutex
-	replies  []llm.Message
-	usage    llm.Usage
-	requests [][]llm.Message
-	onCall   func(n int)
-}
-
-func (f *fakeProvider) Stream(ctx context.Context, req llm.Request, onDelta func(llm.Delta)) (llm.Message, llm.Usage, error) {
-	f.mu.Lock()
-	n := len(f.requests)
-	f.requests = append(f.requests, append([]llm.Message{}, req.Messages...))
-	f.mu.Unlock()
-	if f.onCall != nil {
-		f.onCall(n)
-	}
-	if err := ctx.Err(); err != nil {
-		return llm.Message{}, llm.Usage{}, err
-	}
-	if n >= len(f.replies) {
-		return llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: "done"}}}, f.usage, nil
-	}
-	return f.replies[n], f.usage, nil
-}
 
 type nopDisplay struct{}
 
@@ -76,8 +51,7 @@ func appears(path string) bool {
 }
 
 func runCall(id, code string) llm.Message {
-	in, _ := json.Marshal(map[string]string{"code": code})
-	return llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockToolUse, ID: id, Name: "run", Input: in}}}
+	return llmtest.Call(id, "run", map[string]string{"code": code})
 }
 
 func toolCall(id, cmd string) llm.Message {
@@ -85,21 +59,21 @@ func toolCall(id, cmd string) llm.Message {
 	return runCall(id, "return await bash("+string(q)+")")
 }
 
-func newAgent(t *testing.T, p *fakeProvider) *Agent {
+func newAgent(t *testing.T, p *llmtest.Provider) *Agent {
 	return newAgentUI(t, p, nopDisplay{})
 }
 
-func newAgentUI(t *testing.T, p *fakeProvider, ui Display) *Agent {
+func newAgentUI(t *testing.T, p *llmtest.Provider, ui Display) *Agent {
 	return New(agentOptions(t, p, ui))
 }
 
-func newHeadlessAgent(t *testing.T, p *fakeProvider, ui Display) *Agent {
+func newHeadlessAgent(t *testing.T, p *llmtest.Provider, ui Display) *Agent {
 	o := agentOptions(t, p, ui)
 	o.Headless = true
 	return New(o)
 }
 
-func agentOptions(t *testing.T, p *fakeProvider, ui Display) Options {
+func agentOptions(t *testing.T, p *llmtest.Provider, ui Display) Options {
 	return Options{
 		Config:   config.Config{CompactAt: config.Threshold{Tokens: 1 << 30}, Model: "m"},
 		Cwd:      t.TempDir(),
@@ -108,6 +82,10 @@ func agentOptions(t *testing.T, p *fakeProvider, ui Display) Options {
 		Tool:     tools.Run(tools.Bash(), tools.JobsFunc()),
 		SpillDir: t.TempDir(),
 	}
+}
+
+func lastOf(req llm.Request) llm.Message {
+	return req.Messages[len(req.Messages)-1]
 }
 
 func lastText(m llm.Message) string {
@@ -122,9 +100,9 @@ func lastText(m llm.Message) string {
 
 func TestTurnRunsToolsAndQueuesSteering(t *testing.T) {
 	t.Parallel()
-	p := &fakeProvider{replies: []llm.Message{toolCall("c1", "echo hi")}}
+	p := &llmtest.Provider{Reply: llmtest.Script(toolCall("c1", "echo hi"))}
 	a := newAgent(t, p)
-	p.onCall = func(n int) {
+	p.OnCall = func(n int) {
 		if n == 0 {
 			a.Queue([]llm.Block{{Type: llm.BlockText, Text: "also check x"}})
 		}
@@ -133,7 +111,7 @@ func TestTurnRunsToolsAndQueuesSteering(t *testing.T) {
 	if err != nil || final != "done" || stats.Requests != 2 {
 		t.Fatalf("final %q stats %+v err %v", final, stats, err)
 	}
-	second := p.requests[1]
+	second := p.Request(1).Messages
 	last := second[len(second)-1]
 	if last.Blocks[0].Type != llm.BlockToolResult || !strings.Contains(last.Blocks[0].Text, "hi") {
 		t.Errorf("tool result missing: %+v", last)
@@ -145,7 +123,7 @@ func TestTurnRunsToolsAndQueuesSteering(t *testing.T) {
 
 func TestModeNoteSentOnChangeOnly(t *testing.T) {
 	t.Parallel()
-	p := &fakeProvider{}
+	p := &llmtest.Provider{}
 	a := newAgent(t, p)
 	a.SetMode(config.ModeReadOnly)
 	_, _, _ = a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "one"}})
@@ -171,7 +149,7 @@ func TestModeNoteSentOnChangeOnly(t *testing.T) {
 func TestCancelDuringToolsKeepsLogValid(t *testing.T) {
 	t.Parallel()
 	running := filepath.Join(t.TempDir(), "running")
-	p := &fakeProvider{replies: []llm.Message{toolCall("c1", "touch '"+running+"'; sleep 5")}}
+	p := &llmtest.Provider{Reply: llmtest.Script(toolCall("c1", "touch '"+running+"'; sleep 5"))}
 	a := newAgent(t, p)
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
@@ -192,7 +170,7 @@ func TestCancelDuringToolsKeepsLogValid(t *testing.T) {
 
 func TestCompactBeforeNewPrompt(t *testing.T) {
 	t.Parallel()
-	p := &fakeProvider{replies: []llm.Message{{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: "SUMMARY"}}}}}
+	p := &llmtest.Provider{Reply: llmtest.Script(llmtest.Text("SUMMARY"))}
 	a := newAgent(t, p)
 	a.live.cfg.CompactAt = config.Threshold{Tokens: 100}
 	a.conv.messages = []llm.Message{llm.UserText("old"), {Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: "old answer"}}}}
@@ -200,10 +178,10 @@ func TestCompactBeforeNewPrompt(t *testing.T) {
 	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "new request"}}); err != nil {
 		t.Fatal(err)
 	}
-	if len(p.requests[0]) != 3 || !strings.Contains(lastText(p.requests[0][2]), "Write a summary") {
-		t.Fatalf("first request should be the compaction: %+v", p.requests[0])
+	if len(p.Request(0).Messages) != 3 || !strings.Contains(lastText(p.Request(0).Messages[2]), "Write a summary") {
+		t.Fatalf("first request should be the compaction: %+v", p.Request(0).Messages)
 	}
-	sent := p.requests[1]
+	sent := p.Request(1).Messages
 	if len(sent) != 3 || !strings.Contains(lastText(sent[0]), "SUMMARY") || lastText(sent[1]) != "old answer" || lastText(sent[2]) != "new request" {
 		t.Fatalf("after compaction: %+v", sent)
 	}
@@ -211,7 +189,7 @@ func TestCompactBeforeNewPrompt(t *testing.T) {
 
 func TestCompactRejectsEmptySummary(t *testing.T) {
 	t.Parallel()
-	p := &fakeProvider{replies: []llm.Message{{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockToolUse, ID: "x", Name: "bash", Input: json.RawMessage(`{}`)}}}}}
+	p := &llmtest.Provider{Reply: llmtest.Script(llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockToolUse, ID: "x", Name: "bash", Input: json.RawMessage(`{}`)}}})}
 	a := newAgent(t, p)
 	a.conv.messages = []llm.Message{llm.UserText("old")}
 	if err := a.Compact(context.Background(), ""); err == nil {
@@ -224,7 +202,7 @@ func TestCompactRejectsEmptySummary(t *testing.T) {
 
 func TestStopHookContinuesOnceWithActiveFlag(t *testing.T) {
 	t.Parallel()
-	p := &fakeProvider{}
+	p := &llmtest.Provider{}
 	a := newAgent(t, p)
 	var actives []bool
 	a.conv.onStop = func(ctx context.Context, last string, active bool) (bool, string) {
@@ -239,7 +217,7 @@ func TestStopHookContinuesOnceWithActiveFlag(t *testing.T) {
 	if err != nil || stats.Requests != 2 || len(actives) != 2 || actives[0] || !actives[1] {
 		t.Fatalf("stats %+v actives %v err %v", stats, actives, err)
 	}
-	last := p.requests[1][len(p.requests[1])-1]
+	last := lastOf(p.Request(1))
 	if txt := lastText(last); !strings.Contains(txt, "run the tests") || !strings.Contains(txt, "queued note") {
 		t.Errorf("continuation message %q", txt)
 	}
@@ -248,7 +226,7 @@ func TestStopHookContinuesOnceWithActiveFlag(t *testing.T) {
 func TestCompactRejectsToolCallsAndTriesOncePerTurn(t *testing.T) {
 	t.Parallel()
 	summaryWithTool := llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: "Let me check first."}, {Type: llm.BlockToolUse, ID: "x", Name: "bash", Input: json.RawMessage(`{"command":"ls"}`)}}}
-	p := &fakeProvider{replies: []llm.Message{summaryWithTool, toolCall("c1", "echo a"), toolCall("c2", "echo b")}}
+	p := &llmtest.Provider{Reply: llmtest.Script(summaryWithTool, toolCall("c1", "echo a"), toolCall("c2", "echo b"))}
 	a := newAgent(t, p)
 	a.live.cfg.CompactAt = config.Threshold{Tokens: 10}
 	a.conv.messages = []llm.Message{llm.UserText("old")}
@@ -260,8 +238,8 @@ func TestCompactRejectsToolCallsAndTriesOncePerTurn(t *testing.T) {
 		t.Errorf("history replaced by a tool-calling reply: %q", a.conv.messages[0].Text())
 	}
 	compactions := 0
-	for _, req := range p.requests {
-		if strings.Contains(lastText(req[len(req)-1]), "Write a summary of the conversation") {
+	for _, req := range p.Requests() {
+		if strings.Contains(lastText(lastOf(req)), "Write a summary of the conversation") {
 			compactions++
 		}
 	}
@@ -272,7 +250,7 @@ func TestCompactRejectsToolCallsAndTriesOncePerTurn(t *testing.T) {
 
 func TestStopHookEmptyReason(t *testing.T) {
 	t.Parallel()
-	p := &fakeProvider{}
+	p := &llmtest.Provider{}
 	a := newAgent(t, p)
 	n := 0
 	a.conv.onStop = func(context.Context, string, bool) (bool, string) {
@@ -282,7 +260,7 @@ func TestStopHookEmptyReason(t *testing.T) {
 	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "go"}}); err != nil {
 		t.Fatal(err)
 	}
-	last := p.requests[1][len(p.requests[1])-1]
+	last := lastOf(p.Request(1))
 	if last.Role != llm.RoleUser || lastText(last) == "" {
 		t.Errorf("continuation message empty: %+v", last)
 	}
@@ -290,7 +268,7 @@ func TestStopHookEmptyReason(t *testing.T) {
 
 func TestRestoreMode(t *testing.T) {
 	t.Parallel()
-	a := newAgent(t, &fakeProvider{})
+	a := newAgent(t, &llmtest.Provider{})
 	a.conv.messages = []llm.Message{{Role: llm.RoleUser, Blocks: []llm.Block{{Type: llm.BlockText, Text: "x"}, {Type: llm.BlockText, Text: readOnlyNote}}}}
 	a.restoreMode()
 	if mb, ok := a.modeBlock(); !ok || mb.Text != yoloNote {
@@ -321,17 +299,13 @@ func TestStoredModeNotesStillRestore(t *testing.T) {
 	}
 }
 
-type rejectProvider struct{ calls int }
-
-func (r *rejectProvider) Stream(ctx context.Context, req llm.Request, onDelta func(llm.Delta)) (llm.Message, llm.Usage, error) {
-	r.calls++
-	return llm.Message{}, llm.Usage{}, &llm.APIError{Status: 400, Body: "image not supported"}
+func rejecting() *llmtest.Provider {
+	return &llmtest.Provider{Reply: llmtest.Fail(&llm.APIError{Status: 400, Body: "image not supported"})}
 }
 
 func TestRejectedPromptIsRolledBack(t *testing.T) {
 	t.Parallel()
-	a := newAgent(t, &fakeProvider{})
-	a.live.provider = &rejectProvider{}
+	a := newAgent(t, rejecting())
 	a.conv.messages = []llm.Message{llm.UserText("earlier")}
 	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "bad"}}); err == nil {
 		t.Fatal("expected error")
@@ -348,7 +322,7 @@ func TestRejectedPromptKeepsTurnNotes(t *testing.T) {
 	if err := os.WriteFile(path, []byte("one\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	p := &fakeProvider{replies: []llm.Message{runCall("1", `return await read("a.txt")`)}}
+	p := &llmtest.Provider{Reply: llmtest.Script(runCall("1", `return await read("a.txt")`))}
 	a := New(Options{Config: config.Config{CompactAt: config.Threshold{Tokens: 1 << 30}, Model: "m"}, Cwd: dir, Provider: p, UI: nopDisplay{}, Tool: tools.Run(tools.Read()), SpillDir: t.TempDir()})
 	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "read it"}}); err != nil {
 		t.Fatal(err)
@@ -361,7 +335,7 @@ func TestRejectedPromptKeepsTurnNotes(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.SetMode(config.ModeReadOnly)
-	a.live.provider = &rejectProvider{}
+	a.live.provider = rejecting()
 	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "bad"}}); err == nil {
 		t.Fatal("expected error")
 	}
@@ -369,7 +343,7 @@ func TestRejectedPromptKeepsTurnNotes(t *testing.T) {
 	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "again"}}); err != nil {
 		t.Fatal(err)
 	}
-	last := p.requests[len(p.requests)-1]
+	last := p.Last().Messages
 	got := lastText(last[len(last)-1])
 	if strings.Contains(got, "bad") || !strings.Contains(got, "+two") || !strings.Contains(got, readOnlyNote) {
 		t.Errorf("next turn after a rejected prompt lost its notes:\n%s", got)
@@ -378,18 +352,18 @@ func TestRejectedPromptKeepsTurnNotes(t *testing.T) {
 
 func TestCancelledPromptIsKept(t *testing.T) {
 	t.Parallel()
-	p := &fakeProvider{}
+	p := &llmtest.Provider{}
 	a := newAgent(t, p)
 	ctx, cancel := context.WithCancel(context.Background())
-	p.onCall = func(int) { cancel() }
+	p.OnCall = func(int) { cancel() }
 	if _, _, err := a.Turn(ctx, []llm.Block{{Type: llm.BlockText, Text: "first"}}); err != context.Canceled {
 		t.Fatalf("got %v", err)
 	}
-	p.onCall = nil
+	p.OnCall = nil
 	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "second"}}); err != nil {
 		t.Fatal(err)
 	}
-	last := llm.MergeConsecutive(p.requests[len(p.requests)-1])
+	last := llm.MergeConsecutive(p.Last().Messages)
 	if len(last) != 1 || lastText(last[0]) != "first|"+llm.Interrupted+"|second" {
 		t.Errorf("request after a cancelled prompt: %+v", last)
 	}
@@ -397,15 +371,15 @@ func TestCancelledPromptIsKept(t *testing.T) {
 
 func TestRejectionAfterInterruptDropsTheInterruptedPrompt(t *testing.T) {
 	t.Parallel()
-	p := &fakeProvider{}
+	p := &llmtest.Provider{}
 	a := newAgent(t, p)
 	a.conv.messages = []llm.Message{llm.UserText("earlier"), {Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: "ok"}}}}
 	ctx, cancel := context.WithCancel(context.Background())
-	p.onCall = func(int) { cancel() }
+	p.OnCall = func(int) { cancel() }
 	if _, _, err := a.Turn(ctx, []llm.Block{{Type: llm.BlockText, Text: "huge image"}}); err != context.Canceled {
 		t.Fatalf("got %v", err)
 	}
-	a.live.provider = &rejectProvider{}
+	a.live.provider = rejecting()
 	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "next"}}); err == nil {
 		t.Fatal("expected error")
 	}
@@ -419,8 +393,7 @@ func TestThrottledPromptIsKept(t *testing.T) {
 	llm.Sleep = func(ctx context.Context, d time.Duration) error { return ctx.Err() }
 	defer func() { llm.Sleep = old }()
 	for _, e := range []*llm.APIError{{Status: 429}, {Status: 402, RetryAfter: time.Second}} {
-		a := newAgent(t, &fakeProvider{})
-		a.live.provider = &errProvider{err: e}
+		a := newAgent(t, &llmtest.Provider{Reply: llmtest.Fail(e)})
 		a.conv.messages = []llm.Message{llm.UserText("earlier")}
 		if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "again"}}); err == nil {
 			t.Fatal("expected error")
@@ -431,15 +404,9 @@ func TestThrottledPromptIsKept(t *testing.T) {
 	}
 }
 
-type errProvider struct{ err error }
-
-func (p *errProvider) Stream(context.Context, llm.Request, func(llm.Delta)) (llm.Message, llm.Usage, error) {
-	return llm.Message{}, llm.Usage{}, p.err
-}
-
 func TestMaxRounds(t *testing.T) {
 	t.Parallel()
-	p := &fakeProvider{replies: []llm.Message{toolCall("1", "true"), toolCall("2", "true"), toolCall("3", "true")}}
+	p := &llmtest.Provider{Reply: llmtest.Script(toolCall("1", "true"), toolCall("2", "true"), toolCall("3", "true"))}
 	a := newAgent(t, p)
 	a.live.cfg.MaxRounds = 2
 	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "go"}}); err == nil || !strings.Contains(err.Error(), "max_rounds") {
@@ -507,25 +474,24 @@ func TestContextReport(t *testing.T) {
 	}
 }
 
-func toolResultOf(t *testing.T, a *Agent, p *fakeProvider, cmd string) string {
-	p.mu.Lock()
-	for len(p.replies) < len(p.requests) {
-		p.replies = append(p.replies, llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: "done"}}})
+func toolResultOf(t *testing.T, a *Agent, p *llmtest.Provider, cmd string) string {
+	first := len(p.Requests())
+	p.Reply = func(_ context.Context, n int, _ llm.Request) (llm.Message, error) {
+		if n == first {
+			return toolCall("c", cmd), nil
+		}
+		return llmtest.Text("done"), nil
 	}
-	p.replies = append(p.replies[:len(p.requests)], toolCall("c", cmd))
-	p.mu.Unlock()
 	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "go"}}); err != nil {
 		t.Fatal(err)
 	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	last := p.requests[len(p.requests)-1]
+	last := p.Last().Messages
 	return last[len(last)-1].Blocks[0].Text
 }
 
 func TestReconfigureUpdatesBashAllowlistAndTimeout(t *testing.T) {
 	t.Parallel()
-	p := &fakeProvider{}
+	p := &llmtest.Provider{}
 	a := newAgent(t, p)
 	a.SetMode(config.ModeReadOnly)
 	if got := toolResultOf(t, a, p, "uname"); !strings.Contains(got, "not in the read-only allowlist") {
@@ -548,7 +514,7 @@ func TestReconfigureUpdatesBashAllowlistAndTimeout(t *testing.T) {
 func TestAccessorsDuringTurn(t *testing.T) {
 	t.Parallel()
 	inTurn, release := make(chan struct{}), make(chan struct{})
-	p := &fakeProvider{onCall: func(n int) {
+	p := &llmtest.Provider{OnCall: func(n int) {
 		if n == 0 {
 			close(inTurn)
 			<-release

@@ -11,47 +11,22 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/paul-nameless/qi/internal/agent"
 	"github.com/paul-nameless/qi/internal/config"
 	"github.com/paul-nameless/qi/internal/llm"
+	"github.com/paul-nameless/qi/internal/llm/llmtest"
 	"github.com/paul-nameless/qi/internal/ui"
 )
 
-type scriptProvider struct {
-	mu       sync.Mutex
-	requests []llm.Request
-	reply    func(ctx context.Context, n int, req llm.Request) (llm.Message, error)
-}
-
-func (p *scriptProvider) Stream(ctx context.Context, req llm.Request, onDelta func(llm.Delta)) (llm.Message, llm.Usage, error) {
-	p.mu.Lock()
-	n := len(p.requests)
-	p.requests = append(p.requests, req)
-	p.mu.Unlock()
-	msg, err := p.reply(ctx, n, req)
-	if err == nil {
-		onDelta(llm.Delta{Kind: llm.DeltaText, Text: msg.Text()})
-	}
-	return msg, llm.Usage{Input: 100, Output: 10}, err
-}
-
-func (p *scriptProvider) request(n int) llm.Request {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.requests[n]
-}
-
-func textReply(s string) llm.Message {
-	return llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: s}}}
+func script(reply llmtest.Reply) *llmtest.Provider {
+	return &llmtest.Provider{Reply: reply, Usage: llm.Usage{Input: 100, Output: 10}, Echo: true}
 }
 
 func bashCall(id, command string) llm.Message {
-	in, _ := json.Marshal(map[string]string{"command": command})
-	return llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockToolUse, ID: id, Name: "bash", Input: in}}}
+	return llmtest.Call(id, "bash", map[string]string{"command": command})
 }
 
 type capture struct {
@@ -169,12 +144,12 @@ func TestHandleInputClearStartsNewSession(t *testing.T) {
 }
 
 func TestTurnRunsToolsAndPrintsStats(t *testing.T) {
-	p := &scriptProvider{reply: func(_ context.Context, n int, _ llm.Request) (llm.Message, error) {
+	p := script(func(_ context.Context, n int, _ llm.Request) (llm.Message, error) {
 		if n == 0 {
 			return runCall("c1", `return (await bash("echo hi")).output`), nil
 		}
-		return textReply("all done"), nil
-	}}
+		return llmtest.Text("all done"), nil
+	})
 	r, out := testRepl(t, config.Config{Model: "m"}, p)
 	draft := r.turn(func(context.Context) ([]llm.Block, error) {
 		return []llm.Block{{Type: llm.BlockText, Text: "go"}}, nil
@@ -186,7 +161,7 @@ func TestTurnRunsToolsAndPrintsStats(t *testing.T) {
 	if !strings.Contains(got, "✓ bash echo hi") || !strings.Contains(got, "\n110 · cooked for ") {
 		t.Errorf("output:\n%s", got)
 	}
-	results := p.request(1).Messages
+	results := p.Request(1).Messages
 	if last := results[len(results)-1]; last.Blocks[0].Type != llm.BlockToolResult || !strings.Contains(last.Blocks[0].Text, "hi") {
 		t.Errorf("tool result not sent: %+v", last)
 	}
@@ -205,7 +180,7 @@ func waitFor(t *testing.T, cond func() bool) {
 func TestTurnQueuesTypedMessages(t *testing.T) {
 	var r *repl
 	var out capture
-	p := &scriptProvider{reply: func(_ context.Context, n int, _ llm.Request) (llm.Message, error) {
+	p := script(func(_ context.Context, n int, _ llm.Request) (llm.Message, error) {
 		if n == 0 {
 			for _, c := range "also this" {
 				r.editor.T.Keys <- ui.Key{Kind: ui.KeyRune, Rune: c}
@@ -214,13 +189,13 @@ func TestTurnQueuesTypedMessages(t *testing.T) {
 			waitFor(t, func() bool { return strings.Contains(out.String(), "queued: also this") })
 			return runCall("c1", `await bash("true")`), nil
 		}
-		return textReply("ok"), nil
-	}}
+		return llmtest.Text("ok"), nil
+	})
 	r, out = testRepl(t, config.Config{Model: "m"}, p)
 	r.turn(func(context.Context) ([]llm.Block, error) {
 		return []llm.Block{{Type: llm.BlockText, Text: "go"}}, nil
 	}, "")
-	msgs := p.request(1).Messages
+	msgs := p.Request(1).Messages
 	last := msgs[len(msgs)-1]
 	var texts []string
 	for _, b := range last.Blocks {
@@ -238,11 +213,11 @@ func TestTurnQueuesTypedMessages(t *testing.T) {
 
 func TestTurnCancel(t *testing.T) {
 	started := make(chan struct{})
-	p := &scriptProvider{reply: func(ctx context.Context, n int, _ llm.Request) (llm.Message, error) {
+	p := script(func(ctx context.Context, n int, _ llm.Request) (llm.Message, error) {
 		close(started)
 		<-ctx.Done()
 		return llm.Message{}, ctx.Err()
-	}}
+	})
 	r, out := testRepl(t, config.Config{Model: "m"}, p)
 	if r.cancelTurn() {
 		t.Error("cancelTurn reported a turn before one started")
@@ -268,9 +243,9 @@ func TestTurnCancel(t *testing.T) {
 }
 
 func TestTurnReportsPrepareAndProviderErrors(t *testing.T) {
-	p := &scriptProvider{reply: func(context.Context, int, llm.Request) (llm.Message, error) {
+	p := script(func(context.Context, int, llm.Request) (llm.Message, error) {
 		return llm.Message{}, &llm.APIError{Status: 400, Body: "bad request"}
-	}}
+	})
 	r, out := testRepl(t, config.Config{Model: "m"}, p)
 	r.turn(func(context.Context) ([]llm.Block, error) { return nil, errors.New("prompt blocked by hook: no") }, "")
 	r.turn(func(context.Context) ([]llm.Block, error) {
@@ -303,12 +278,12 @@ func TestIdleTimer(t *testing.T) {
 		t.Error("idle compaction armed for a 5m cache")
 	}
 	called := make(chan struct{}, 1)
-	p := &scriptProvider{reply: func(context.Context, int, llm.Request) (llm.Message, error) {
+	p := script(func(context.Context, int, llm.Request) (llm.Message, error) {
 		called <- struct{}{}
-		return textReply("summary"), nil
-	}}
+		return llmtest.Text("summary"), nil
+	})
 	r, _ = testRepl(t, config.Config{Model: "m", CacheTTL: "1h", CompactAt: config.Threshold{Tokens: 1000}, CompactIdleAt: config.Threshold{Tokens: 10}}, p)
-	setMessages(r.agent, []llm.Message{llm.UserText("hello"), textReply("hi")})
+	setMessages(r.agent, []llm.Message{llm.UserText("hello"), llmtest.Text("hi")})
 	r.agent.SetContextTokens(500)
 	r.armIdle()
 	if r.idle == nil {
@@ -394,9 +369,9 @@ func TestHeadlessPrintsAnswer(t *testing.T) {
 func TestQueuedPromptHookDoesNotBlockKeys(t *testing.T) {
 	cancelled := make(chan time.Duration, 1)
 	var r *repl
-	p := &scriptProvider{reply: func(ctx context.Context, n int, _ llm.Request) (llm.Message, error) {
+	p := script(func(ctx context.Context, n int, _ llm.Request) (llm.Message, error) {
 		if n > 0 {
-			return textReply("ok"), nil
+			return llmtest.Text("ok"), nil
 		}
 		start := time.Now()
 		for _, k := range []ui.Key{{Kind: ui.KeyRune, Rune: 'x'}, {Kind: ui.KeyEnter}, {Kind: ui.KeyEsc}} {
@@ -409,7 +384,7 @@ func TestQueuedPromptHookDoesNotBlockKeys(t *testing.T) {
 			cancelled <- time.Hour
 		}
 		return llm.Message{}, ctx.Err()
-	}}
+	})
 	r, _ = testRepl(t, config.Config{Model: "m"}, p)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "settings.json")
@@ -513,12 +488,12 @@ func TestJSONNeedsHeadless(t *testing.T) {
 }
 
 func TestTurnStatsShowRunningJobs(t *testing.T) {
-	p := &scriptProvider{reply: func(_ context.Context, n int, _ llm.Request) (llm.Message, error) {
+	p := script(func(_ context.Context, n int, _ llm.Request) (llm.Message, error) {
 		if n == 0 {
 			return runCall("c1", `await bash("sleep 30", {background: true})`), nil
 		}
-		return textReply("started"), nil
-	}}
+		return llmtest.Text("started"), nil
+	})
 	r, out := testRepl(t, config.Config{Model: "m"}, p)
 	r.turn(func(context.Context) ([]llm.Block, error) {
 		return []llm.Block{{Type: llm.BlockText, Text: "go"}}, nil
@@ -538,19 +513,19 @@ func TestTurnStatsShowRunningJobs(t *testing.T) {
 func TestFinishedJobStartsTurn(t *testing.T) {
 	gate := filepath.Join(t.TempDir(), "gate")
 	cmd, _ := json.Marshal(fmt.Sprintf("while [ ! -e %q ]; do sleep 0.01; done; exit 5", gate))
-	p := &scriptProvider{reply: func(_ context.Context, n int, _ llm.Request) (llm.Message, error) {
+	p := script(func(_ context.Context, n int, _ llm.Request) (llm.Message, error) {
 		if n == 0 {
 			return runCall("c1", `await bash(`+string(cmd)+`, {background: true, timeout: 30})`), nil
 		}
-		return textReply("ok"), nil
-	}}
+		return llmtest.Text("ok"), nil
+	})
 	r, _ := testRepl(t, config.Config{Model: "m"}, p)
 	t.Cleanup(r.agent.Jobs().KillAll)
 	r.turn(func(context.Context) ([]llm.Block, error) {
 		return []llm.Block{{Type: llm.BlockText, Text: "go"}}, nil
 	}, "")
-	if got := r.jobTurn(); got != "" || len(p.requests) != 2 {
-		t.Fatalf("a wake without an exited job started a turn: %q after %d requests", got, len(p.requests))
+	if got := r.jobTurn(); got != "" || len(p.Requests()) != 2 {
+		t.Fatalf("a wake without an exited job started a turn: %q after %d requests", got, len(p.Requests()))
 	}
 	if err := os.WriteFile(gate, nil, 0o600); err != nil {
 		t.Fatal(err)
@@ -563,10 +538,10 @@ func TestFinishedJobStartsTurn(t *testing.T) {
 			t.Fatal("the job never finished")
 		}
 	}
-	if got := r.jobTurn(); got != "" || len(p.requests) != 3 {
-		t.Fatalf("draft %q after %d requests", got, len(p.requests))
+	if got := r.jobTurn(); got != "" || len(p.Requests()) != 3 {
+		t.Fatalf("draft %q after %d requests", got, len(p.Requests()))
 	}
-	msgs := p.request(2).Messages
+	msgs := p.Request(2).Messages
 	if last := msgs[len(msgs)-1]; last.Role != llm.RoleUser || !strings.Contains(last.Text(), `<background-job id="1" status="exit 5"`) {
 		t.Fatalf("the turn did not carry the notice: %+v", last)
 	}
@@ -575,12 +550,12 @@ func TestFinishedJobStartsTurn(t *testing.T) {
 func TestAutomaticTurnsAreCapped(t *testing.T) {
 	gate := filepath.Join(t.TempDir(), "gate")
 	cmd, _ := json.Marshal(fmt.Sprintf("while [ ! -e %q ]; do sleep 0.01; done; exit 6", gate))
-	p := &scriptProvider{reply: func(_ context.Context, n int, _ llm.Request) (llm.Message, error) {
+	p := script(func(_ context.Context, n int, _ llm.Request) (llm.Message, error) {
 		if n == 0 {
 			return runCall("c1", `await bash(`+string(cmd)+`, {background: true, timeout: 30})`), nil
 		}
-		return textReply("ok"), nil
-	}}
+		return llmtest.Text("ok"), nil
+	})
 	r, out := testRepl(t, config.Config{Model: "m"}, p)
 	t.Cleanup(r.agent.Jobs().KillAll)
 	r.turn(func(context.Context) ([]llm.Block, error) {
@@ -598,8 +573,8 @@ func TestAutomaticTurnsAreCapped(t *testing.T) {
 		}
 	}
 	r.autoTurns = maxAutoTurns
-	if got := r.jobTurn(); got != "" || len(p.requests) != 2 || r.agent.Jobs().Exited() {
-		t.Fatalf("a capped wake started a turn or kept waking: %d requests, exited %v", len(p.requests), r.agent.Jobs().Exited())
+	if got := r.jobTurn(); got != "" || len(p.Requests()) != 2 || r.agent.Jobs().Exited() {
+		t.Fatalf("a capped wake started a turn or kept waking: %d requests, exited %v", len(p.Requests()), r.agent.Jobs().Exited())
 	}
 	if !strings.Contains(out.String(), "their notices wait for your next message") {
 		t.Errorf("output:\n%s", out.String())

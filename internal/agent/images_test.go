@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/paul-nameless/qi/internal/llm"
+	"github.com/paul-nameless/qi/internal/llm/llmtest"
 )
 
 func imageRound(i int) []llm.Message {
@@ -25,7 +26,7 @@ func imageRound(i int) []llm.Message {
 
 func TestEvictImagesDropsOldestPastTheLimit(t *testing.T) {
 	t.Parallel()
-	a := newAgent(t, &fakeProvider{})
+	a := newAgent(t, &llmtest.Provider{})
 	for i := range maxImages {
 		a.conv.messages = append(a.conv.messages, imageRound(i)...)
 	}
@@ -95,7 +96,7 @@ func TestOverflowClipRemovesPastedImages(t *testing.T) {
 
 func TestEvictImagesKeepsTheNewestMessage(t *testing.T) {
 	t.Parallel()
-	a := newAgent(t, &fakeProvider{})
+	a := newAgent(t, &llmtest.Provider{})
 	big := strings.Repeat("A", 6<<20)
 	var imgs []llm.Block
 	for i := range 5 {
@@ -113,7 +114,7 @@ func TestEvictImagesKeepsTheNewestMessage(t *testing.T) {
 
 func TestEvictImagesBySize(t *testing.T) {
 	t.Parallel()
-	a := newAgent(t, &fakeProvider{})
+	a := newAgent(t, &llmtest.Provider{})
 	for i := range 30 {
 		r := imageRound(i)
 		r[1].Blocks[0].Images[0].Data = strings.Repeat("A", 1<<20)
@@ -128,7 +129,7 @@ func TestEvictImagesBySize(t *testing.T) {
 
 func TestCompactionEvictsImagesFirst(t *testing.T) {
 	t.Parallel()
-	p := &fakeProvider{replies: []llm.Message{{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: "summary"}}}}}
+	p := &llmtest.Provider{Reply: llmtest.Script(llmtest.Text("summary"))}
 	a := newAgent(t, p)
 	for i := range 130 {
 		a.conv.messages = append(a.conv.messages, imageRound(i)...)
@@ -137,7 +138,7 @@ func TestCompactionEvictsImagesFirst(t *testing.T) {
 	if err := a.Compact(context.Background(), ""); err != nil {
 		t.Fatal(err)
 	}
-	if n, _ := imageLoad(p.requests[0]); n > maxImages {
+	if n, _ := imageLoad(p.Request(0).Messages); n > maxImages {
 		t.Errorf("summary request carried %d images", n)
 	}
 }

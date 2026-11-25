@@ -11,27 +11,9 @@ import (
 
 	"github.com/paul-nameless/qi/internal/config"
 	"github.com/paul-nameless/qi/internal/llm"
+	"github.com/paul-nameless/qi/internal/llm/llmtest"
 	"github.com/paul-nameless/qi/internal/session"
 )
-
-type scriptedProvider struct {
-	steps    []func(req llm.Request) (llm.Message, error)
-	requests []llm.Request
-}
-
-func (s *scriptedProvider) Stream(ctx context.Context, req llm.Request, onDelta func(llm.Delta)) (llm.Message, llm.Usage, error) {
-	n := len(s.requests)
-	s.requests = append(s.requests, req)
-	if n < len(s.steps) {
-		msg, err := s.steps[n](req)
-		return msg, llm.Usage{}, err
-	}
-	return assistantText("done"), llm.Usage{}, nil
-}
-
-func assistantText(s string) llm.Message {
-	return llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: s}}}
-}
 
 func reply(m llm.Message) func(llm.Request) (llm.Message, error) {
 	return func(llm.Request) (llm.Message, error) { return m, nil }
@@ -60,7 +42,7 @@ func history() []llm.Message {
 		llm.UserText("first request"),
 		withReasoning(toolCall("c1", "cat big")),
 		toolResult("c1", strings.Repeat("x", 40000)),
-		assistantText("read it"),
+		llmtest.Text("read it"),
 		llm.UserText("second request"),
 		withReasoning(toolCall("c2", "ls")),
 		toolResult("c2", "a b c"),
@@ -68,7 +50,7 @@ func history() []llm.Message {
 }
 
 func closedHistory() []llm.Message {
-	return append(history(), assistantText("all read"))
+	return append(history(), llmtest.Text("all read"))
 }
 
 func TestKeepTail(t *testing.T) {
@@ -101,15 +83,14 @@ func TestKeepTail(t *testing.T) {
 
 func TestSummaryRequestKeepsHistoryUnchanged(t *testing.T) {
 	t.Parallel()
-	p := &scriptedProvider{steps: []func(llm.Request) (llm.Message, error){reply(assistantText("SUMMARY"))}}
-	a := newAgent(t, &fakeProvider{})
-	a.live.provider = p
+	p := &llmtest.Provider{Reply: llmtest.Steps(reply(llmtest.Text("SUMMARY")), reply(llmtest.Text("SUMMARY 2")))}
+	a := newAgent(t, p)
 	a.conv.messages = closedHistory()
 	orig := closedHistory()
 	if err := a.Compact(context.Background(), "the auth bug"); err != nil {
 		t.Fatal(err)
 	}
-	sent := p.requests[0].Messages
+	sent := p.Request(0).Messages
 	if !reflect.DeepEqual(sent[:len(orig)], orig) || len(sent) != len(orig)+1 {
 		t.Fatal("summary request must be the unchanged history plus one message")
 	}
@@ -119,35 +100,33 @@ func TestSummaryRequestKeepsHistoryUnchanged(t *testing.T) {
 	if !strings.HasPrefix(a.conv.messages[0].Text(), compactLead+"SUMMARY") || a.conv.messages[len(a.conv.messages)-1].Text() != "all read" {
 		t.Errorf("new history: %+v", a.conv.messages)
 	}
-	a.conv.messages = append(a.conv.messages, assistantText("more"))
-	p.steps = append(p.steps, reply(assistantText("SUMMARY 2")))
+	a.conv.messages = append(a.conv.messages, llmtest.Text("more"))
 	if err := a.Compact(context.Background(), ""); err != nil {
 		t.Fatal(err)
 	}
-	if ask := p.requests[1].Messages[len(p.requests[1].Messages)-1].Text(); !strings.HasPrefix(ask, compactUpdate) {
+	if ask := lastOf(p.Request(1)).Text(); !strings.HasPrefix(ask, compactUpdate) {
 		t.Errorf("second compaction should update the summary: %q", ask)
 	}
 }
 
 func TestSummaryClipsOnlyWhenTooLong(t *testing.T) {
 	t.Parallel()
-	p := &scriptedProvider{steps: []func(llm.Request) (llm.Message, error){overflow, reply(assistantText("SUMMARY"))}}
-	a := newAgent(t, &fakeProvider{})
-	a.live.provider = p
+	p := &llmtest.Provider{Reply: llmtest.Steps(overflow, reply(llmtest.Text("SUMMARY")))}
+	a := newAgent(t, p)
 	a.conv.messages = history()
 	if err := a.Compact(context.Background(), ""); err != nil {
 		t.Fatal(err)
 	}
-	if len(p.requests) != 2 {
-		t.Fatalf("requests: %d", len(p.requests))
+	if len(p.Requests()) != 2 {
+		t.Fatalf("requests: %d", len(p.Requests()))
 	}
-	if got := len(p.requests[0].Messages[2].Blocks[0].Text); got != 40000 {
+	if got := len(p.Request(0).Messages[2].Blocks[0].Text); got != 40000 {
 		t.Errorf("first try clipped: %d", got)
 	}
-	if got := len(p.requests[1].Messages[2].Blocks[0].Text); got > 2*clipToolResult {
+	if got := len(p.Request(1).Messages[2].Blocks[0].Text); got > 2*clipToolResult {
 		t.Errorf("fallback not clipped: %d", got)
 	}
-	if len(p.requests[0].Messages[1].Blocks) != 2 || len(p.requests[1].Messages[1].Blocks) != 1 {
+	if len(p.Request(0).Messages[1].Blocks) != 2 || len(p.Request(1).Messages[1].Blocks) != 1 {
 		t.Error("only the clipped fallback may drop reasoning, and it must")
 	}
 }
@@ -155,7 +134,7 @@ func TestSummaryClipsOnlyWhenTooLong(t *testing.T) {
 func TestCompactRejectsCutOffSummary(t *testing.T) {
 	t.Parallel()
 	cut := llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: "## Objective\nhalf"}, {Type: llm.BlockText, Text: "\n" + llm.CutOffMarker}}}
-	a := newAgent(t, &fakeProvider{replies: []llm.Message{cut}})
+	a := newAgent(t, &llmtest.Provider{Reply: llmtest.Script(cut)})
 	a.conv.messages = history()
 	if err := a.Compact(context.Background(), ""); err == nil || len(a.conv.messages) != len(history()) {
 		t.Errorf("cut-off summary accepted: %v", err)
@@ -164,7 +143,7 @@ func TestCompactRejectsCutOffSummary(t *testing.T) {
 
 func TestCompactReannouncesModeLostToSummary(t *testing.T) {
 	t.Parallel()
-	a := newAgent(t, &fakeProvider{replies: []llm.Message{assistantText("SUMMARY")}})
+	a := newAgent(t, &llmtest.Provider{Reply: llmtest.Script(llmtest.Text("SUMMARY"))})
 	a.conv.messages = append([]llm.Message{{Role: llm.RoleUser, Blocks: []llm.Block{{Type: llm.BlockText, Text: "go"}, {Type: llm.BlockText, Text: readOnlyNote}}}}, history()[1:]...)
 	a.conv.announced = config.ModeReadOnly
 	if err := a.Compact(context.Background(), ""); err != nil {
@@ -177,38 +156,36 @@ func TestCompactReannouncesModeLostToSummary(t *testing.T) {
 
 func TestOverflowCompactsAndRetriesOnce(t *testing.T) {
 	t.Parallel()
-	summary := reply(assistantText("SUMMARY"))
-	p := &scriptedProvider{steps: []func(llm.Request) (llm.Message, error){overflow, summary}}
-	a := newAgent(t, &fakeProvider{})
-	a.live.provider = p
+	summary := reply(llmtest.Text("SUMMARY"))
+	p := &llmtest.Provider{Reply: llmtest.Steps(overflow, summary)}
+	a := newAgent(t, p)
 	a.conv.messages = history()[:4]
 	final, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "go on"}})
 	if err != nil || final != "done" {
 		t.Fatalf("final %q err %v", final, err)
 	}
-	if len(p.requests) != 3 || !isSummaryRequest(p.requests[1]) || isSummaryRequest(p.requests[2]) {
-		t.Fatalf("expected overflow, summary, retry; got %d requests", len(p.requests))
+	if len(p.Requests()) != 3 || !isSummaryRequest(p.Request(1)) || isSummaryRequest(p.Request(2)) {
+		t.Fatalf("expected overflow, summary, retry; got %d requests", len(p.Requests()))
 	}
-	if got := len(p.requests[1].Messages[2].Blocks[0].Text); got > 2*clipToolResult {
+	if got := len(p.Request(1).Messages[2].Blocks[0].Text); got > 2*clipToolResult {
 		t.Errorf("overflow compaction should clip tool results: %d", got)
 	}
 
-	p = &scriptedProvider{steps: []func(llm.Request) (llm.Message, error){overflow, summary, overflow, summary}}
+	p = &llmtest.Provider{Reply: llmtest.Steps(overflow, summary, overflow, summary)}
 	a.live.provider = p
 	a.conv.messages = history()[:4]
 	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "go on"}}); !contextTooLong(err) {
 		t.Fatalf("second overflow should be returned, got %v", err)
 	}
-	if len(p.requests) != 3 {
-		t.Errorf("compaction retried more than once: %d requests", len(p.requests))
+	if len(p.Requests()) != 3 {
+		t.Errorf("compaction retried more than once: %d requests", len(p.Requests()))
 	}
 }
 
 func TestThrashPausesAutoCompaction(t *testing.T) {
 	t.Parallel()
-	p := &scriptedProvider{steps: []func(llm.Request) (llm.Message, error){reply(assistantText("SUMMARY"))}}
-	a := newAgent(t, &fakeProvider{})
-	a.live.provider = p
+	p := &llmtest.Provider{Reply: llmtest.Steps(reply(llmtest.Text("SUMMARY")))}
+	a := newAgent(t, p)
 	a.live.system.Text = strings.Repeat("s", 4000)
 	a.live.cfg.CompactAt = config.Threshold{Tokens: 1000}
 	a.conv.messages = history()
@@ -219,12 +196,12 @@ func TestThrashPausesAutoCompaction(t *testing.T) {
 	if !a.conv.paused {
 		t.Fatal("compaction that cannot get under the threshold should pause")
 	}
-	before := len(p.requests)
+	before := len(p.Requests())
 	a.SetContextTokens(20000)
 	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "again"}}); err != nil {
 		t.Fatal(err)
 	}
-	for _, req := range p.requests[before:] {
+	for _, req := range p.Requests()[before:] {
 		if isSummaryRequest(req) {
 			t.Error("compacted again while paused")
 		}
@@ -237,9 +214,8 @@ func TestThrashPausesAutoCompaction(t *testing.T) {
 func TestCompactionSurvivesResume(t *testing.T) {
 	t.Setenv("QI_CONFIG_DIR", t.TempDir())
 	t.Setenv("QI_SESSION_DIR", t.TempDir())
-	p := &scriptedProvider{steps: []func(llm.Request) (llm.Message, error){reply(assistantText("SUMMARY"))}}
-	a := newAgent(t, &fakeProvider{})
-	a.live.provider = p
+	p := &llmtest.Provider{Reply: llmtest.Steps(reply(llmtest.Text("SUMMARY")))}
+	a := newAgent(t, p)
 	s, err := session.Create(session.CreateOptions{Cwd: a.cwd, Model: "m", Kind: session.Interactive})
 	if err != nil {
 		t.Fatal(err)
@@ -251,7 +227,7 @@ func TestCompactionSurvivesResume(t *testing.T) {
 	if err := a.Compact(context.Background(), ""); err != nil {
 		t.Fatal(err)
 	}
-	a.appendMsg(assistantText("after"), nil)
+	a.appendMsg(llmtest.Text("after"), nil)
 	s.Close()
 	_, ld, err := session.Open(s.Path)
 	if err != nil {
@@ -300,33 +276,31 @@ func TestContextTooLong(t *testing.T) {
 
 func TestFailedOverflowCompactionDropsPrompt(t *testing.T) {
 	t.Parallel()
-	p := &scriptedProvider{steps: []func(llm.Request) (llm.Message, error){overflow, overflow, overflow}}
-	a := newAgent(t, &fakeProvider{})
-	a.live.provider = p
+	p := &llmtest.Provider{Reply: llmtest.Steps(overflow, overflow, overflow)}
+	a := newAgent(t, p)
 	a.conv.messages = history()[:4]
 	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "huge paste"}}); !contextTooLong(err) {
 		t.Fatalf("want the overflow error, got %v", err)
 	}
-	if len(p.requests) != 2 {
-		t.Errorf("overflow compaction must not retry its own clipped request: %d requests", len(p.requests))
+	if len(p.Requests()) != 2 {
+		t.Errorf("overflow compaction must not retry its own clipped request: %d requests", len(p.Requests()))
 	}
 	if !reflect.DeepEqual(a.conv.messages, history()[:4]) {
 		t.Errorf("rejected prompt should be dropped, history kept: %+v", a.conv.messages)
 	}
 
-	p = &scriptedProvider{steps: []func(llm.Request) (llm.Message, error){overflow, overflow, overflow}}
+	p = &llmtest.Provider{Reply: llmtest.Steps(overflow, overflow, overflow)}
 	a.live.provider = p
 	a.conv.messages = history()
-	if err := a.Compact(context.Background(), ""); err == nil || len(p.requests) != 2 || !reflect.DeepEqual(a.conv.messages, history()) {
-		t.Errorf("manual compaction: err %v, %d requests", err, len(p.requests))
+	if err := a.Compact(context.Background(), ""); err == nil || len(p.Requests()) != 2 || !reflect.DeepEqual(a.conv.messages, history()) {
+		t.Errorf("manual compaction: err %v, %d requests", err, len(p.Requests()))
 	}
 }
 
 func TestSummaryRequestMatchesTurnRequest(t *testing.T) {
 	t.Parallel()
-	p := &scriptedProvider{}
-	a := newAgent(t, &fakeProvider{})
-	a.live.provider = p
+	p := &llmtest.Provider{Reply: llmtest.Steps()}
+	a := newAgent(t, p)
 	a.live.system.Text = "system prompt"
 	a.live.cfg.MaxTokens, a.live.cfg.ReasoningEffort, a.live.cfg.CacheTTL = 1000, "low", "1h"
 	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "hi"}}); err != nil {
@@ -335,7 +309,7 @@ func TestSummaryRequestMatchesTurnRequest(t *testing.T) {
 	if err := a.Compact(context.Background(), ""); err != nil {
 		t.Fatal(err)
 	}
-	turn, sum := p.requests[0], p.requests[1]
+	turn, sum := p.Request(0), p.Request(1)
 	if !reflect.DeepEqual(sum.Messages[:len(turn.Messages)], turn.Messages) {
 		t.Error("summary request must extend the last turn's messages")
 	}
@@ -360,7 +334,7 @@ func TestTryCompactIdle(t *testing.T) {
 		{"busy", 500, false, true, 0},
 	}
 	for _, tc := range cases {
-		p := &fakeProvider{}
+		p := &llmtest.Provider{}
 		a := newAgent(t, p)
 		a.live.cfg.CompactIdleAt = config.Threshold{Tokens: 100}
 		a.conv.messages = history()
@@ -372,14 +346,14 @@ func TestTryCompactIdle(t *testing.T) {
 		if err := a.TryCompactIdle(context.Background()); err != nil {
 			t.Errorf("%s: %v", tc.name, err)
 		}
-		if len(p.requests) != tc.want {
-			t.Errorf("%s: %d requests, want %d", tc.name, len(p.requests), tc.want)
+		if len(p.Requests()) != tc.want {
+			t.Errorf("%s: %d requests, want %d", tc.name, len(p.Requests()), tc.want)
 		}
 		if tc.busy {
 			a.busy.Unlock()
 		}
 	}
-	a := newAgent(t, &fakeProvider{})
+	a := newAgent(t, &llmtest.Provider{})
 	a.conv.paused = true
 	a.Reset(nil)
 	if a.conv.paused {
@@ -389,7 +363,7 @@ func TestTryCompactIdle(t *testing.T) {
 
 func TestMidTurnCompactionKeepsNoTail(t *testing.T) {
 	t.Parallel()
-	a := newAgent(t, &fakeProvider{})
+	a := newAgent(t, &llmtest.Provider{})
 	a.conv.messages = history()
 	if err := a.compact(context.Background(), compactOpts{midTurn: true}); err != nil {
 		t.Fatal(err)
@@ -397,13 +371,13 @@ func TestMidTurnCompactionKeepsNoTail(t *testing.T) {
 	if len(a.conv.messages) != 1 || !strings.HasSuffix(a.conv.messages[0].Text(), compactContinue) {
 		t.Errorf("mid-turn compaction leaves an open tool round; it must keep no tail: %+v", a.conv.messages)
 	}
-	p := &scriptedProvider{}
+	p := &llmtest.Provider{Reply: llmtest.Steps()}
 	a.live.provider = p
 	a.conv.messages = history()
 	if err := a.Compact(context.Background(), ""); err != nil {
 		t.Fatal(err)
 	}
-	if len(a.conv.messages) != 1 || strings.HasSuffix(a.conv.messages[0].Text(), compactContinue) || !strings.Contains(p.requests[0].Messages[len(history())].Text(), compactNoTail) {
+	if len(a.conv.messages) != 1 || strings.HasSuffix(a.conv.messages[0].Text(), compactContinue) || !strings.Contains(p.Request(0).Messages[len(history())].Text(), compactNoTail) {
 		t.Errorf("history ending in unanswered tool results (a cancelled turn) keeps no tail and asks for the current state: %+v", a.conv.messages)
 	}
 	a.conv.messages = closedHistory()
@@ -447,7 +421,7 @@ func TestClipKeepsCodeHeadAndTail(t *testing.T) {
 
 func TestThrashPauseFromMeasuredUsage(t *testing.T) {
 	t.Parallel()
-	p := &fakeProvider{replies: []llm.Message{assistantText("SUMMARY")}, usage: llm.Usage{Input: 5000}}
+	p := &llmtest.Provider{Reply: llmtest.Script(llmtest.Text("SUMMARY")), Usage: llm.Usage{Input: 5000}}
 	a := newAgent(t, p)
 	a.live.cfg.CompactAt = config.Threshold{Tokens: 4000}
 	a.conv.messages = history()
@@ -466,7 +440,7 @@ func TestThrashPauseFromMeasuredUsage(t *testing.T) {
 
 func TestIdleCompactionSizesTailFromIdleThreshold(t *testing.T) {
 	t.Parallel()
-	a := newAgent(t, &fakeProvider{})
+	a := newAgent(t, &llmtest.Provider{})
 	a.live.cfg.CompactIdleAt = config.Threshold{Tokens: 400}
 	a.conv.messages = history()
 	a.SetContextTokens(20000)
@@ -498,17 +472,10 @@ func TestClipHistory(t *testing.T) {
 	}
 }
 
-type billedErrorProvider struct{}
-
-func (billedErrorProvider) Stream(context.Context, llm.Request, func(llm.Delta)) (llm.Message, llm.Usage, error) {
-	cost := 0.002
-	return llm.Message{}, llm.Usage{Input: 900, Output: 7, Cost: &cost}, errors.New("the model returned an empty response")
-}
-
 func TestBilledFailuresRecordTheirUsage(t *testing.T) {
 	t.Setenv("QI_SESSION_DIR", t.TempDir())
-	a := newAgent(t, &fakeProvider{})
-	a.live.provider = billedErrorProvider{}
+	cost := 0.002
+	a := newAgent(t, &llmtest.Provider{Reply: llmtest.Fail(errors.New("the model returned an empty response")), Usage: llm.Usage{Input: 900, Output: 7, Cost: &cost}})
 	s, err := session.Create(session.CreateOptions{Cwd: a.cwd, Model: "m", Kind: session.Interactive})
 	if err != nil {
 		t.Fatal(err)
@@ -537,25 +504,18 @@ func TestBilledFailuresRecordTheirUsage(t *testing.T) {
 	}
 }
 
-type flakyProvider struct{ calls int }
-
-func (f *flakyProvider) Stream(context.Context, llm.Request, func(llm.Delta)) (llm.Message, llm.Usage, error) {
-	f.calls++
-	if f.calls == 1 {
-		return llm.Message{}, llm.Usage{}, errors.New("stream error: stream ID 63; INTERNAL_ERROR; received from peer")
-	}
-	return assistantText("SUMMARY"), llm.Usage{}, nil
-}
-
 func TestCompactionRetriesATransientFailure(t *testing.T) {
 	old := llm.Sleep
 	llm.Sleep = func(context.Context, time.Duration) error { return nil }
 	t.Cleanup(func() { llm.Sleep = old })
-	a := newAgent(t, &fakeProvider{})
-	p := &flakyProvider{}
+	a := newAgent(t, &llmtest.Provider{})
+	reset := func(llm.Request) (llm.Message, error) {
+		return llm.Message{}, errors.New("stream error: stream ID 63; INTERNAL_ERROR; received from peer")
+	}
+	p := &llmtest.Provider{Reply: llmtest.Steps(reset, reply(llmtest.Text("SUMMARY")))}
 	a.live.provider = p
 	a.conv.messages = history()
-	if err := a.Compact(context.Background(), ""); err != nil || p.calls != 2 {
-		t.Errorf("compaction after one reset: %v, %d calls", err, p.calls)
+	if err := a.Compact(context.Background(), ""); err != nil || len(p.Requests()) != 2 {
+		t.Errorf("compaction after one reset: %v, %d calls", err, len(p.Requests()))
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/paul-nameless/qi/internal/llm"
+	"github.com/paul-nameless/qi/internal/llm/llmtest"
 )
 
 func bgCall(id, cmd string) llm.Message {
@@ -28,27 +29,23 @@ func openGate(t *testing.T, gate string) {
 	}
 }
 
-func textMsg(s string) llm.Message {
-	return llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: s}}}
-}
-
 func TestHeadlessTurnWaitsForBackgroundJob(t *testing.T) {
 	t.Parallel()
 	gate := filepath.Join(t.TempDir(), "gate")
-	p := &fakeProvider{replies: []llm.Message{bgCall("c1", gated(gate, "echo finished")), textMsg("waiting for it")}}
+	p := &llmtest.Provider{Reply: llmtest.Script(bgCall("c1", gated(gate, "echo finished")), llmtest.Text("waiting for it"))}
 	a := newHeadlessAgent(t, p, onJobWait(func() { openGate(t, gate) }))
 	t.Cleanup(a.Jobs().KillAll)
 	final, stats, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "go"}})
 	if err != nil || final != "done" || stats.Requests != 4 {
 		t.Fatalf("final %q stats %+v err %v", final, stats, err)
 	}
-	if res := p.requests[1][len(p.requests[1])-1].Blocks[0]; !strings.Contains(res.Text, "Started background job 1") {
+	if res := lastOf(p.Request(1)).Blocks[0]; !strings.Contains(res.Text, "Started background job 1") {
 		t.Fatalf("start result %q", res.Text)
 	}
-	if !strings.Contains(lastText(p.requests[2][len(p.requests[2])-1]), "<background-jobs>Background job 1 is still running") {
+	if !strings.Contains(lastText(lastOf(p.Request(2))), "<background-jobs>Background job 1 is still running") {
 		t.Fatal("the run should say a job is still running before it waits")
 	}
-	last := p.requests[3][len(p.requests[3])-1]
+	last := lastOf(p.Request(3))
 	if last.Role != llm.RoleUser || !strings.Contains(lastText(last), `<background-job id="1" status="exit 0"`) || !strings.Contains(lastText(last), "finished") {
 		t.Fatalf("notice not delivered: %+v", last)
 	}
@@ -56,7 +53,7 @@ func TestHeadlessTurnWaitsForBackgroundJob(t *testing.T) {
 
 func TestCancelWhileHeadlessWaitsKeepsAnswer(t *testing.T) {
 	t.Parallel()
-	p := &fakeProvider{replies: []llm.Message{bgCall("c1", "sleep 30"), textMsg("waiting")}}
+	p := &llmtest.Provider{Reply: llmtest.Script(bgCall("c1", "sleep 30"), llmtest.Text("waiting"))}
 	ctx, cancel := context.WithCancel(context.Background())
 	a := newHeadlessAgent(t, p, onJobWait(cancel))
 	t.Cleanup(a.Jobs().KillAll)
@@ -76,7 +73,7 @@ func TestCancelWhileHeadlessWaitsKeepsAnswer(t *testing.T) {
 
 func TestInteractiveTurnDoesNotWaitForJobs(t *testing.T) {
 	t.Parallel()
-	p := &fakeProvider{replies: []llm.Message{bgCall("c1", "sleep 30"), textMsg("server up")}}
+	p := &llmtest.Provider{Reply: llmtest.Script(bgCall("c1", "sleep 30"), llmtest.Text("server up"))}
 	a := newAgent(t, p)
 	t.Cleanup(a.Jobs().KillAll)
 	start := time.Now()
@@ -91,7 +88,7 @@ func TestInteractiveTurnDoesNotWaitForJobs(t *testing.T) {
 
 func TestHeadlessNudgeLetsModelKillServer(t *testing.T) {
 	t.Parallel()
-	p := &fakeProvider{replies: []llm.Message{bgCall("c1", "sleep 30"), textMsg("server checked"), runCall("c2", "return await jobs({kill: 1})"), textMsg("final")}}
+	p := &llmtest.Provider{Reply: llmtest.Script(bgCall("c1", "sleep 30"), llmtest.Text("server checked"), runCall("c2", "return await jobs({kill: 1})"), llmtest.Text("final"))}
 	a := newHeadlessAgent(t, p, nopDisplay{})
 	t.Cleanup(a.Jobs().KillAll)
 	start := time.Now()
@@ -99,7 +96,7 @@ func TestHeadlessNudgeLetsModelKillServer(t *testing.T) {
 	if err != nil || final != "final" || stats.Requests != 4 || time.Since(start) > 5*time.Second {
 		t.Fatalf("final %q stats %+v err %v after %s", final, stats, err, time.Since(start))
 	}
-	if got := lastText(p.requests[2][len(p.requests[2])-1]); !strings.Contains(got, "Background job 1 is still running") || !strings.Contains(got, "jobs({kill: N})") || !strings.Contains(got, "complete final answer again") {
+	if got := lastText(lastOf(p.Request(2))); !strings.Contains(got, "Background job 1 is still running") || !strings.Contains(got, "jobs({kill: N})") || !strings.Contains(got, "complete final answer again") {
 		t.Fatalf("nudge %q", got)
 	}
 }
@@ -107,7 +104,7 @@ func TestHeadlessNudgeLetsModelKillServer(t *testing.T) {
 func TestNoticeOfIdleJobJoinsNextTurn(t *testing.T) {
 	t.Parallel()
 	gate := filepath.Join(t.TempDir(), "gate")
-	p := &fakeProvider{replies: []llm.Message{bgCall("c1", gated(gate, "exit 4")), textMsg("waiting")}}
+	p := &llmtest.Provider{Reply: llmtest.Script(bgCall("c1", gated(gate, "exit 4")), llmtest.Text("waiting"))}
 	a := newAgent(t, p)
 	t.Cleanup(a.Jobs().KillAll)
 	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "go"}}); err != nil {
@@ -125,7 +122,7 @@ func TestNoticeOfIdleJobJoinsNextTurn(t *testing.T) {
 	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "next"}}); err != nil {
 		t.Fatal(err)
 	}
-	first := p.requests[len(p.requests)-1]
+	first := p.Last().Messages
 	if got := lastText(first[len(first)-1]); !strings.Contains(got, "next") || !strings.Contains(got, `status="exit 4"`) {
 		t.Fatalf("notice of a job that finished between turns should join the next user message: %q", got)
 	}
@@ -133,9 +130,9 @@ func TestNoticeOfIdleJobJoinsNextTurn(t *testing.T) {
 
 func TestQueueDuringLastReplyWithoutJobsEndsTurn(t *testing.T) {
 	t.Parallel()
-	p := &fakeProvider{}
+	p := &llmtest.Provider{}
 	a := newAgent(t, p)
-	p.onCall = func(int) { a.Queue([]llm.Block{{Type: llm.BlockText, Text: "later"}}) }
+	p.OnCall = func(int) { a.Queue([]llm.Block{{Type: llm.BlockText, Text: "later"}}) }
 	if _, stats, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "go"}}); err != nil || stats.Requests != 1 {
 		t.Fatalf("stats %+v err %v", stats, err)
 	}
