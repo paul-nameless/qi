@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/paul-nameless/qi/internal/config"
+	"github.com/paul-nameless/qi/internal/jsvm"
 	"github.com/paul-nameless/qi/internal/llm"
 	"github.com/paul-nameless/qi/internal/mcp"
 )
@@ -346,6 +348,28 @@ func TestCellStopsCallingAfterCancel(t *testing.T) {
 	}
 }
 
+func TestCellFiresTimersInDeadlineOrder(t *testing.T) {
+	t.Parallel()
+	k := newCellKit(t)
+	c := newCell(context.Background(), k.run.r, k.env, nil, time.Hour)
+	defer c.clock.stop()
+	var got []string
+	fired := func(name string) func(jsvm.Value) { return func(jsvm.Value) { got = append(got, name) } }
+	early := &pendingCall{kind: sleepCall, resolve: fired("early")}
+	c.startTimer(early, 200*time.Millisecond)
+	early.due = time.Now().Add(-time.Minute)
+	c.startTimer(&pendingCall{kind: sleepCall, resolve: fired("late")}, 0)
+	for len(c.pending) > 0 {
+		if !c.next() {
+			t.Fatal("the cell stopped")
+		}
+	}
+	c.wg.Wait()
+	if !slices.Equal(got, []string{"early", "late"}) {
+		t.Errorf("timers fired as %v, want early before late", got)
+	}
+}
+
 func TestCellTimeoutSparesFormatting(t *testing.T) {
 	t.Parallel()
 	t.Run("in time", func(t *testing.T) {
@@ -368,13 +392,17 @@ func testEndlessFormatStopped(t *testing.T) {
 	k := newCellKit(t)
 	k.second(100 * time.Millisecond)
 	done := make(chan Result, 1)
+	start := time.Now()
 	go func() { done <- k.cellCtx(context.Background(), `return {toJSON() { while (true) {} }}`, 0) }()
 	select {
 	case res := <-done:
+		if d, bound := time.Since(start), formatSeconds*k.run.r.unit(); d < bound {
+			t.Errorf("an endless toJSON was stopped after %v, before the %v format bound", d, bound)
+		}
 		if !strings.Contains(res.Text, "the value could not be shown") {
 			t.Errorf("endless toJSON: %q", res.Text)
 		}
-	case <-time.After(formatSeconds*k.run.r.unit() + 5*time.Second):
+	case <-time.After(formatSeconds*k.run.r.unit() + 3*time.Second):
 		t.Fatal("formatting an endless toJSON was not stopped")
 	}
 	k.second(0)
@@ -968,8 +996,9 @@ func TestCellEndlessFormatJobsStopped(t *testing.T) {
 	k.second(100 * time.Millisecond)
 	start := time.Now()
 	k.want(`return {toJSON() { const spin = () => Promise.resolve().then(spin); spin(); return 3 }}`, "3")
-	if d := time.Since(start); d > formatSeconds*k.run.r.unit()+5*time.Second {
-		t.Errorf("an endless job loop held the result for %v", d)
+	bound := formatSeconds * k.run.r.unit()
+	if d := time.Since(start); d < bound || d > bound+3*time.Second {
+		t.Errorf("an endless job loop held the result for %v, want the %v format bound", d, bound)
 	}
 	k.second(0)
 	k.want(`await sleep(1); 4`, "4")

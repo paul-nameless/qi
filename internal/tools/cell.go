@@ -29,6 +29,7 @@ type pendingCall struct {
 	fn        jsvm.Value
 	args      []jsvm.Value
 	stop      chan struct{}
+	due       time.Time
 	cancelled bool
 	late      bool
 }
@@ -368,7 +369,7 @@ func (c *cell) lockPath(t *Function, input json.RawMessage) func() {
 func (c *cell) startTimer(p *pendingCall, d time.Duration) int {
 	id := c.add(p)
 	stop := make(chan struct{})
-	p.stop = stop
+	p.stop, p.due = stop, time.Now().Add(d)
 	c.wg.Go(func() {
 		t := time.NewTimer(d)
 		defer t.Stop()
@@ -393,17 +394,18 @@ func (c *cell) clearTimer(id int) {
 
 func (c *cell) settle(o outcome) {
 	p := c.pending[o.id]
+	if early := c.dueBefore(o.id, p); early != nil {
+		c.wg.Go(func() { c.outcomes <- o })
+		early.cancelled = true
+		close(early.stop)
+		c.fire(early)
+		return
+	}
 	delete(c.pending, o.id)
 	switch p.kind {
-	case sleepCall:
+	case sleepCall, timerCall:
 		if !p.cancelled {
-			p.resolve(jsvm.Undefined())
-		}
-	case timerCall:
-		if !p.cancelled {
-			if _, err := c.vm.CallValue(p.fn, jsvm.Undefined(), p.args...); err != nil && !c.stoppedBy(err) {
-				c.noteTimerErr(err)
-			}
+			c.fire(p)
 		}
 	default:
 		c.record(o, p)
@@ -413,6 +415,37 @@ func (c *cell) settle(o outcome) {
 			return
 		}
 		p.resolve(c.jsValue(o.res))
+	}
+}
+
+func (c *cell) dueBefore(id int, p *pendingCall) *pendingCall {
+	if p.kind == toolCall || p.cancelled {
+		return nil
+	}
+	var early *pendingCall
+	earlyID := id
+	for qid, q := range c.pending {
+		if q.kind == toolCall || q.cancelled {
+			continue
+		}
+		at := p.due
+		if early != nil {
+			at = early.due
+		}
+		if q.due.Before(at) || q.due.Equal(at) && qid < earlyID {
+			early, earlyID = q, qid
+		}
+	}
+	return early
+}
+
+func (c *cell) fire(p *pendingCall) {
+	if p.kind == sleepCall {
+		p.resolve(jsvm.Undefined())
+		return
+	}
+	if _, err := c.vm.CallValue(p.fn, jsvm.Undefined(), p.args...); err != nil && !c.stoppedBy(err) {
+		c.noteTimerErr(err)
 	}
 }
 
