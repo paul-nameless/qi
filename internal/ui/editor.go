@@ -17,12 +17,14 @@ import (
 var (
 	ErrEOF       = errors.New("eof")
 	ErrInterrupt = errors.New("interrupt")
+	ErrWake      = errors.New("wake")
 )
 
 type Editor struct {
 	T         *Terminal
 	P         *Printer
 	Interrupt chan struct{}
+	Wake      <-chan struct{}
 	OnToggle  func() string
 	IsImage   func(text string) []string
 	OnSlash   func() (text string, submit bool)
@@ -120,6 +122,10 @@ func (e *Editor) ReadLine(prompt, initial string) (string, error) {
 			}
 			e.P.FinishPrompt()
 			return "", ErrInterrupt
+		case <-e.Wake:
+			var line string
+			e.P.Locked(func() { line = string(st.buf) })
+			return line, ErrWake
 		case k = <-e.T.Keys:
 		}
 		if submit, handled := e.hook(st, k); handled {

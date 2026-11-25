@@ -337,6 +337,14 @@ func (a *Agent) KillJobs() {
 	a.env.Jobs.KillAll()
 }
 
+func (a *Agent) JobsChanged() <-chan struct{} {
+	return a.env.Jobs.Changed()
+}
+
+func (a *Agent) HasJobNotices() bool {
+	return a.env.Jobs.HasNotices()
+}
+
 func (a *Agent) jobBlocks() []llm.Block {
 	var out []llm.Block
 	for _, n := range a.env.Jobs.TakeNotices() {
@@ -351,6 +359,9 @@ func (a *Agent) awaitJobs(ctx context.Context) bool {
 	for {
 		if a.env.Jobs.HasNotices() {
 			return true
+		}
+		if !a.headless {
+			return false
 		}
 		ids := a.env.Jobs.Waiting()
 		if len(ids) == 0 {

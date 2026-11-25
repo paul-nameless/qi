@@ -40,7 +40,6 @@ type job struct {
 	id      int
 	command string
 	path    string
-	daemon  bool
 	nowait  bool
 	start   time.Time
 	cmd     *exec.Cmd
@@ -67,7 +66,7 @@ func (j *Jobs) Waiting() []int {
 	defer j.mu.Unlock()
 	var ids []int
 	for _, jb := range j.list {
-		if jb.status == "" && !jb.daemon && !jb.nowait {
+		if jb.status == "" && !jb.nowait {
 			ids = append(ids, jb.id)
 		}
 	}
@@ -144,7 +143,7 @@ func (jb *job) isGone() bool {
 	}
 }
 
-func (j *Jobs) start(ctx context.Context, cmd *exec.Cmd, cancel context.CancelFunc, timeout time.Duration, command, dir string, daemon bool) (*job, error) {
+func (j *Jobs) start(ctx context.Context, cmd *exec.Cmd, cancel context.CancelFunc, timeout time.Duration, command, dir string) (*job, error) {
 	j.mu.Lock()
 	j.seq++
 	id := j.seq
@@ -161,7 +160,7 @@ func (j *Jobs) start(ctx context.Context, cmd *exec.Cmd, cancel context.CancelFu
 		f.Close()
 		return nil, err
 	}
-	jb := &job{id: id, command: command, path: path, daemon: daemon, start: time.Now(), cmd: cmd, cancel: cancel, gone: make(chan struct{})}
+	jb := &job{id: id, command: command, path: path, start: time.Now(), cmd: cmd, cancel: cancel, gone: make(chan struct{})}
 	j.mu.Lock()
 	j.list = append(pruneFinished(j.list), jb)
 	j.mu.Unlock()
@@ -262,11 +261,7 @@ func (jb *job) notice(status string, leftovers bool, timeout time.Duration) stri
 		fmt.Fprintf(&b, "output: %d lines in %s, last %d:\n%s\n", lines, jb.path, noticeTailLines, tail)
 	}
 	if leftovers {
-		until := ""
-		if timeout > 0 {
-			until = fmt.Sprintf(" until the job's %s timeout", timeout)
-		}
-		fmt.Fprintf(&b, "processes it started are still running%s; stop them sooner with jobs (kill: %d)\n", until, jb.id)
+		fmt.Fprintf(&b, "processes it started are still running until the job's %s timeout; stop them sooner with jobs({kill: %d})\n", timeout, jb.id)
 	}
 	b.WriteString("</background-job>")
 	return b.String()
@@ -338,11 +333,7 @@ func (j *Jobs) Describe() string {
 		case !jb.isGone():
 			state += ", processes it started still running"
 		}
-		kind := ""
-		if jb.daemon {
-			kind = " (daemon)"
-		}
-		fmt.Fprintf(&b, "%d  %s%s  pid %d  %s\n    %s\n", jb.id, state, kind, jb.cmd.Process.Pid, jb.path, OneLine(jb.command, 200))
+		fmt.Fprintf(&b, "%d  %s  pid %d  %s\n    %s\n", jb.id, state, jb.cmd.Process.Pid, jb.path, OneLine(jb.command, 200))
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
@@ -373,30 +364,20 @@ func startJob(env *Env, a bashArgs) Result {
 	if env.Jobs == nil {
 		return errResult("background jobs are not available here")
 	}
-	var ctx context.Context
-	var cancel context.CancelFunc
 	timeout := time.Duration(jobTimeout(a)) * time.Second
-	if timeout > 0 {
-		ctx, cancel = context.WithTimeout(context.Background(), timeout)
-	} else {
-		ctx, cancel = context.WithCancel(context.Background())
-	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	cmd := bashCmd(ctx, env, a.Command)
 	dir, err := env.outDir()
 	if err != nil {
 		cancel()
 		return errResult("start background job: %v", err)
 	}
-	jb, err := env.Jobs.start(ctx, cmd, cancel, timeout, a.Command, dir, a.Daemon)
+	jb, err := env.Jobs.start(ctx, cmd, cancel, timeout, a.Command, dir)
 	if err != nil {
 		cancel()
 		return errResult("start background job: %v", err)
 	}
-	wait := "When it exits you get a message with its status and output tail: don't poll or sleep for it. Continue with other work, or end your turn to wait."
-	if a.Daemon {
-		wait = "It runs as a daemon: your turn won't wait for it, and you get a message only if it exits."
-	}
-	text := fmt.Sprintf("Started background job %d (pid %d), output in %s. %s Stop it with jobs (kill: %d).", jb.id, cmd.Process.Pid, jb.path, wait, jb.id)
+	text := fmt.Sprintf("Started background job %d (pid %d, timeout %s), output in %s. When it exits or times out you get a message with its status and output tail: don't poll or sleep for it; continue with other work or answer. Stop it with jobs({kill: %d}) when you no longer need it.", jb.id, cmd.Process.Pid, timeout, jb.path, jb.id)
 	return Result{Text: text, Summary: fmt.Sprintf("job %d started", jb.id)}
 }
 
@@ -406,11 +387,8 @@ const (
 )
 
 func jobTimeout(a bashArgs) int {
-	switch {
-	case a.Timeout > 0:
+	if a.Timeout > 0 {
 		return min(a.Timeout, maxJobTimeout)
-	case a.Daemon:
-		return 0
 	}
 	return defaultJobTimeout
 }

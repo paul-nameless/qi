@@ -90,14 +90,24 @@ func newAgent(t *testing.T, p *fakeProvider) *Agent {
 }
 
 func newAgentUI(t *testing.T, p *fakeProvider, ui Display) *Agent {
-	return New(Options{
+	return New(agentOptions(t, p, ui))
+}
+
+func newHeadlessAgent(t *testing.T, p *fakeProvider, ui Display) *Agent {
+	o := agentOptions(t, p, ui)
+	o.Headless = true
+	return New(o)
+}
+
+func agentOptions(t *testing.T, p *fakeProvider, ui Display) Options {
+	return Options{
 		Config:   config.Config{CompactAt: config.Threshold{Tokens: 1 << 30}, Model: "m"},
 		Cwd:      t.TempDir(),
 		Provider: p,
 		UI:       ui,
 		Tool:     tools.Run(tools.Bash(), tools.JobsFunc()),
 		SpillDir: t.TempDir(),
-	})
+	}
 }
 
 func lastText(m llm.Message) string {

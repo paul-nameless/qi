@@ -82,7 +82,10 @@ func testRepl(t *testing.T, cfg config.Config, p llm.Provider) (*repl, capture) 
 	if cfg.CompactAt == (config.Threshold{}) {
 		cfg.CompactAt = config.Threshold{Tokens: 1 << 30}
 	}
-	a := newTestAgentWith(t, cfg, t.TempDir(), p, display)
+	if cfg.Picker == "" {
+		cfg.Picker = "cat"
+	}
+	a, _ := buildAgent(cfg, options{}, t.TempDir(), p, display, false, true)
 	r := &repl{agent: a, display: display, hooks: &agent.Hooks{}}
 	if err := r.newSession(); err != nil {
 		t.Fatal(err)
@@ -508,7 +511,7 @@ func TestJSONNeedsHeadless(t *testing.T) {
 func TestTurnStatsShowRunningJobs(t *testing.T) {
 	p := &scriptProvider{reply: func(_ context.Context, n int, _ llm.Request) (llm.Message, error) {
 		if n == 0 {
-			return runCall("c1", `await bash("sleep 30", {daemon: true})`), nil
+			return runCall("c1", `await bash("sleep 30", {background: true})`), nil
 		}
 		return textReply("started"), nil
 	}}
@@ -525,5 +528,42 @@ func TestTurnStatsShowRunningJobs(t *testing.T) {
 	}, "")
 	if got := out.String(); strings.Count(got, "bg job") != 1 {
 		t.Errorf("killed job still counted:\n%s", got)
+	}
+}
+
+func TestFinishedJobStartsTurn(t *testing.T) {
+	gate := filepath.Join(t.TempDir(), "gate")
+	cmd, _ := json.Marshal(fmt.Sprintf("while [ ! -e %q ]; do sleep 0.01; done; exit 5", gate))
+	p := &scriptProvider{reply: func(_ context.Context, n int, _ llm.Request) (llm.Message, error) {
+		if n == 0 {
+			return runCall("c1", `await bash(`+string(cmd)+`, {background: true, timeout: 30})`), nil
+		}
+		return textReply("ok"), nil
+	}}
+	r, _ := testRepl(t, config.Config{Model: "m"}, p)
+	t.Cleanup(r.agent.KillJobs)
+	r.turn(func(context.Context) ([]llm.Block, error) {
+		return []llm.Block{{Type: llm.BlockText, Text: "go"}}, nil
+	}, "")
+	if got := r.jobTurn("half typed"); got != "half typed" || len(p.requests) != 2 {
+		t.Fatalf("a wake without notices started a turn: %q after %d requests", got, len(p.requests))
+	}
+	if err := os.WriteFile(gate, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	timeout := time.After(10 * time.Second)
+	for !r.agent.HasJobNotices() {
+		select {
+		case <-r.agent.JobsChanged():
+		case <-timeout:
+			t.Fatal("the job never finished")
+		}
+	}
+	if got := r.jobTurn("half typed"); got != "half typed" || len(p.requests) != 3 {
+		t.Fatalf("draft %q after %d requests", got, len(p.requests))
+	}
+	msgs := p.request(2).Messages
+	if last := msgs[len(msgs)-1]; last.Role != llm.RoleUser || !strings.Contains(last.Text(), `<background-job id="1" status="exit 5"`) {
+		t.Fatalf("the turn did not carry the notice: %+v", last)
 	}
 }

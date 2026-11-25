@@ -125,6 +125,7 @@ func (r *repl) run() error {
 		r.editor.OnAt = r.filePicker
 	}
 	r.editor.OnCopyID = func() { r.report(r.copyAnswer("id")) }
+	r.editor.Wake = r.agent.JobsChanged()
 	r.handleSignals()
 	r.handleResize()
 	r.banner()
@@ -136,6 +137,10 @@ func (r *repl) run() error {
 		draft = ""
 		if errors.Is(err, ui.ErrEOF) {
 			return nil
+		}
+		if errors.Is(err, ui.ErrWake) {
+			draft = r.jobTurn(line)
+			continue
 		}
 		if errors.Is(err, ui.ErrInterrupt) {
 			if time.Since(r.lastIntr) < 2*time.Second {
@@ -160,14 +165,29 @@ func (r *repl) run() error {
 				return submitPrompt(ctx, r.agent, r.display, r.hooks, text, images...)
 			}, draft)
 		}
-		for q := r.agent.DrainQueue(); len(q) > 0 && !r.lastCancelled; q = r.agent.DrainQueue() {
-			draft = r.turn(func(context.Context) ([]llm.Block, error) { return q, nil }, draft)
-		}
-		if q := r.agent.DrainQueue(); len(q) > 0 {
-			draft = strings.TrimSpace(draft + " " + queuedText(q))
-		}
+		draft = r.runQueued(draft)
 		r.armIdle()
 	}
+}
+
+func (r *repl) jobTurn(draft string) string {
+	if !r.agent.HasJobNotices() {
+		return draft
+	}
+	r.stopIdle()
+	draft = r.runQueued(r.turn(func(context.Context) ([]llm.Block, error) { return nil, nil }, draft))
+	r.armIdle()
+	return draft
+}
+
+func (r *repl) runQueued(draft string) string {
+	for q := r.agent.DrainQueue(); len(q) > 0 && !r.lastCancelled; q = r.agent.DrainQueue() {
+		draft = r.turn(func(context.Context) ([]llm.Block, error) { return q, nil }, draft)
+	}
+	if q := r.agent.DrainQueue(); len(q) > 0 {
+		draft = strings.TrimSpace(draft + " " + queuedText(q))
+	}
+	return draft
 }
 
 func (r *repl) banner() {

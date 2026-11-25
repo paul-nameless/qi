@@ -60,12 +60,18 @@ func TestBackgroundJobReturnsAtOnceAndNotifies(t *testing.T) {
 	}
 }
 
-func TestDaemonJobIsNotWaitedFor(t *testing.T) {
+func TestBackgroundJobKilledOutsideNotifies(t *testing.T) {
 	t.Parallel()
 	env := jobEnv(t)
-	res := runBash(context.Background(), env, bashIn(t, map[string]any{"command": "sleep 30", "daemon": true}), nil)
-	if res.IsError || !strings.Contains(res.Text, "daemon") || len(env.Jobs.Waiting()) != 0 {
-		t.Fatalf("daemon: %+v waiting %v", res, env.Jobs.Waiting())
+	res := runBash(context.Background(), env, bashIn(t, map[string]any{"command": "sleep 30", "background": true}), nil)
+	if res.IsError || !strings.Contains(res.Text, "timeout 1h0m0s") {
+		t.Fatalf("start: %+v", res)
+	}
+	if err := syscall.Kill(-env.Jobs.list[0].cmd.Process.Pid, syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	if n := waitNotice(t, env.Jobs); n.Status != "signal: terminated" || !strings.Contains(n.Text, `status="signal: terminated"`) {
+		t.Fatalf("notice %+v", n)
 	}
 }
 
@@ -92,14 +98,17 @@ func TestJobsFuncKillsProcessGroup(t *testing.T) {
 	}
 }
 
-func TestKillAllStopsDaemons(t *testing.T) {
+func TestKillAllStopsJobs(t *testing.T) {
 	t.Parallel()
 	env := jobEnv(t)
-	runBash(context.Background(), env, bashIn(t, map[string]any{"command": "sleep 30", "daemon": true}), nil)
+	runBash(context.Background(), env, bashIn(t, map[string]any{"command": "sleep 30", "background": true, "timeout": 86400}), nil)
 	pgid := env.Jobs.list[0].cmd.Process.Pid
 	env.Jobs.KillAll()
 	if syscall.Kill(-pgid, 0) == nil {
-		t.Fatal("daemon survived KillAll")
+		t.Fatal("a job survived KillAll")
+	}
+	if env.Jobs.HasNotices() {
+		t.Fatal("KillAll left a notice")
 	}
 }
 
@@ -129,7 +138,7 @@ func TestBackgroundTimeoutIsSeconds(t *testing.T) {
 	if n := waitNotice(t, env.Jobs); n.Status != "exit 0" || !strings.Contains(n.Text, "until the job's 30m0s timeout") {
 		t.Fatalf("timeout 1800 must mean seconds: %+v", n)
 	}
-	if jobTimeout(bashArgs{Background: true}) != defaultJobTimeout || jobTimeout(bashArgs{Daemon: true}) != 0 || jobTimeout(bashArgs{Timeout: 999999}) != maxJobTimeout {
+	if jobTimeout(bashArgs{Background: true}) != defaultJobTimeout || jobTimeout(bashArgs{Timeout: 999999}) != maxJobTimeout {
 		t.Fatal("job timeout defaults")
 	}
 }
@@ -186,7 +195,7 @@ func TestFinishedJobsArePruned(t *testing.T) {
 		env.Jobs.mu.Unlock()
 		<-last.gone
 	}
-	res := runBash(context.Background(), env, bashIn(t, map[string]any{"command": "sleep 5", "daemon": true}), nil)
+	res := runBash(context.Background(), env, bashIn(t, map[string]any{"command": "sleep 5", "background": true}), nil)
 	if !strings.Contains(res.Text, fmt.Sprintf("Started background job %d", keepFinished+6)) {
 		t.Fatalf("id reused: %s", res.Text)
 	}

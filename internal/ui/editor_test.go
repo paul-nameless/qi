@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -278,6 +279,28 @@ func TestReadLineInterruptAndEOF(t *testing.T) {
 	sendKeys(e, Key{Kind: KeyEOF}, Key{Kind: KeyEnter})
 	if line, err := e.ReadLine("> ", "ab"); err != nil || line != "ab" {
 		t.Errorf("ctrl+d at the end of text: %q %v", line, err)
+	}
+}
+
+func TestReadLineWakeKeepsDraft(t *testing.T) {
+	e := testEditor(t)
+	e.T.Keys = make(chan Key)
+	wake := make(chan struct{})
+	e.Wake = wake
+	done := make(chan error, 1)
+	var line string
+	go func() {
+		var err error
+		line, err = e.ReadLine("> ", "typed")
+		done <- err
+	}()
+	e.T.Keys <- Key{Kind: KeyRune, Rune: 'x'}
+	wake <- struct{}{}
+	if err := <-done; !errors.Is(err, ErrWake) || line != "typedx" {
+		t.Fatalf("wake: %q %v", line, err)
+	}
+	if slices.Contains(e.history, "typedx") {
+		t.Error("a woken draft went into history")
 	}
 }
 

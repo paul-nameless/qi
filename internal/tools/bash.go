@@ -21,7 +21,6 @@ type bashArgs struct {
 	Command    string `json:"command"`
 	Timeout    int    `json:"timeout"`
 	Background bool   `json:"background"`
-	Daemon     bool   `json:"daemon"`
 }
 
 func Bash() *Function {
@@ -37,8 +36,8 @@ func Bash() *Function {
 			Name:     "bash",
 			Params:   []string{"command"},
 			Required: 1,
-			Options:  []string{"timeout", "background", "daemon"},
-			Doc:      fmt.Sprintf("bash(command, {timeout, background, daemon}) → {output, exit_code, timed_out, truncated} — stdin is empty, output is stdout+stderr combined; never throws on a non-zero exit. output keeps the first and last %d KB; truncated is true when the middle was dropped (redirect to a file for more). timeout in seconds: max %d, default the user's bash_timeout (%d unless changed). {background: true} starts a job for long builds and test runs and returns at once with a string naming the job id and its output file; you get a message when it exits, so don't poll or sleep for it; its timeout defaults to %d (max %d). {daemon: true} is for servers and watchers that are not meant to exit: no timeout unless you give one.", keepBytes>>10, maxBashTimeout, defaultBashTimeout, defaultJobTimeout, maxJobTimeout),
+			Options:  []string{"timeout", "background"},
+			Doc:      fmt.Sprintf("bash(command, {timeout, background}) → {output, exit_code, timed_out, truncated} — stdin is empty, output is stdout+stderr combined; never throws on a non-zero exit. output keeps the first and last %d KB; truncated is true when the middle was dropped (redirect to a file for more). timeout in seconds: max %d, default the user's bash_timeout (%d unless changed). {background: true} starts a job (long builds and test runs, servers, watchers) and returns at once with a string naming the job id and its output file; its timeout defaults to %d (max %d), so give servers a timeout long enough for the work. When it exits or times out you get a message with its status and output tail, which starts a new turn if you have already answered, so don't poll or sleep for it. Stop a job you no longer need with jobs({kill: N}); a headless run (qi -q, subagents) waits for running jobs before it ends.", keepBytes>>10, maxBashTimeout, defaultBashTimeout, defaultJobTimeout, maxJobTimeout),
 		},
 	}
 }
@@ -261,7 +260,7 @@ func runBash(ctx context.Context, env *Env, in json.RawMessage, progress func(st
 	if env.project() && !HasSandbox() {
 		return deniedResult("project mode: bash needs an OS sandbox and none is usable here (on Linux install bubblewrap); write and edit still work, or switch the mode with shift+tab")
 	}
-	if a.Background || a.Daemon {
+	if a.Background {
 		return startJob(env, a)
 	}
 	run, err := execBash(ctx, env, a, progress)
