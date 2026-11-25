@@ -15,12 +15,18 @@ tasks:
     cmds:
       - |
         now() { perl -MTime::HiRes=time -e 'printf "%d", time * 1000'; }
+        go test -run '^$' ./... >/dev/null || exit 1
         start=$(now)
         go test -count=1 ./... || exit 1
-        ms=$(( $(now) - start ))
+        end=$(now)
+        if [ -z "$start" ] || [ -z "$end" ]; then
+          echo "could not time the tests: perl failed"
+          exit 1
+        fi
+        ms=$(( end - start ))
         echo "tests took ${ms}ms (limit 5000ms)"
         if [ "$ms" -ge 5000 ]; then
-          echo "the test suite is over 5s; find the slow tests with: go test -count=1 -v ./... | grep -E -- '--- (PASS|FAIL).*\([1-9]'"
+          echo "the test suite is over 5s; find the slow tests with: go test -count=1 -v ./... | grep -E -- '--- (PASS|FAIL).*\((0\.[5-9]|[1-9])'"
           exit 1
         fi
 
