@@ -70,6 +70,7 @@ type client struct {
 	tools   []Tool
 	hidden  int
 	grace   time.Duration
+	closing sync.Once
 }
 
 func start(name string, srv config.MCPServer) (*client, error) {
@@ -142,6 +143,7 @@ func (c *client) post(ctx context.Context, m rpcMsg) error {
 	case c.gone(ctx):
 		return fmt.Errorf("mcp server %s exited", c.name)
 	}
+	go c.close()
 	return fmt.Errorf("mcp %s: %w", c.name, err)
 }
 
@@ -264,12 +266,14 @@ func (c *client) withStderr(err error) error {
 }
 
 func (c *client) close() {
-	c.stdin.Close()
-	select {
-	case <-c.done:
-	case <-time.After(c.grace / 2):
-	}
-	_ = proc.Stop(c.cmd, c.grace)
+	c.closing.Do(func() {
+		c.stdin.Close()
+		select {
+		case <-c.done:
+		case <-time.After(c.grace / 2):
+		}
+		_ = proc.Stop(c.cmd, c.grace)
+	})
 }
 
 type Manager struct {
