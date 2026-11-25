@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/paul-nameless/qi/internal/agent"
 	"github.com/paul-nameless/qi/internal/config"
 	"github.com/paul-nameless/qi/internal/llm"
 	"github.com/paul-nameless/qi/internal/ui"
@@ -134,6 +135,12 @@ func TestTabCompletesInsteadOfRunning(t *testing.T) {
 	r.editor.T.Keys <- ui.Key{Kind: ui.KeyBackspace}
 	if text, submit := r.slashPicker(); text != "/copy" || submit {
 		t.Errorf("backspace in the argument picker removes the space: %q %v", text, submit)
+	}
+	r.skills = []agent.Skill{{Name: "deploy", Path: "/x/SKILL.md"}}
+	keys("skills", ui.KeyEnter)
+	r.editor.T.Keys <- ui.Key{Kind: ui.KeyBackspace}
+	if text, submit := r.slashPicker(); text != "/skills" || submit {
+		t.Errorf("backspace in the skills picker removes the space: %q %v", text, submit)
 	}
 	keys("", ui.KeyEsc)
 	if text, _ := r.slashPicker(); text != "/" {

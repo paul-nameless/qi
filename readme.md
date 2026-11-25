@@ -109,7 +109,7 @@ Commands: `/help`, `/keys`, `/status`, `/config`, `/clear`, `/context`, `/compac
 
 ## External tools
 
-Whenever qi needs you to pick something, it opens its built-in picker: type to filter (fuzzy; a capital letter makes it case-sensitive), up/down to move, Enter to pick, Esc to close. In the `/` menu and its argument lists (`/profile`, `/copy`, ...), Tab puts the highlighted item into the input line without running it (`/` then `comp` Tab gives `/compact ` for adding a focus); elsewhere Tab picks like Enter.
+Whenever qi needs you to pick something, it opens its built-in picker: type to filter (fuzzy; a capital letter makes it case-sensitive), up/down to move, Enter to pick, Esc to close (in the `/` menu, Backspace on an empty filter closes it and removes the `/`; in its argument lists it removes the space after the command). In the `/` menu and its argument lists (`/profile`, `/copy`, ...), Tab puts the highlighted item into the input line without running it (`/` then `comp` Tab gives `/compact ` for adding a focus); elsewhere Tab picks like Enter.
 
 | You press | You get |
 |---|---|
