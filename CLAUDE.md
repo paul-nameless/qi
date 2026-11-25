@@ -1,34 +1,169 @@
 # qi
 
-Minimal Go coding agent for the terminal.
+Minimal Go coding agent for the terminal. The model's only tool is `run`: JavaScript in qi's own engine (`internal/jsvm`) calling async functions (read, write, edit, bash, jobs, subagent, tool_search, mcp).
 
-## Layout
-- `main.go` only `var version` (stamped by goreleaser's `-X main.version`) and `os.Exit(app.Main(os.Args[1:], version))`
-- `internal/app` everything else, exporting only `Main`: `cli.go` the flags on a `flag.FlagSet`, usage, `-version`, `-show`, `-check-config`, exit codes; `version.go` the stamped version, else one from build info; `run.go` config, provider and agent wiring shared by both modes (`buildAgent`: the agent's only tool is `run` wrapping the functions, `newProvider`, `resolveConfig`, `loadHooks`, `submitPrompt`), `headless.go` `-q`/stdin mode (`-json` tees every session entry to stdout via `session.CreateOptions.Tee`, the same bytes as the file), `repl.go` interactive loop, `signals.go` signal handling and ctrl+z job control, `shutdown.go` quit and cleanup, `idle.go` idle compaction, `profile.go` `/profile` and `/effort` switching, `commands.go` slash commands and image attachment, `usage.go` `/usage` (sums every entry's `usage`: this session file plus the subagent files whose meta names it as `parent_session`, then all session files under `session.Root()` touched in the last 30 days, by local day, model and project (the meta `cwd`); compaction entries carry their summary request's usage, and `usage` entries record billed requests that left no message: rejected replies, failed summaries, abandoned retry attempts; each request is priced on its own: a provider-reported `cost` is exact, otherwise `prices.go` estimates it (shown with `~`) from models.dev prices cached in the data dir for a day, looked up by model id only (entries record no provider): `vendor/model` under openrouter, otherwise amazon-bedrock, anthropic, openai, google by exact id, never a reseller's list; tiers by prompt size apply per request; Anthropic cache writes in interactive sessions (meta `kind`) cost the 1h rate, 2x input; a failed fetch is not retried for 10 min; the report is markdown rendered with `ui.Markdown` on a TTY, the one non-dim info output), `settings.go` the `/config` toggles (`run_code`, `show_reasoning`, `terminal_images`: applied live and saved with `config.SetValue`, into the active profile when it sets the key; the builtin picker stays open and switches in place), `picker.go` the pickers (`"builtin"`, the default, is `ui.Editor.Pick`; any other value runs the `picker` config command), `browse.go` the builtin `@` folder browser, `pickcmd.go` `qi pick` (the builtin picker on `/dev/tty` for scripts; `ttyEditor` also serves `qi -r` before the repl exists), `filelist.go` the `@` file list for an external file picker (git files first, then a capped breadth-first walk), `external.go` the shared contract for external UI tools (`toolAvailable`, `expandTool` turns placeholders into quote-aware `$QI_*` env references so values never become shell code, `choose`, `runQuiet`, `runTTY` via `Editor.RunTTY`), `sessions.go` `/resume`, `-r`, `-show`, `render.go` renders a session as text (plain for `-show`, colored with `ui.Markdown` for the `/history` pager; a `run` call shows its code and its inner `calls`)
-- `internal/llm` canonical message types, SSE, provider adapters, `retry.go` typed errors and `Retryable` (request layer retries pre-response failures, `agent.withRetries` mid-stream ones and compaction summaries, each up to 3 times with backoff; a reply cut after visible text is retried too (nothing ran yet, the partial reply was never saved) with a note that the output above is discarded; transient: 408/429/5xx, overload and rate-limit events, events whose message asks to retry, HTTP/2 resets and GOAWAY from the server, connection resets, broken pipes and timeouts; `llm.Sleep` is the injectable wait) (`openai.go` chat completions incl. OpenRouter, `responses.go` the OpenAI Responses API (stateless: `store: false`, encrypted reasoning items replayed for the same model), `anthropic.go`); `llmtest` the scripted fake provider (`Provider` with a `Reply` func, `Script`/`Steps`/`Fail`) and `Text`/`Call` message helpers that tests share
-- `internal/agent` turn loop (`agent.New(Options)`, state unexported behind accessors: `mu` guards `live` (config, provider, session, system prompt, steering queue, context tokens) and is never held across I/O; the mode (`config.Mode`: yolo, read-only, project; shift+tab cycles in that order via `Next`, a `<mode>` note tells the model on change) is an atomic; `busy` is held for a whole turn or compaction and guards `conv` (messages, the `run` tool, turn state); writers that must not land mid-turn go through `update`, which takes `busy` then `mu`), `frontmatter.go` minimal SKILL.md frontmatter parser (top-level scalars only, whitespace-normalised), `builtin.go` embedded built-in skills (`builtin/qi-config`): the skill and the schema are served from memory under `qi://skills/qi-config/` (`tools.Embed`; `read` and skill expansion check `tools.Embedded` before the disk) and listed in the static prompt, so nothing is written and the path is the same on every machine, compaction (`compact.go`: unchanged-history summary request, verbatim tail without reasoning between turns, summary-only mid-turn, overflow retry, thrash pause), steering queue, `format.go` turn stats, context usage and token count strings, `images.go` evicts the oldest images past 100 or 24 MB (never on a normal request), system prompt (`prompt.go` records named sections for `/context`, `context.go` the breakdown), `Reset` and `Load` drop the `run` VM (`Load` tells the model when the history has `run` calls), compaction keeps it, skills, subagent runner (runs `qi -q … -json` with `QI_PARENT_SESSION` set; the child records it as `parent_session` in its meta and writes to `subagents/`, shows tool-call labels as progress, answers with the last assistant text, reports the child's final error line on failure), hooks (`hooks.go`: hook files parsed once; a missing file is skipped, an unreadable or malformed one stops startup; hooks of one event run in parallel and are waited for, except `"async": true` ones, which start detached with no output pipes and are never waited for; `async` is part of the trust fingerprint, and a command listed both ways runs blocking; `onFailure: "block"` turns a failure (start error, exit other than 0/2, timeout, invalid JSON) into what exit 2 does on that event, never on Stop or async; PostToolUse `updatedToolOutput` replaces `Result.Text` and the `output` of the JS value (`tools.replaceOutput`); every hook text the model sees goes through `capText`: over 10,000 characters it keeps the first 2,000 and saves the whole text via `Hooks.Spill`), project trust (`trust.go`: the trust file pins each trusted dir to a fingerprint of its project hooks)
-- `internal/config` JSON config with providers and profiles (`decode.go` strict, case-sensitive decoding with encoding/json/v2 and file/key errors; `validate.go` the schema's enums, minimums and required fields; `schema.json` the embedded JSON Schema, kept in sync with the structs by a test); `mcp.go` the tool globs and the per-profile `mcp` merge by server name (null removes a global server), checked after merging; `mode.go` the `Mode` type the agent, tools and validation share (`tools.Env.Mode` reads it); `limits.go` parses `compact_at`/`compact_idle_at` (tokens or %) and resolves them against `context_window` or a small model table
-- `internal/tools` `Tool` is the one API tool, `run`; `Function` is an async JavaScript function inside it (read/write/edit/bash/jobs/subagent/tool_search/mcp, each with a `CodeSpec`); code mode (`run.go` `tools.Run(funcs...)`: a JavaScript cell in a persistent `internal/jsvm` VM; `Tool.Execute` runs the model's calls in order, parallel calls and per-path locks live inside a cell; each call through hooks (`run` itself fires none), the mode checks and the stale-file guard; `cell.go` the cell loop, its clock stops before the result is formatted, which has its own 5s bound (tests shrink both via `runner.second`, the length of one timeout second); `cellout.go` the result text; `code.go` JS arguments to tool input; `rundoc.go` the description; `Result.Calls` lands on the tool_result block as `calls`; `Tool.Reset` drops the VM, `Tool.Replace` swaps a function and regenerates the description), project mode (`project.go`: bash runs under a sandbox profile, or bwrap with `--unshare-pid`, where only the cwd, the git dir and common dir (asked from git once per session, so a redirect by the model is not followed), temp (os.TempDir and the macOS per-user temp dir, which mktemp uses), the session scratch dir, GOCACHE and GOMODCACHE (from `go env`), ~/.npm, the cargo registry, ~/.Trash and `project_writable` are writable, minus config, config.worktree, hooks, commondir and gitdir in every git dir known at session start (checked by file identity too, so case and Unicode lookalikes on APFS are caught), with each git dir, the dirs between them and `.git` pinned against rename or replace; no ptys (opening other terminals could inject input); the network stays on but on macOS unix sockets are denied except DNS, ssh-agent and sockets under the writable dirs; osascript/open/launchctl/sudo and similar are denied; signals are not limited on macOS (`(target others)` does not stop signals to unsandboxed processes); `findSandbox` probes that sandbox-exec really applies, so qi inside another sandbox reports no sandbox; `checkWritable` refuses write/edit outside those roots after resolving symlinks, dangling ones included, case-insensitively on macOS; without a usable sandbox project mode refuses bash; denials get a project-mode hint; hooks and MCP run outside the sandbox), read-only allowlist (`readonly.go`: builtins get no `$`/backtick arguments, assigning builtins are refused, go subcommands have a flag allowlist; the sandboxes also deny network), `files.go` tracks file mtimes so write refuses to overwrite a file changed since the model last read or wrote it (edit needs no guard: it only replaces exact text); it also snapshots files the model read or wrote, and the agent sends a diff of any outside change with the next tool results or user message (files without a diff, binary or too large, are listed together on one line); `image.go` scales images from read, paste and MCP to ≤1568px with a stdlib area-average resize, `read` takes `crop` for full-resolution regions; `jobs.go` background bash (`background`, timeout 1h by default, max 24h): output straight to a file in the spill dir (`.qi-out/` in the session scratch dir, a private dir also used for truncated output; nothing goes to the user cache dir), a `<background-job>` notice when the job's shell exits, times out or is killed from outside (none when qi kills it: `jobs` kill, /clear, session load, exit); processes left in its group stay listed and killable until the job's timeout, the `jobs` tool lists or kills; a job that exits while the repl waits for input starts a turn by itself once the prompt is empty (`Editor.Wake`/`Woken`; at most 3 in a row while the user sends nothing, none after an interrupt until the user sends something; a timeout's notice and the notices of an interrupted turn wait for the next turn), a notice that arrives mid-turn joins the next tool results; a headless run whose answer ends with jobs running gets one `<background-jobs>` note to kill what it no longer needs, then waits for the rest (a cancel during that wait keeps the answer, and the subagent runner returns a final answer given before its time limit), and all jobs are killed on /clear, session load and exit
-- `internal/ui` termios, key decoder, line editor, printer with status line (the prompt and the steering draft are multi-row `Frame`s; the printer remembers the rows it drew and clears them, recounting them after a resize reflow; a tool id `parent.N` is an inner call: it shows after its parent in the status line and its done line is indented under a dim `· <parent label>` header, the parent's own done line then shortened to its name; `ToolStartCode` (the optional `tools.SourceUI`, fed with the `run` call's code) prints a `run` call's whole code under `· run` at start when `SetRunCode(true)`, which the repl sets from `run_code` each turn), `layout.go` the pure input layout (rows with soft wrap, cursor row and column, scroll window, up/down between rows), `crash.go` (`OnCrash` cleanups, `defer ui.CleanupOnPanic()` in goroutines restores the terminal before re-panicking), `pick.go` the builtin fuzzy picker (drawn as the prompt frame via `Printer.SetPrompt`, which returns the previous prompt; `OnPick` returning a list keeps it open, `OnBack` for left, `OnErase` for Backspace on an empty filter, which closes it), `markdown.go` streaming markdown styling of answers (TTY only; `table.go` aligns tables, `width.go` display width, `image.go` kitty graphics: after a turn the repl passes the final answer to `Printer.Images` unless `terminal_images` is false (read from the current config each turn), which draws existing image files whose paths appear in it, when `KittyGraphics` detects Ghostty/kitty outside tmux)
-- `internal/session` append-only JSONL sessions (an open session file holds an exclusive flock, `lock.go`; `Tee` streams to stdout for `-json`); `Load`/`Entries` are read-only (`Open` repairs the file for appending), `List` summarizes a directory's sessions
-- `internal/mcp` stdio MCP client (lazy start, tool search, per-server `tools`/`exclude_tools` globs from `config/mcp.go` enforced in the Manager: hidden tools never listed or called); exposed as `tool_search`/`mcp_call` in `internal/tools/mcp.go` (compact listing past 10 tools, never cut by the output cap), `/mcp` in `internal/app/commands.go`; subagents get the parent's `mcp` as JSON in `QI_MCP` (unset on read, replaces the config's); `mcptest` is the fake server the tests run
-- `internal/proc` child processes in their own session (`proc.Session`: bash, hooks, subagents, MCP) or process group (`proc.Group`: quiet external tools, which may still need the terminal); one kill policy: SIGTERM the group, SIGKILL it after a grace period (2s, subagents 5s, MCP close 1s; tests shorten them with `SubagentRunner.Grace` (and the 30 min limit with `SubagentRunner.Timeout`) and `mcp.Manager.CloseGrace`), `WaitDelay` grace plus min(grace, 1s); `Stop` escalates synchronously and `proc.Settle` waits (bounded) for escalations of cancelled commands before qi exits; TTY tools (picker, pager, `$EDITOR`) stay in the foreground group
-- `internal/imgutil` the area-average `Resize`, which reads the source a row at a time so only the decoded image and the small result are held, shared by `tools/image.go` and `ui/image.go`
-- `internal/testenv` shared `TestMain` (`testenv.Run`) for config, agent, app and tools: clears `QI_*`, `GIT_*`, API keys and `PAGER`, points `QI_CONFIG_DIR`/`QI_SESSION_DIR` at a temp dir; use it in new test packages
+`main.go` holds only `var version` (stamped by goreleaser's `-X main.version`) and `os.Exit(app.Main(os.Args[1:], version))`; everything else is under `internal/`.
 
 ## Commands
+
 - Build: `go build -o qi .`
-- Test: `go test ./...`; `task test` runs every test uncached and fails when the suite takes 5s or more (a local budget, ~4s now; CI runs `go test -race` without it)
+- Test: `go test ./...`; `task test` runs every test uncached and fails when the suite takes 5s or more (local budget, ~4s now)
+- Race: `go test -race ./...` is what CI runs (plus gofmt, vet, golangci-lint, bwrap installed for the Linux sandbox); `task ch` does not run `-race`, so run it yourself after concurrency changes
 - Format, vet, lint, test: `task ch` (fmt and lint in parallel, then `task test`; lint runs golangci-lint v2.15.0 via `go run`, same as CI)
-- Headless smoke test: `./qi -q "prompt" </dev/null` (uses `~/.config/qi/config.json`); `./qi -check-config [-config f] [-p name]` validates config without calling the API; to trigger compaction, run with `-config` pointing at a copy of the config with a small `compact_at` (e.g. `20000` or `1.5%`); the system prompt and tools alone are ~5k tokens, so lower values pause auto-compaction
+- Golden requests: `go test ./internal/app -run TestRequestBodiesPinned -update` rewrites `internal/app/testdata/request-*.json`; only update when the request change is intended, and read the diff
+- Headless smoke test: `./qi -q "prompt" </dev/null` (uses `~/.config/qi/config.json`); `./qi -check-config [-config f] [-p name]` validates config without calling the API
+- Compaction by hand: `-config` with a copy of the config and a small `compact_at` (`20000` or `1.5%`); prompt and tools alone are ~5k tokens, so lower values pause auto-compaction
 - UI testing: run in tmux (`tmux new-session -d -s ai -x 120 -y 40 './qi'`, then `send-keys`/`capture-pane`); shift+tab is `$'\e[Z'`, bracketed paste via `tmux paste-buffer -p`
+- `internal/jsvm/bench` is its own Go module (own `go.mod`), so `go test ./...` skips it
 
 ## Rules
-- Keep the request prefix byte-stable for prompt caching: no timestamps in the system prompt, fixed tool list (read-only is enforced at execution, not by removing tools), deterministic JSON. The system prompt is two cached blocks: the static part (base prompt, global instruction files, global skills) must not depend on the directory, so every session shares it; cwd, date and project files go in the second block
+
+- Keep the request prefix byte-stable for prompt caching: fixed tool list (modes are enforced at execution, never by removing tools), deterministic JSON
+- Nothing time-dependent in the cached system blocks, nothing directory-dependent in the static block
+- The system prompt has three parts (`agent.BuildSystemPrompt`, split by `llm.Request.SystemParts`):
+  - cached static block: base prompt, global instruction files, global and builtin skills; directory-free, so every session shares it
+  - cached project block: project instruction files and skills
+  - uncached `<env>` tail: cwd, scratch dir, platform, date, git (the Responses API sends all three as one `instructions` string)
 - Every `tool_use` in the log needs a `tool_result`; append assistant messages only when the stream completes
 - Compaction must not rewrite the history it sends (cache); messages kept after a summary carry no reasoning blocks (Claude 5.x rejects replayed thinking after a changed prefix)
 - Never `MakeRaw` the terminal: it clears OPOST and output staircases; `ui.Terminal` keeps ISIG so ctrl+c is SIGINT
-- No code comments
+- No code comments; the one exception is `internal/jsvm/doc.go`, the embedder contract (keep it current when jsvm behaviour changes)
 - Small, focused functions; check errors and return meaningful messages
-- External UI tools (picker, pager, notifier, ...) are shell-string config keys with `{placeholders}`, never hard dependencies, documented in readme "External tools". Defaults live in `config.toolDefaults`; add new keys to `repl.toolKeys` so `/config` lists them
-- Only the user's input and the model's answer print in normal color; tool lines, reasoning and info are dim
+- External UI tools (picker, pager, notifier, ...) are shell-string config keys with `{placeholders}`, never hard dependencies, documented in readme "External tools"
+- Only the user's input and the model's answer print in normal color; tool lines, reasoning and info are dim. The one exception: `/usage` tables, rendered with `ui.Markdown`
+- Tests never sleep to wait: react to events (channels, job changes, gate or marker files) and shrink time via `runner.second`, `SubagentRunner.Grace`/`Timeout`, `mcp.Manager.CloseGrace`, `llm.Sleep`
+- Tools, jsvm and agent tests run with `t.Parallel()`; keep new ones parallel unless they set env or cwd
+- `vendor/` is committed and builds download nothing (`GOPROXY=off` works); the one dependency is `golang.org/x/sys`; don't add modules
+- config, agent, app and tools tests run under `testenv.Run` (`TestMain`), so they never touch the real config or sessions; use it in new test packages
+
+## Invariant → guard test
+
+- Request bytes per provider (system, tools, messages) → `TestRequestBodiesPinned` (`internal/app/pin_test.go`, goldens `internal/app/testdata`), the only end-to-end check of the byte-stable prefix
+- Static prompt directory-free → `TestStaticPromptIsDirectoryFree`, `TestSystemPromptStaticPartIsDirectoryFree`
+- Cache marks → `TestSystemSplitIntoCachedParts`, `TestSystemSessionTailIsNotCacheMarked`
+- Tool defs unchanged by MCP use → `TestMCPToolDefsByteStable`; compaction request shares the turn's prefix → `TestSummaryRequestMatchesTurnRequest`, `TestSummaryRequestKeepsHistoryUnchanged`
+- Kept tail has no reasoning → `TestKeepTail`; tool_use/tool_result pairing → `TestRepair`, `TestCancelDuringToolsKeepsLogValid`
+- Config structs ↔ `schema.json` → `TestSchemaMatchesConfig`; `validate.go` ↔ schema enums and minimums → `TestValidateMirrorsSchema`
+- Slash commands ↔ `/help` and the `/` picker → `TestCommandTable` (it pins the help column width; the longest usage is `/copy [answer|code|id]`)
+- External tool keys ↔ `toolDefaults` → `TestToolKeysMatchToolDefaults` (any other new string key with a default must be excluded there)
+- Mode notes as stored in old sessions → `TestStoredModeNotesStillRestore`; mode names and cycle → `TestModeNames`
+- Reserved JS names in the run description → `TestRunDescriptionReservedNames`; `-json` output equals the session file → `TestTeeMatchesFile`
+- CLI usage text → `TestUsageListsSingleDashFlags`; reasoning stays dim → `TestPrinterReasoningMarkdownStaysDim`
+- Suite time → `task test` (5s); data races → `go test -race ./...` (CI)
+- No guard test: no code comments, no sleeping tests, readme sync. Find other guards with `grep -rn "^func Test" internal | grep -i <topic>`
+
+## Adding X
+
+- **Config key**: field in `config/config.go` (`Config`, `Provider`, `MCPServer` or `SubagentModel`); `schema.json` (type, default, description); enum or minimum in `validate.go`; default in `applyDefaults`
+  - then: `/config` toggle in `app/settings.go` if it is a live boolean; `agent/builtin/qi-config/SKILL.md` if it covers the area; readme "Configure"; run `TestSchemaMatchesConfig`
+- **Slash command**: entry in `commandList` (`app/commands.go`: `name`, `args`, `help`, `short`, `run`, `pickArg`); help and picker derive from it; readme "Commands" (hand-kept); tests in `app/commands_test.go`
+- **Code-mode function**: constructor returning `*tools.Function` with a `CodeSpec` (`Name`, `Params`, `Options`, `Doc`), `HookNames` (Claude Code names, e.g. `Bash`) and `Path` (per-path locks)
+  - mode checks live inside `Run`: `env.readOnly()`, `env.project()`, `env.checkWritable`; `Function.Name` (log, labels) may differ from the JS name `CodeSpec.Name` (`mcp_call` vs `mcp`)
+  - tests in `internal/tools` (cell harness in `run_test.go`); `TestRunDescriptionReservedNames` covers the new name
+  - register it in `buildAgent` (`app/run.go`); the description is generated by `rundoc.go`, so the goldens change: update them with `-update` and review; readme "Code mode" lists the functions
+- **Session entry type**: `session.Type*` constant and writer in `session/session.go`; old files must still load
+  - readers to update or check: `session.Replay`/`Load`, `list.go` prefixes, `app/usage.go` (`eachUsage`), `app/render.go`, `agent/subagent.go` (`readEntries`)
+- **External UI tool key**: config field, default in `config.toolDefaults`, `schema.json`, `repl.toolKeys` (`app/external.go`); run via `toolAvailable`/`runQuiet`/`runTTY`; readme "External tools"
+- **Provider adapter change** (`internal/llm`): unit tests next to the adapter (SSE fixtures), then `TestRequestBodiesPinned`; refresh goldens only for intended changes
+
+## Package map
+
+### internal/app (everything else, exports only `Main`)
+- `cli.go` flags on a `flag.FlagSet`, usage, `-version`, `-show`, `-check-config`, exit codes; `version.go` the stamped version, else one from build info
+- `run.go` wiring shared by both modes: `resolveConfig`, `newProvider`, `buildAgent` (registers the functions), `loadHooks`, `openSession`, `submitPrompt`
+- `headless.go` `-q`/stdin mode; `-json` tees every session entry to stdout via `session.CreateOptions.Tee` (same bytes as the file); `rusage.go` the cpu/peak-mem line it prints
+- `repl.go` the interactive loop, mode toggle, status, turns; background job exits start a turn by themselves (`maxAutoTurns` in a row, via `Editor.Wake`/`Woken`)
+- `signals.go` signals, resize, ctrl+z job control; `shutdown.go` quit and cleanup; `idle.go` idle compaction; `profile.go` `/profile` and `/effort` switching
+- `commands.go` `commandList`, `/help`, dispatch, `/mcp`, `/reload`, image attachment; `copy.go` `/copy`; `pager.go` `/history` in the pager; `notify.go` turn-finished notifications
+- `usage.go` `/usage`: sums `usage` of this session, its subagents (meta `parent_session`) and all sessions of 30 days by day, model, project; `prices.go` models.dev estimates (`~`), cached a day
+- `settings.go` the `/config` toggles (`run_code`, `show_reasoning`, `terminal_images`), applied live and saved with `config.SetValue` into the active profile when it sets the key
+- `picker.go` pickers (`"builtin"` is `ui.Editor.Pick`, else the `picker` command); `browse.go` the builtin `@` browser; `filelist.go` the `@` list for an external picker
+- `pickcmd.go` `qi pick` for scripts on `/dev/tty`; `ttyEditor` also serves `qi -r` before the repl exists
+- `external.go` the external tool contract: `toolAvailable`, `expandTool` (placeholders become quote-aware `$QI_*` env refs, never shell code), `choose`, `runQuiet`, `runTTY`, `toolKeys`
+- `sessions.go` `/resume`, `-r`, `-show`; `render.go` a session as text (plain for `-show`, colored for `/history`; a `run` call shows its code and inner `calls`)
+
+### internal/agent
+- `agent.go` `New(Options)`, `Turn`, steering (`Queue`/`DrainQueue`), `Reset`/`Load`, `Reconfigure`, `EditConfig`, `Jobs`, `withRetries`, mode notes
+- Locks: `mu` guards `live` (config, provider, session, system prompt, steering, context tokens), never held across I/O; `busy` is held for a whole turn or compaction, guards `conv`
+- Lock order is `busy` then `mu`: writers that must not land mid-turn go through `update`. The mode is an atomic `config.Mode`; a `<mode>` note tells the model when it changes
+- `Reset` and `Load` drop the `run` VM (`Load` tells the model when the history had `run` calls); compaction keeps it
+- `compact.go` summary request on unchanged history, verbatim tail without reasoning between turns, summary only mid-turn, overflow retry, thrash pause, `TryCompactIdle`
+- `prompt.go` `LoadPrompt`/`BuildSystemPrompt` (three parts, see Rules; named sections for `/context`), `LoadSkills`, `LoadCommands`, `ProjectRoots`; `context.go` the `/context` breakdown
+- `format.go` turn stats, context usage, `FmtTokens`; `images.go` evicts the oldest images past 100 or 24 MB; `scratch.go` the per-session scratch dir
+- `builtin.go` + `builtin/qi-config/SKILL.md` the built-in skill and schema, served from memory under `qi://skills/qi-config/` (`tools.Embed`); `frontmatter.go` SKILL.md frontmatter
+- `hooks.go` Claude Code hooks: files parsed once (missing skipped, malformed stops startup), one event's hooks run in parallel, `async` ones detached; `Hooks.Attach` wires session, mode, spill
+- Hook text the model sees goes through `capText` (cut, rest spilled); `onFailure` and `updatedToolOutput` follow Claude Code (`TestOnFailureBlock`, `TestPostToolUseUpdatedOutput`)
+- `trust.go` project hooks need trust: the trust file pins each dir to a fingerprint of its project hooks (`async` included)
+- `subagent.go` `SubagentRunner` runs `qi -q … -json` with `SubagentEnv`, `ParentSessionEnv` (meta `parent_session`) and `QI_MCP`; the child writes to `subagents/`, answers with its last text
+
+### internal/tools
+- `tools.go` `Function` (one async JS function: `Name`, `Code`, `Run`, `Label`, `Path`, `HookNames`), `Env` (cwd, mode, scratch, jobs), `Result`, hooks types, `Tool.Execute`, `OneLine`, `DoneLine`
+- `run.go` `Run(funcs...)` builds the one API tool `run` (`RunName`): a cell in a persistent jsvm VM; `Replace` swaps a function, `Reset` drops the VM; `run` fires no hooks, inner calls do
+- `cell.go` the cell loop: parallel calls (capped), per-path locks, timeouts, interrupt; tests shrink time with `runner.second`; `cellout.go` the result text (head and tail, spill file)
+- `code.go` `CodeSpec` and JS arguments to tool input; `rundoc.go` the generated `run` description (changing it changes the goldens); `Result.Calls` lands on the tool_result as `calls`
+- `fs.go` `read` (images, `crop`, `qi://` files), `write`, `edit`; `files.go` the stale-file guard (write refuses a file changed since last read) and diffs of outside changes for the model
+- `bash.go` `bash` with timeout and output cap; `readonly.go` the read-only allowlist (`CheckReadOnly`, `DefaultAllow`; no `$`/backticks, go flag allowlist)
+- `project.go` project mode: bash under sandbox-exec (macOS) or bwrap; writable roots are cwd, git dirs, temp, scratch, build caches, ~/.Trash and `project_writable`
+- Project mode also: git config/hooks/commondir/gitdir read-only, `.git` pinned; no ptys; network on (macOS unix sockets limited); no usable sandbox refuses bash (`TestProjectMode*`)
+- `checkWritable` guards write/edit after resolving symlinks; hooks and MCP run outside the sandbox
+- `jobs.go` background bash (`background`, 1h default, 24h max): output to the spill dir, a `<background-job>` notice when it exits on its own, all killed on /clear, session load, exit
+- A headless answer that ends with jobs running gets one `<background-jobs>` note, then waits for them (tests: `TestBackgroundJob*`, `TestLeftoverProcessesStayKillable`)
+- `subagent.go` the `subagent` function (models, efforts, 30 min `SubagentTimeout`); `mcp.go` `tool_search` and `mcp` (`MCPFuncs`), compact listing past 10 tools, never cut by the output cap
+- `image.go` scales images to ≤1568px (`imgutil.Resize`); `embedded.go` `Embed`/`Embedded` for `qi://` paths
+
+### internal/jsvm (biggest package; read `doc.go` first)
+- `doc.go` the embedder contract: cells, `RunJobs` after every `RunCell`, `Interrupt`/`InterruptAfter`, limits, supported and unsupported language
+- `api.go` `New(Options)`, `RunCell`, `RunJobs`, `SetFunc`, promises; `lexer.go`, `parser.go`, `ast.go` parsing; `resolve.go` scopes to frame slots or heap cells
+- `compile.go`, `compile_expr.go`, `pattern.go` compile the AST to Go closures; `vm.go`, `value.go`, `object.go`, `props.go` (shapes, inline caches), `ops.go`, `str.go` (ropes, UTF-16 view)
+- `async.go` async functions on coroutines (`iter.Pull`); `iterate.go` Map/Set data and iteration; `errors.go` `Exception` and stacks
+- `builtins.go` + `b_*.go` the builtins (array, date, error, json, map, number, promise, regexp, string, uri); `date_parse.go`, `casing.go` (case mapping), `regex_bind.go`
+- `regex/` the regex engine (backtracking with a step budget; `re2.go` hands eligible patterns to Go's regexp); `regex/testdata/*.json` come from the gitignored `scripts/regex-oracle`
+
+### internal/llm
+- `types.go` canonical `Message`/`Block`/`Request`/`Usage`, `Provider`, `SystemParts`, `MergeConsecutive`; `markers.go` in-band text markers (`HookContext`, `AttachedImage`, `IsInBand`)
+- `anthropic.go` native API (`ParseClaude` for model features); `openai.go` chat completions incl. OpenRouter; `responses.go` Responses API (`store: false`, encrypted reasoning replayed)
+- `sse.go` SSE reader, `APIError`, `ErrStalled`; `stream.go` stream end states (refusal, cut off, empty)
+- `retry.go` `Retryable`, `StreamError`; requests retry pre-response failures, `agent.withRetries` mid-stream ones (3 tries, backoff via `llm.Sleep`; cases in `TestRetryableClassification`)
+- `llmtest/` the shared scripted fake `Provider` (`Script`, `Steps`, `Fail`, `Requests`) and `Text`/`Call` message helpers
+
+### internal/config
+- `config.go` `Config`, `Provider`, `MCPServer`, `SubagentModel`; `Load`, `Resolve`, `Check`, profile overlay, `UseProvider`, `applyDefaults`, `toolDefaults`; `Dir`, `DataDir`, `ShortHome`
+- `decode.go` strict, case-sensitive decoding (encoding/json/v2) with file/key errors, embeds `Schema`; `schema.json` the JSON Schema; `validate.go` its enums, minimums, required fields
+- `default.go` `SetValue` edits one key in the file (into the profile when it sets the key); `limits.go` `compact_at`/`compact_idle_at` (tokens or %) against `context_window` or a model table
+- `mcp.go` per-server tool globs, per-profile `mcp` merge by name (null removes), `QI_MCP` for subagents; `mode.go` `Mode`, `Next` cycles yolo → read-only → project (shift+tab)
+
+### internal/session
+- `session.go` append-only JSONL: `Type*` entry constants, `Create`, `Open` (repairs for appending), read-only `Load`/`Entries`, `Replay`, `Repair`, `NewScanner`, `Tee`, `Root`/`Dir`
+- `TypeUsage` entries record billed requests that left no message (rejected replies, failed summaries, retries; `TestBilledFailuresRecordTheirUsage`)
+- `lock.go` an open session holds an exclusive flock plus a pid file for the error message; `list.go` `List` summarizes a directory's sessions
+
+### internal/ui
+- `terminal.go` termios, key decoder, suspend/resume; `termios_bsd.go`/`termios_linux.go` per-OS constants; `crash.go` `OnCrash`, `defer ui.CleanupOnPanic()` in goroutines restores the terminal
+- `editor.go` line editor, history, paste, `$EDITOR`, `RunTTY`, steering `Collect`; `layout.go` pure input layout (wrap, cursor, scroll); `pick.go` builtin fuzzy picker (`Pick`, `OnPick`, `OnBack`)
+- `printer.go` output and status line; prompt and steering draft are multi-row `Frame`s; tool id `parent.N` is an inner call shown under its parent; `SetRunCode` toggles printing `run` code
+- `markdown.go` streaming markdown (TTY only); `table.go` tables; `width.go` display width; `image.go` draws image paths from answers via kitty graphics (`KittyGraphics`: Ghostty/kitty, not tmux)
+
+### internal/mcp
+- `mcp.go` stdio MCP client: `Manager` (lazy start, search, call) enforces per-server tool globs, so hidden tools are never listed or called; `tail.go` server stderr tail; `mcptest/` the fake server
+
+### internal/proc
+- `proc.go` child processes in their own session (`proc.Session`: bash, hooks, subagents, MCP) or group (`proc.Group`: quiet external tools); TTY tools stay in the foreground group
+- Kill policy: SIGTERM the group, SIGKILL after a grace period (`Setup`, `Stop`, `Terminate`); `Settle` waits for pending escalations before exit
+
+### internal/imgutil
+- `imgutil.go` area-average `Resize` that reads a row at a time, shared by `tools/image.go` and `ui/image.go`
+
+### internal/strutil
+- `strutil.go` `CutStart`, `CutEnd`, `Plural`
+
+### internal/testenv
+- `testenv.go` `Run` (shared `TestMain`): clears `QI_*`, `GIT_*`, API keys and `PAGER`, points `QI_CONFIG_DIR`/`QI_SESSION_DIR` at a temp dir
+
+## Helper index (use these instead of writing new ones)
+
+- Strings: `strutil.Plural`, `strutil.CutStart`/`CutEnd`, `tools.OneLine` (one line, capped), `tools.DoneLine`, `ui.Sanitize` (terminal-safe text), `agent.FmtTokens`
+- Paths: `config.ShortHome` (`~/` form), `config.ExpandHome`, `config.Dir`/`DataDir`, `session.Root`/`Dir`, `agent.ScratchDir`, `agent.ProjectRoots`
+- Config writes: `config.SetValue`; sessions: `session.NewScanner` (large-line scanner), `session.Replay`, `session.Entries`
+- Messages: `llm.UserText`, `llm.MergeConsecutive`, `llm.HookContext`, `llm.IsInBand`; images: `imgutil.Resize`, `tools.LoadImage`; markdown: `ui.Markdown`
+- Processes: `proc.Setup`, `proc.Stop`, `proc.Settle`; embedded files: `tools.Embed`/`Embedded`
+- Tests: `testenv.Run`, `llmtest.Provider` (+ `Script`, `Steps`, `Fail`, `Text`, `Call`), `mcptest` (fake MCP server), `llm.Sleep` (injectable wait)
