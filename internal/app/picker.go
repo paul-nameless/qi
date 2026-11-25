@@ -227,12 +227,13 @@ func (r *repl) profileItems() []pickItem {
 
 func (r *repl) effortItems() []pickItem {
 	current := effortName(r.agent.Config().ReasoningEffort)
-	items := make([]pickItem, len(efforts))
-	for i, e := range efforts {
-		if e.name == current {
-			e.desc = strings.TrimSpace("current " + e.desc)
+	var items []pickItem
+	for _, name := range effortNames() {
+		item := pickItem{name: name}
+		if name == current {
+			item.desc = "current"
 		}
-		items[i] = e
+		items = append(items, item)
 	}
 	return items
 }

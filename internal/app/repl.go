@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -595,14 +596,8 @@ func sameMCP(a, b map[string]config.MCPServer) bool {
 	return len(a) == 0 && len(b) == 0 || reflect.DeepEqual(a, b)
 }
 
-var efforts = []pickItem{
-	{"default", "the model's own default"},
-	{"none", "thinking off (Haiku and some others; Opus can't)"},
-	{"low", "fastest, least thinking"},
-	{"medium", ""},
-	{"high", ""},
-	{"xhigh", "not supported by every model"},
-	{"max", "Anthropic only"},
+func effortNames() []string {
+	return append([]string{"default"}, config.Efforts...)
 }
 
 func effortName(e string) string {
@@ -613,17 +608,15 @@ func effortName(e string) string {
 }
 
 func (r *repl) setEffort(level string) error {
-	for _, e := range efforts {
-		if e.name == level {
-			if level == "default" {
-				level = ""
-			}
-			r.opts.effort = level
-			r.agent.SetEffort(level)
-			return nil
-		}
+	if !slices.Contains(effortNames(), level) {
+		return fmt.Errorf("unknown effort %q", level)
 	}
-	return fmt.Errorf("unknown effort %q", level)
+	if level == "default" {
+		level = ""
+	}
+	r.opts.effort = level
+	r.agent.SetEffort(level)
+	return nil
 }
 
 func withProvider(menu []config.SubagentModel, provider string) []config.SubagentModel {

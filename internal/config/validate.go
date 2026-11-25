@@ -8,7 +8,7 @@ import (
 
 var (
 	apis      = []string{"openai", "responses", "anthropic"}
-	efforts   = []string{"none", "minimal", "low", "medium", "high", "xhigh", "max"}
+	Efforts   = []string{"none", "minimal", "low", "medium", "high", "xhigh", "max"}
 	cacheTTLs = []string{"5m", "1h"}
 	modes     = []string{"yolo", "project", "read-only"}
 )
@@ -17,7 +17,7 @@ func (c Config) validate() error {
 	checks := []error{
 		oneOf("api", c.API, apis),
 		oneOf("cache_ttl", c.CacheTTL, cacheTTLs),
-		oneOf("reasoning_effort", c.ReasoningEffort, efforts),
+		oneOf("reasoning_effort", c.ReasoningEffort, Efforts),
 		oneOf("mode", c.Mode, modes),
 		atLeast("max_tokens", c.MaxTokens, 1),
 		atLeast("bash_timeout", c.BashTimeout, 1),
@@ -29,7 +29,7 @@ func (c Config) validate() error {
 		}
 	}
 	for i, e := range c.SubagentEfforts {
-		checks = append(checks, oneOf(fmt.Sprintf("subagent_efforts.%d", i), e, efforts))
+		checks = append(checks, oneOf(fmt.Sprintf("subagent_efforts.%d", i), e, Efforts))
 	}
 	for i, m := range c.SubagentModels {
 		checks = append(checks, c.checkSubagentModel(fmt.Sprintf("subagent_models.%d", i), m))

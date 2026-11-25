@@ -129,6 +129,8 @@ func TestHandleInput(t *testing.T) {
 		{"/keys", "", false, "shift+tab"},
 		{"/nope", "", false, "unknown command /nope (try /help)"},
 		{"/effort low", "", false, "effort: low"},
+		{"/effort minimal", "", false, "effort: minimal"},
+		{"/effort default", "", false, "effort: default"},
 		{"/effort bogus", "", false, `unknown effort "bogus"`},
 		{"/skills", "", false, "/deploy (command)"},
 		{"/copy", "", false, "no answer to copy"},

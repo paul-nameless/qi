@@ -349,8 +349,8 @@ func TestSchemaMatchesConfig(t *testing.T) {
 		"api":              {root.Properties["api"].Enum, apis},
 		"provider.api":     {nodes["provider"].Properties["api"].Enum, apis},
 		"cache_ttl":        {root.Properties["cache_ttl"].Enum, cacheTTLs},
-		"reasoning_effort": {root.Properties["reasoning_effort"].Enum, efforts},
-		"subagent_efforts": {root.Properties["subagent_efforts"].Items.Enum, efforts},
+		"reasoning_effort": {root.Properties["reasoning_effort"].Enum, Efforts},
+		"subagent_efforts": {root.Properties["subagent_efforts"].Items.Enum, Efforts},
 	}
 	for key, e := range enums {
 		if !slices.Equal(e[0], e[1]) {

@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -240,5 +241,19 @@ func TestMissingToolNamesTheResolvedCommand(t *testing.T) {
 	}
 	if _, err := pickSession(runPlain, nil, r.agent.Config(), t.TempDir(), ""); err == nil || !strings.Contains(err.Error(), "session_picker is off (no-such-fzf-xyz not found)") {
 		t.Errorf("session picker error: %v", err)
+	}
+}
+
+func TestEffortItemsListConfigEfforts(t *testing.T) {
+	r, _ := testRepl(t, config.Config{Model: "m", ReasoningEffort: "minimal"}, nopProvider{})
+	var names []string
+	for _, it := range r.effortItems() {
+		names = append(names, it.name)
+		if want := map[bool]string{true: "current"}[it.name == "minimal"]; it.desc != want {
+			t.Errorf("%s: desc %q, want %q", it.name, it.desc, want)
+		}
+	}
+	if want := append([]string{"default"}, config.Efforts...); !slices.Equal(names, want) {
+		t.Errorf("effort items %v, want %v", names, want)
 	}
 }

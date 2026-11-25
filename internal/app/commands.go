@@ -59,7 +59,7 @@ func init() {
 		{name: "history", help: "open the whole conversation in the pager", short: "open the conversation in the pager", run: func(r *repl, _ string) { r.report(r.showHistory()) }},
 		{name: "copy", args: "[answer|code|id]", help: "copy the last answer, its last code block or the session id (alt+c) to the clipboard", short: "copy the answer, code or session id", run: func(r *repl, args string) { r.report(r.copyAnswer(args)) }, pickArg: func(r *repl) (string, bool) { return r.pickArg("copy", copyItems) }},
 		{name: "profile", args: "[name]", help: "show or switch the profile", short: "switch the profile", run: (*repl).profile, pickArg: (*repl).pickProfile},
-		{name: "effort", args: "[level]", help: "show or switch the reasoning effort (default, none, low, medium, high, xhigh, max)", short: "switch the reasoning effort", run: (*repl).effort, pickArg: func(r *repl) (string, bool) { return r.pickArg("effort", r.effortItems()) }},
+		{name: "effort", args: "[level]", help: "show or switch the reasoning effort (" + strings.Join(effortNames(), ", ") + ")", short: "switch the reasoning effort", run: (*repl).effort, pickArg: func(r *repl) (string, bool) { return r.pickArg("effort", r.effortItems()) }},
 		{name: "skills", help: "list skills (/<skill-name> [args] runs one)", short: "pick a skill", run: func(r *repl, _ string) { r.display.Info(r.skillList()) }, pickArg: (*repl).pickSkill},
 		{name: "mcp", help: "start MCP servers and show their status and enabled tools", short: "show MCP servers and their enabled tools", run: func(r *repl, _ string) { r.showMCP() }},
 		{name: "exit", help: "quit", short: "quit", quit: true},
