@@ -230,7 +230,7 @@ func readParentEnv() (parentEnv, error) {
 		return p, err
 	}
 	if !ok {
-		return p, fmt.Errorf("%s is set but %s is missing; only qi starts subagents and it sets both", agent.SubagentEnv, config.AccessEnv)
+		return p, fmt.Errorf("%s is set but %s is missing: started by an older qi or not by qi; restart qi", agent.SubagentEnv, config.AccessEnv)
 	}
 	p.access = access
 	return p, nil
@@ -254,7 +254,7 @@ func resolveConfig(o options) (config.Config, parentEnv, error) {
 	return cfg, parent, nil
 }
 
-const changedHooksError = "project hooks in %s changed since this session trusted them; restart qi to review them"
+const changedHooksError = "project hooks in %s are not trusted for this session (changed or added since it started, or the trust could not be saved); restart qi to review them"
 
 func loadHooks(roots, configured []string, headless, isSub bool, display *ui.Printer) (*agent.Hooks, bool, error) {
 	parsed, err := agent.ParseHookFiles(agent.ExpandPaths(roots, configured))
