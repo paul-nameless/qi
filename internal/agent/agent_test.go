@@ -298,6 +298,29 @@ func TestRestoreMode(t *testing.T) {
 	}
 }
 
+func TestStoredModeNotesStillRestore(t *testing.T) {
+	t.Parallel()
+	stored := []struct {
+		note    string
+		mode    Mode
+		current bool
+	}{
+		{"<mode>Read-only mode is on: write and edit are refused, and bash only runs allowlisted read-only commands.</mode>", ModeReadOnly, true},
+		{"<mode>Project mode is on: write, edit and bash can only change files inside the working directory (plus temp and build caches), not .git/config or .git/hooks; bash runs sandboxed with the network on; git cannot change its config, so remotes and upstreams cannot be set.</mode>", ModeProject, true},
+		{"<mode>Yolo mode is on: all tools are available with no limits.</mode>", ModeYolo, true},
+		{"<mode>Read-only mode is off: all tools are available again.</mode>", ModeYolo, false},
+	}
+	for _, c := range stored {
+		msgs := []llm.Message{{Role: llm.RoleUser, Blocks: []llm.Block{{Type: llm.BlockText, Text: c.note}}}, llm.UserText("later")}
+		if m, ok := lastModeNote(msgs); !ok || m != c.mode {
+			t.Errorf("stored note %q restored as %v %v, want %v", c.note, m, ok, c.mode)
+		}
+		if c.current && modeNotes[c.mode] != c.note {
+			t.Errorf("%v note reworded to %q; stored sessions have %q and would no longer restore", c.mode, modeNotes[c.mode], c.note)
+		}
+	}
+}
+
 type rejectProvider struct{ calls int }
 
 func (r *rejectProvider) Stream(ctx context.Context, req llm.Request, onDelta func(llm.Delta)) (llm.Message, llm.Usage, error) {
