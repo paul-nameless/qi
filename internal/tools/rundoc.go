@@ -51,6 +51,6 @@ func reservedNames(funcs []*Function) string {
 	for _, f := range funcs {
 		names = append(names, f.Code.Name)
 	}
-	names = append(names, "sleep", "print")
+	names = append(names, "sleep")
 	return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
 }

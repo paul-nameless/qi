@@ -50,8 +50,6 @@ type runner struct {
 	keys      jsvm.Value
 	object    jsvm.Value
 	global    jsvm.Value
-	console   jsvm.Value
-	log       jsvm.Value
 	note      bool
 	cur       *cell
 	second    time.Duration
@@ -152,11 +150,7 @@ func (r *runner) bindHelpers(vm *jsvm.VM) error {
 	if r.stringify, err = vm.GetProp(r.json, "stringify"); err != nil {
 		return err
 	}
-	if r.keys, err = vm.GetProp(r.object, "keys"); err != nil {
-		return err
-	}
-	r.console = vm.Get("console")
-	r.log, err = vm.GetProp(r.console, "log")
+	r.keys, err = vm.GetProp(r.object, "keys")
 	return err
 }
 
@@ -165,12 +159,6 @@ func (r *runner) bindFuncs() {
 		r.vm.SetFunc(f.Code.Name, r.toolFunc(f.Name))
 	}
 	r.vm.SetFunc("sleep", r.sleepFunc)
-	r.vm.SetFunc("print", r.printFunc)
-}
-
-func (r *runner) printFunc(vm *jsvm.VM, args []jsvm.Value) (jsvm.Value, error) {
-	_, err := vm.CallValue(r.log, r.console, args...)
-	return jsvm.Undefined(), err
 }
 
 func (r *runner) stdout(_, text string) {

@@ -107,7 +107,7 @@ func TestCellBasics(t *testing.T) {
 		{"const a = 5; a + b.length", "7"},
 		{"await sleep(1); return 'done'", "done"},
 		{"return {a: [1, 2], s: 'x'}", "{\n \"a\": [\n  1,\n  2\n ],\n \"s\": \"x\"\n}"},
-		{"console.log('one'); print('two', {k: 1}); console.error('three'); 'end'", "one\ntwo {\n  \"k\": 1\n}\nthree\nend"},
+		{"console.log('one'); console.log('two', {k: 1}); console.error('three'); 'end'", "one\ntwo {\n  \"k\": 1\n}\nthree\nend"},
 		{"undefined", "(no output)"},
 		{"null", "null"},
 		{"const t = []; sleep(5).then(() => t.push('early')); await sleep(30); t", "[\n \"early\"\n]"},
@@ -315,7 +315,7 @@ func TestCellBusyLoopStops(t *testing.T) {
 	k := newCellKit(t)
 	k.second(50 * time.Millisecond)
 	ctx, cancel := context.WithCancel(context.Background())
-	res := k.cellProgress(ctx, `globalThis.kept = 1; print("looping"); let i = 0; while (true) { i++ }`, 0, func(string) { cancel() })
+	res := k.cellProgress(ctx, `globalThis.kept = 1; console.log("looping"); let i = 0; while (true) { i++ }`, 0, func(string) { cancel() })
 	if !res.IsError || !strings.Contains(res.Text, "interrupted by user") {
 		t.Errorf("cancel: %+v", res)
 	}
@@ -447,7 +447,7 @@ func TestCellInterruptThroughHostCalls(t *testing.T) {
 	k := newCellKit(t, Subagent("m", nil, nil))
 	k.second(300 * time.Millisecond)
 	cases := []string{
-		`while (true) { try { print({toJSON() { while (true) {} }}) } catch (e) {} }`,
+		`while (true) { try { console.log({toJSON() { while (true) {} }}) } catch (e) {} }`,
 		`while (true) { try { await tick({toJSON() { while (true) {} }}) } catch (e) {} }`,
 		`subagent("quick"); while (true) {}`,
 	}
@@ -977,7 +977,7 @@ func TestCellRedeclaredFunctions(t *testing.T) {
 	k := newCellKit(t)
 	k.file("f.txt", "hi\n")
 	k.want(`const read = 1; const jobs = 2; var print = 3; let sleep = 4`, "(no output)")
-	k.want(`await sleep(1); print("p"); [await read("f.txt"), typeof jobs].join("")`, "p\nhi\nfunction")
+	k.want(`await sleep(1); console.log("p"); [await read("f.txt"), typeof jobs].join("")`, "p\nhi\nfunction")
 }
 
 func TestCellErrorKeptWhenWaitStops(t *testing.T) {
@@ -1004,7 +1004,7 @@ func TestCellErrorKeptWhenWaitStops(t *testing.T) {
 func TestRunDescriptionReservedNames(t *testing.T) {
 	t.Parallel()
 	k := newCellKit(t)
-	want := "- The names read, write, edit, bash, jobs, tick, sleep and print are set again at the start of every run call: don't use them for your own variables.\n"
+	want := "- The names read, write, edit, bash, jobs, tick and sleep are set again at the start of every run call: don't use them for your own variables.\n"
 	if desc := k.run.Def.Description; !strings.Contains(desc, want) || strings.Contains(desc, "subagent,") {
 		t.Errorf("description:\n%s", desc)
 	}
