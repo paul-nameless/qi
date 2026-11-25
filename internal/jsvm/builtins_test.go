@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestReviewRound4(t *testing.T) {
+func TestRecursionGuardsAndDefaultParamScope(t *testing.T) {
 	t.Parallel()
 	cases := map[string]string{
 		"try { String({toString: Object.prototype.toLocaleString}) } catch (e) { return e.name }":                          "RangeError",
@@ -69,7 +69,7 @@ func TestFuzzdiffFindings(t *testing.T) {
 	}
 }
 
-func TestReviewRound5(t *testing.T) {
+func TestParamRedeclarationAndLocaleFormatting(t *testing.T) {
 	t.Parallel()
 	cases := map[string]string{
 		"function f(a = 1) { var a; return a } return f(5)":                                                                                                                        "5",
@@ -96,7 +96,7 @@ func TestReviewRound5(t *testing.T) {
 	}
 }
 
-func TestReviewRound6(t *testing.T) {
+func TestUnicodeStringSearchAndRounding(t *testing.T) {
 	t.Parallel()
 	cases := map[string]string{
 		"return ['file 10'.localeCompare('file2', undefined, {numeric: true}), 'a-2'.localeCompare('a2', undefined, {numeric: true}), 'item1'.localeCompare('item 2', undefined, {numeric: true}), 'file_1'.localeCompare('file10', undefined, {numeric: true})].join()": "-1,-1,1,-1",
@@ -118,7 +118,7 @@ func TestReviewRound6(t *testing.T) {
 	}
 }
 
-func TestRev4Round1(t *testing.T) {
+func TestArrayHolesDestructuringAndIntegerPrecision(t *testing.T) {
 	t.Parallel()
 	v, err := New(Options{}).RunCell("c.js", "const m = new Map([[1, 2]]); Object.setPrototypeOf(m, null); const c = structuredClone(m); c instanceof Map && c.get(1) === 2")
 	if err != nil || ToString(v) != "true" {

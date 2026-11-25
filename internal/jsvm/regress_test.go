@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestReviewRegressions(t *testing.T) {
+func TestEvaluationOrderAndBuiltinRegressions(t *testing.T) {
 	t.Parallel()
 	cases := []struct{ src, want string }{
 		{"function show(a, b) { return a + '=' + b }; return show('x', await Promise.resolve(1))", "x=1"},
