@@ -100,7 +100,7 @@ var transientHTTP2 = []string{"INTERNAL_ERROR", "REFUSED_STREAM", "ENHANCE_YOUR_
 func http2Transient(err error) bool {
 	s := err.Error()
 	switch {
-	case strings.Contains(s, "GOAWAY"):
+	case strings.Contains(s, "GOAWAY"), strings.Contains(s, "http2: client connection lost"):
 		return true
 	case !strings.Contains(s, "received from peer"):
 		return false

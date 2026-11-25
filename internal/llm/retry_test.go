@@ -72,6 +72,7 @@ func TestRetryableClassification(t *testing.T) {
 		{"request too large", &StreamError{Code: "rate_limit_exceeded", Message: "Request too large for gpt: must be reduced"}, false},
 		{"http2 truncated body", errors.New("stream error: stream ID 7; NO_ERROR; received from peer"), true},
 		{"http2 graceful goaway", errors.New("http2: Transport received Server's graceful shutdown GOAWAY"), true},
+		{"http2 lost ping", errors.New("http2: client connection lost"), true},
 		{"network unreachable mid-stream", fmt.Errorf("read: %w", syscall.ENETUNREACH), true},
 		{"empty reply", errEmpty, false},
 		{"empty at max tokens", errEmptyAtMaxToken, false},
