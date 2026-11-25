@@ -375,11 +375,18 @@ func (l *Listing) add(c *client, query string) {
 }
 
 func (m *Manager) Search(ctx context.Context, query string) Listing {
+	names := m.Names()
+	clients := make([]*client, len(names))
+	errs := make([]error, len(names))
+	var wg sync.WaitGroup
+	for i, name := range names {
+		wg.Go(func() { clients[i], errs[i] = m.get(ctx, name) })
+	}
+	wg.Wait()
 	l := Listing{Hidden: map[string]int{}}
-	for _, name := range m.Names() {
-		c, err := m.get(ctx, name)
-		if err != nil {
-			l.Errs = append(l.Errs, err)
+	for i, c := range clients {
+		if errs[i] != nil {
+			l.Errs = append(l.Errs, errs[i])
 			continue
 		}
 		l.add(c, query)

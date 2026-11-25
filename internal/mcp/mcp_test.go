@@ -244,3 +244,20 @@ func TestConcurrentCallsStartOneServer(t *testing.T) {
 		t.Errorf("%d server processes started for concurrent calls", n)
 	}
 }
+
+func TestSearchStartsServersInParallel(t *testing.T) {
+	fake, _ := fakeServer(t, config.MCPServer{})
+	dir := t.TempDir()
+	wait := func(own, other string) config.MCPServer {
+		script := "touch \"$1/" + own + "\"; while [ ! -e \"$1/" + other + "\" ]; do sleep 0.01; done; exec \"$0\""
+		return config.MCPServer{Command: "sh", Args: []string{"-c", script, fake.Command, dir}, Env: fake.Env}
+	}
+	m := NewManager(map[string]config.MCPServer{"a": wait("a", "b"), "b": wait("b", "a")})
+	m.CloseGrace = 100 * time.Millisecond
+	defer m.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if l := m.Search(ctx, ""); len(l.Errs) > 0 || len(l.Tools) != 8 {
+		t.Errorf("each server waits for the other to start: %d tools, errors %v", len(l.Tools), l.Errs)
+	}
+}
