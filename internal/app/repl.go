@@ -615,7 +615,7 @@ func (r *repl) setEffort(level string) error {
 		level = ""
 	}
 	r.opts.effort = level
-	r.agent.SetEffort(level)
+	r.agent.EditConfig(func(c *config.Config) { c.ReasoningEffort = level })
 	return nil
 }
 

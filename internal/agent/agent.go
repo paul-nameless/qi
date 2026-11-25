@@ -181,16 +181,21 @@ func hasCells(msgs []llm.Message) bool {
 	return false
 }
 
-func (a *Agent) Reconfigure(cfg config.Config, p llm.Provider) {
+func (a *Agent) update(edit func(*live)) {
 	a.busy.Lock()
 	defer a.busy.Unlock()
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.live.cfg = cfg
-	a.live.provider = p
-	a.env.Allow, a.env.Writable, a.env.BashTimeout = cfg.ReadOnlyAllow, cfg.ProjectWritable, cfg.BashTimeout
-	a.conv.windowWarned = false
-	a.conv.paused, a.conv.thrashAt = false, 0
+	edit(&a.live)
+}
+
+func (a *Agent) Reconfigure(cfg config.Config, p llm.Provider) {
+	a.update(func(l *live) {
+		l.cfg, l.provider = cfg, p
+		a.env.Allow, a.env.Writable, a.env.BashTimeout = cfg.ReadOnlyAllow, cfg.ProjectWritable, cfg.BashTimeout
+		a.conv.windowWarned = false
+		a.conv.paused, a.conv.thrashAt = false, 0
+	})
 }
 
 func (a *Agent) ReplaceFunction(f *tools.Function) {
@@ -237,27 +242,11 @@ func (a *Agent) SetHooks(pre tools.Hook, post tools.PostHook, stop StopHook) {
 }
 
 func (a *Agent) SetSystem(sp SystemPrompt) {
-	a.busy.Lock()
-	defer a.busy.Unlock()
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.live.system = sp
-}
-
-func (a *Agent) SetEffort(effort string) {
-	a.busy.Lock()
-	defer a.busy.Unlock()
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.live.cfg.ReasoningEffort = effort
+	a.update(func(l *live) { l.system = sp })
 }
 
 func (a *Agent) EditConfig(edit func(*config.Config)) {
-	a.busy.Lock()
-	defer a.busy.Unlock()
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	edit(&a.live.cfg)
+	a.update(func(l *live) { edit(&l.cfg) })
 }
 
 func (a *Agent) ContextTokens() int {

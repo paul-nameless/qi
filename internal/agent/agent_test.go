@@ -598,7 +598,7 @@ func TestAccessorsDuringTurn(t *testing.T) {
 	}
 	writes := make(chan string, 2)
 	go func() {
-		a.SetEffort("low")
+		a.EditConfig(func(c *config.Config) { c.ReasoningEffort = "low" })
 		writes <- "effort"
 	}()
 	go func() {
