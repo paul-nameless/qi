@@ -111,7 +111,7 @@
       "type": "string"
     },
     "subagent_profiles": {
-      "description": "Profiles the agent can run as subagents, by name; each must be in profiles, and the current profile may be listed too. A subagent takes the model side from its profile (model, provider, effort, limits, system_prompt_file, instruction_files, skill_dirs); the mode, MCP servers, project_writable, read_only_allow and hook_files are always the agent's when it starts the subagent. Each listed profile is validated at startup; no duplicates. The first is the default. Unset or empty: subagents run the current profile.",
+      "description": "Profiles the agent can run as subagents, by name; each must be in profiles, and the current profile may be listed too. A subagent takes the model side from its profile (model, provider, effort, limits, system_prompt_file, instruction_files, skill_dirs); the mode, project_writable and read_only_allow are always the agent's when it starts the subagent, and the MCP servers and hook files those the agent loaded at its start. Each listed profile is validated at startup; no duplicates. The first is the default. Unset or empty: subagents run the current profile.",
       "type": "array",
       "items": { "type": "string" }
     },

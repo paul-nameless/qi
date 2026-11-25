@@ -220,6 +220,13 @@ func subagentsLine(choices []config.SubagentChoice) string {
 	return "subagents: " + strings.Join(names, ", ")
 }
 
+func subagentsMenu(choices []config.SubagentChoice) string {
+	if line := subagentsLine(choices); line != "" {
+		return line
+	}
+	return "subagents: " + config.SelfChoice
+}
+
 func bannerVersion(v string) string {
 	if strings.HasPrefix(v, "dev-") {
 		return "dev"

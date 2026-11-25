@@ -20,12 +20,12 @@ func (r *repl) switchProfile(name string) error {
 	if err != nil {
 		return err
 	}
-	before := subagentsLine(r.agent.Config().SubagentChoices())
+	before := subagentsMenu(r.agent.Config().SubagentChoices())
 	if err := r.apply(cfg); err != nil {
 		return err
 	}
-	if line := subagentsLine(cfg.SubagentChoices()); r.runner != nil && line != "" && line != before {
-		r.display.Info(line)
+	if menu := subagentsMenu(cfg.SubagentChoices()); r.runner != nil && menu != before {
+		r.display.Info(menu)
 	}
 	if cfg.ProfileSetsMode() {
 		m := cfg.StartMode()

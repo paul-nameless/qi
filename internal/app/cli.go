@@ -40,7 +40,7 @@ func Main(args []string, version string) int {
 			return exitCode(err)
 		}
 		if c.opts.systemPromptFile != "" {
-			if _, err := resolveConfig(c.opts); err != nil {
+			if _, _, err := resolveConfig(c.opts); err != nil {
 				return exitCode(err)
 			}
 		}

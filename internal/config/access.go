@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"fmt"
 	"os"
@@ -23,19 +24,39 @@ func EncodeAccess(a Access) (string, error) {
 }
 
 func AccessFromEnv() (Access, bool, error) {
-	var a Access
 	raw, ok := os.LookupEnv(AccessEnv)
 	if !ok {
-		return a, false, nil
+		return Access{}, false, nil
 	}
 	_ = os.Unsetenv(AccessEnv)
-	if err := json.Unmarshal([]byte(raw), &a, json.RejectUnknownMembers(true)); err != nil {
-		return a, true, fmt.Errorf("%s from the parent agent: %w", AccessEnv, err)
-	}
-	if err := (Config{ProjectWritable: a.ProjectWritable}).checkWritable(); err != nil {
-		return a, true, fmt.Errorf("%s from the parent agent: %w", AccessEnv, err)
+	a, err := decodeAccess(raw)
+	if err != nil {
+		return Access{}, true, fmt.Errorf("%s from the parent agent: %w", AccessEnv, err)
 	}
 	return a, true, nil
+}
+
+func decodeAccess(raw string) (Access, error) {
+	var a Access
+	var keys map[string]jsontext.Value
+	if err := json.Unmarshal([]byte(raw), &keys); err != nil {
+		return a, err
+	}
+	if keys == nil {
+		return a, fmt.Errorf("want an object, got %q", raw)
+	}
+	for _, k := range []string{"project_writable", "read_only_allow", "hook_files"} {
+		if _, ok := keys[k]; !ok {
+			return a, fmt.Errorf("key %q is missing", k)
+		}
+	}
+	if err := json.Unmarshal([]byte(raw), &a, json.RejectUnknownMembers(true)); err != nil {
+		return a, err
+	}
+	if err := (Config{ProjectWritable: a.ProjectWritable}).checkWritable(); err != nil {
+		return a, err
+	}
+	return a, nil
 }
 
 func (c *Config) ApplyAccess(a Access) {

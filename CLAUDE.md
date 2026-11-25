@@ -70,7 +70,7 @@ Minimal Go coding agent for the terminal. The model's only tool is `run`: JavaSc
 
 ### internal/app (everything else, exports only `Main`)
 - `cli.go` flags on a `flag.FlagSet`, usage, `-version`, `-show`, `-check-config`, exit codes; `version.go` the stamped version, else one from build info
-- `run.go` wiring shared by both modes: `resolveConfig`, `newProvider`, `buildAgent` (registers the functions), `loadHooks`, `openSession`, `submitPrompt`
+- `run.go` wiring shared by both modes: `resolveConfig` (`readParentEnv` reads and unsets `QI_SUBAGENT`, `QI_PARENT_SESSION`, `QI_MCP` and `QI_ACCESS` once, parsing the last two only in a subagent, which needs a valid `QI_ACCESS`), `newProvider`, `buildAgent` (registers the functions), `loadHooks`, `openSession`, `submitPrompt`
 - `headless.go` `-q`/stdin mode; `-json` tees every session entry to stdout via `session.CreateOptions.Tee` (same bytes as the file); `rusage.go` the cpu/peak-mem line it prints
 - `repl.go` the interactive loop, mode toggle, status, turns; background job exits start a turn by themselves (`maxAutoTurns` in a row, via `Editor.Wake`/`Woken`)
 - `signals.go` signals, resize, ctrl+z job control; `shutdown.go` quit and cleanup; `idle.go` idle compaction; `profile.go` `/profile` and `/effort` switching
@@ -94,7 +94,7 @@ Minimal Go coding agent for the terminal. The model's only tool is `run`: JavaSc
 - `hooks.go` Claude Code hooks: files parsed once (missing skipped, malformed stops startup), one event's hooks run in parallel, `async` ones detached; `Hooks.Attach` wires session, mode, spill
 - Hook text the model sees goes through `capText` (cut, rest spilled); `onFailure` and `updatedToolOutput` follow Claude Code (`TestOnFailureBlock`, `TestPostToolUseUpdatedOutput`)
 - `trust.go` project hooks need trust: the trust file pins each dir to a fingerprint of its project hooks (`async` included)
-- `subagent.go` `SubagentRunner` runs `qi -q … -json` (`Args`: `-p <profile>` for a listed profile, else the parent's `-model`/`-provider`/`-p`; always the parent's current mode flag, which wins over the profile's `mode`) with `SubagentEnv`, `ParentSessionEnv` (meta `parent_session`), `QI_MCP` and `QI_ACCESS` (`config.Access`: the parent's current `project_writable`/`read_only_allow` and its startup `hook_files`, expanded; the child replaces its profile's values, so sandbox, allowlist, hooks and trust fingerprint match the parent); the child writes to `subagents/`, answers with its last text
+- `subagent.go` `SubagentRunner` runs `qi -q … -json` (`Args`: `-p <profile>` for a listed profile, else the parent's `-model`/`-provider`/`-p`; always the parent's current mode flag, which wins over the profile's `mode`) with `SubagentEnv`, `ParentSessionEnv` (meta `parent_session`), `QI_MCP` (the parent's startup servers) and `QI_ACCESS` (`config.Access`: the parent's current `project_writable`/`read_only_allow` and its startup `hook_files`, expanded, only the user files when it skipped project hooks; the child replaces its profile's values, so sandbox, allowlist and hooks match the parent; a child whose project hooks no longer match the trust file fails at startup); the child writes to `subagents/`, answers with its last text
 
 ### internal/tools
 - `tools.go` `Function` (one async JS function: `Name`, `Code`, `Run`, `Label`, `Path`, `HookNames`), `Env` (cwd, mode, scratch, jobs), `Result`, hooks types, `Tool.Execute`, `OneLine`, `DoneLine`

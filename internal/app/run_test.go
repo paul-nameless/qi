@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"image"
 	"image/png"
 	"io"
@@ -121,7 +122,7 @@ func TestSubagentModeFlagWinsOverProfile(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		child, err := resolveConfig(args.opts)
+		child, _, err := resolveConfig(args.opts)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -269,7 +270,7 @@ func TestSubagentKeepsParentMCPFilters(t *testing.T) {
 	}
 	writeFile(`{"mcp": {"notes": {"command": "notes", "tools": ["*_note"], "exclude_tools": ["delete_*"]}, "gh": {"command": "gh"}},
   "profiles": {"p": {"mcp": {"gh": null, "db": {"command": "db"}}}}}`)
-	parentCfg, err := resolveConfig(options{configPath: path, profile: "p"})
+	parentCfg, _, err := resolveConfig(options{configPath: path, profile: "p"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -279,19 +280,9 @@ func TestSubagentKeepsParentMCPFilters(t *testing.T) {
 	}
 	writeFile(`{"mcp": {"notes": {"command": "notes"}, "extra": {"command": "extra"}}, "profiles": {"p": {"mcp": {"gh2": {"command": "gh"}}}}}`)
 	_, runner := buildAgent(parentCfg, options{configPath: path, profile: "p"}, dir, nopProvider{}, devNullPrinter(t), true, false)
-	env, err := runner.Env()
-	if err != nil {
-		t.Fatal(err)
-	}
-	fromParent := ""
-	for _, kv := range env {
-		if v, ok := strings.CutPrefix(kv, config.MCPEnv+"="); ok {
-			fromParent = v
-		}
-	}
-	t.Setenv(config.MCPEnv, fromParent)
-	t.Setenv("QI_SUBAGENT", "1")
-	cfg, err := resolveConfig(options{configPath: path, profile: "p"})
+	childEnv(t, runner)
+	fromParent := os.Getenv(config.MCPEnv)
+	cfg, _, err := resolveConfig(options{configPath: path, profile: "p"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -303,7 +294,7 @@ func TestSubagentKeepsParentMCPFilters(t *testing.T) {
 	}
 	t.Setenv(config.MCPEnv, fromParent)
 	t.Setenv("QI_SUBAGENT", "")
-	if cfg, _ := resolveConfig(options{configPath: path, profile: "p"}); !reflect.DeepEqual(sortedNames(cfg.MCP), []string{"extra", "gh2", "notes"}) {
+	if cfg, _, _ := resolveConfig(options{configPath: path, profile: "p"}); !reflect.DeepEqual(sortedNames(cfg.MCP), []string{"extra", "gh2", "notes"}) {
 		t.Errorf("top-level agent took %s: %+v", config.MCPEnv, cfg.MCP)
 	}
 }
@@ -315,7 +306,7 @@ func childEnv(t *testing.T, runner *agent.SubagentRunner) {
 		t.Fatal(err)
 	}
 	for _, kv := range env {
-		for _, key := range []string{agent.SubagentEnv, config.MCPEnv, config.AccessEnv} {
+		for _, key := range []string{agent.SubagentEnv, agent.ParentSessionEnv, config.MCPEnv, config.AccessEnv} {
 			if v, ok := strings.CutPrefix(kv, key+"="); ok {
 				t.Setenv(key, v)
 			}
@@ -335,7 +326,7 @@ func TestSubagentTakesParentAccess(t *testing.T) {
     "next": {"project_writable": ["/next"], "read_only_allow": null, "hook_files": ["/next.json"], "subagent_profiles": ["wide"]}
   }}`), 0o600)
 	o := options{configPath: path}
-	parent, err := resolveConfig(o)
+	parent, _, err := resolveConfig(o)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -348,7 +339,7 @@ func TestSubagentTakesParentAccess(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		cfg, err := resolveConfig(args.opts)
+		cfg, _, err := resolveConfig(args.opts)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -378,12 +369,12 @@ func TestSubagentTakesParentAccess(t *testing.T) {
 	}
 	childEnv(t, runner)
 	t.Setenv(agent.SubagentEnv, "")
-	if _, err := resolveConfig(options{configPath: path, profile: "wide"}); err == nil || !strings.Contains(err.Error(), `unknown profile "missing"`) {
+	if _, _, err := resolveConfig(options{configPath: path, profile: "wide"}); err == nil || !strings.Contains(err.Error(), `unknown profile "missing"`) {
 		t.Errorf("a top-level agent checks its subagent_profiles: %v", err)
 	}
 	childEnv(t, runner)
 	t.Setenv(agent.SubagentEnv, "")
-	top, err := resolveConfig(options{configPath: path, profile: "next"})
+	top, _, err := resolveConfig(options{configPath: path, profile: "next"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -391,8 +382,8 @@ func TestSubagentTakesParentAccess(t *testing.T) {
 		t.Errorf("top-level agent took %s: %v", config.AccessEnv, top.ProjectWritable)
 	}
 	t.Setenv(agent.SubagentEnv, "1")
-	t.Setenv(config.AccessEnv, `{"project_writable": ["rel"]}`)
-	if _, err := resolveConfig(options{configPath: path}); err == nil || !strings.Contains(err.Error(), config.AccessEnv+" from the parent agent") {
+	t.Setenv(config.AccessEnv, `{"project_writable": ["rel"], "read_only_allow": null, "hook_files": null}`)
+	if _, _, err := resolveConfig(options{configPath: path}); err == nil || !strings.Contains(err.Error(), config.AccessEnv+" from the parent agent") {
 		t.Errorf("bad %s: %v", config.AccessEnv, err)
 	}
 }
@@ -409,20 +400,23 @@ func TestProfileSwitchPrintsSubagents(t *testing.T) {
   "b": {"model": "mb"}
 }}`), 0o600)
 	o := options{configPath: path}
-	cfg, err := resolveConfig(o)
+	cfg, _, err := resolveConfig(o)
 	if err != nil {
 		t.Fatal(err)
 	}
 	a, runner := buildAgent(cfg, o, dir, nopProvider{}, devNullPrinter(t), true, false)
 	display, out := capturePrinter(t)
 	r := &repl{agent: a, display: display, runner: runner, opts: o}
-	for _, p := range []string{"twin", "solo", "main"} {
+	for _, p := range []string{"twin", "solo", "a", "main"} {
 		if err := r.switchProfile(p); err != nil {
 			t.Fatal(err)
 		}
 	}
 	if n := strings.Count(out.String(), "subagents: a (ma), b (mb)"); n != 1 {
 		t.Errorf("subagents line printed %d times, want once (back from solo):\n%s", n, out.String())
+	}
+	if n := strings.Count(out.String(), "subagents: current"); n != 1 {
+		t.Errorf("default menu printed %d times, want once (switching to solo):\n%s", n, out.String())
 	}
 }
 
@@ -443,7 +437,7 @@ func TestProfileSwitchKeepsMCPSetup(t *testing.T) {
 		t.Fatal(err)
 	}
 	o := options{configPath: path}
-	cfg, err := resolveConfig(o)
+	cfg, _, err := resolveConfig(o)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -487,7 +481,7 @@ func TestMalformedHookFileFailsStartup(t *testing.T) {
 		t.Errorf("a failed start left files behind: %v", entries)
 	}
 	missing := filepath.Join(home, "missing.json")
-	h, err := loadHooks([]string{home}, []string{missing, "~/.claude/settings.local.json"}, true, devNullPrinter(t))
+	h, _, err := loadHooks([]string{home}, []string{missing, "~/.claude/settings.local.json"}, true, false, devNullPrinter(t))
 	if err != nil || !h.Empty() {
 		t.Errorf("missing hook files: %v", err)
 	}
@@ -554,5 +548,121 @@ func TestProfileModeAppliesOnSwitch(t *testing.T) {
 	os.WriteFile(bad, []byte(`{"model": "m", "profiles": {"x": {"mode": "dir"}}}`), 0o600)
 	if _, err := config.Resolve(config.Options{Path: bad, Profile: "x"}); err == nil || !strings.Contains(err.Error(), "mode") {
 		t.Errorf("an unknown mode should be rejected: %v", err)
+	}
+}
+
+func TestSubagentEnvNeedsAccessAndIsCleared(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("QI_CONFIG_DIR", dir)
+	path := filepath.Join(dir, "config.json")
+	os.WriteFile(path, []byte(`{"api_key": "k", "model": "m"}`), 0o600)
+	vars := []string{agent.SubagentEnv, agent.ParentSessionEnv, config.MCPEnv, config.AccessEnv}
+	cleared := func(when string) {
+		t.Helper()
+		for _, key := range vars {
+			if v, set := os.LookupEnv(key); set {
+				t.Errorf("%s: %s=%q left for tools, hooks and MCP servers", when, key, v)
+			}
+		}
+	}
+	for _, access := range []string{"", "null", "{}", "[]", `{"project_writable": [], "read_only_allow": []}`} {
+		t.Setenv(agent.SubagentEnv, "1")
+		t.Setenv(config.AccessEnv, access)
+		if _, _, err := resolveConfig(options{configPath: path}); err == nil || !strings.Contains(err.Error(), config.AccessEnv+" from the parent agent") {
+			t.Errorf("QI_ACCESS=%q: %v", access, err)
+		}
+		cleared("invalid access " + access)
+	}
+	t.Setenv(agent.SubagentEnv, "1")
+	t.Setenv(config.AccessEnv, "")
+	os.Unsetenv(config.AccessEnv)
+	if _, _, err := resolveConfig(options{configPath: path}); err == nil || !strings.Contains(err.Error(), config.AccessEnv+" is missing") {
+		t.Errorf("no access: %v", err)
+	}
+	cleared("no access")
+	for _, key := range vars[1:] {
+		t.Setenv(key, "stray{")
+	}
+	cfg, parent, err := resolveConfig(options{configPath: path})
+	if err != nil || parent.sub || cfg.Model != "m" {
+		t.Errorf("top-level qi with stray values: %v %+v", err, parent)
+	}
+	cleared("top level")
+}
+
+func TestSubagentFailsOnChangedProjectHooks(t *testing.T) {
+	srv := headlessServer(t)
+	path := headlessConfig(t, srv.URL)
+	t.Setenv("QI_CONFIG_DIR", t.TempDir())
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings := filepath.Join(cwd, ".claude", "settings.json")
+	os.MkdirAll(filepath.Dir(settings), 0o700)
+	writeHooks := func(cmd string) {
+		os.WriteFile(settings, []byte(`{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"`+cmd+`"}]}]}}`), 0o600)
+	}
+	writeHooks("true")
+	roots := agent.ProjectRoots(cwd)
+	all := agent.ExpandPaths(roots, []string{"~/.claude/settings.json", ".claude/settings.json"})
+	child := func(hookFiles []string) error {
+		t.Helper()
+		access, err := config.EncodeAccess(config.Access{HookFiles: hookFiles})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv(agent.SubagentEnv, "1")
+		t.Setenv(agent.ParentSessionEnv, "P-1")
+		t.Setenv(config.AccessEnv, access)
+		withStdio(t, func() { err = run(options{query: "hi", configPath: path}) })
+		return err
+	}
+	sessions := func() []string {
+		files, _ := filepath.Glob(filepath.Join(os.Getenv("QI_SESSION_DIR"), "*", "subagents", "*.jsonl"))
+		return files
+	}
+	_, skipped, err := loadHooks(roots, all, true, false, devNullPrinter(t))
+	if err != nil || !skipped {
+		t.Fatalf("untrusted headless parent: skipped %v, %v", skipped, err)
+	}
+	if got := userHookFiles(all); len(got) != 1 || got[0] != all[0] {
+		t.Fatalf("a parent that skipped project hooks passes %v", got)
+	}
+	if err := child(userHookFiles(all)); err != nil {
+		t.Errorf("child of a parent that skipped project hooks: %v", err)
+	}
+	parsed, err := agent.ParseHookFiles(all)
+	if err != nil {
+		t.Fatal(err)
+	}
+	yes := func(string, string, []string) bool { return true }
+	if _, skipped, err := agent.SelectHookFiles(roots[0], parsed, true, yes); err != nil || skipped {
+		t.Fatalf("trust: %v %v", skipped, err)
+	}
+	if err := child(all); err != nil {
+		t.Fatalf("child with trusted project hooks: %v", err)
+	}
+	for _, key := range []string{agent.SubagentEnv, agent.ParentSessionEnv, config.AccessEnv} {
+		if _, set := os.LookupEnv(key); set {
+			t.Errorf("%s left for tools, hooks and MCP servers", key)
+		}
+	}
+	files := sessions()
+	if len(files) != 2 {
+		t.Fatalf("subagent sessions %v", files)
+	}
+	for _, f := range files {
+		if data, _ := os.ReadFile(f); !strings.Contains(string(data), `"parent_session":"P-1"`) {
+			t.Errorf("%s has no parent_session:\n%s", f, data)
+		}
+	}
+	writeHooks("echo changed")
+	want := fmt.Sprintf(changedHooksError, roots[0])
+	if err := child(all); err == nil || err.Error() != want {
+		t.Errorf("child after the project hooks changed: %v, want %q", err, want)
+	}
+	if got := sessions(); len(got) != 2 {
+		t.Errorf("a failed child left a session: %v", got)
 	}
 }

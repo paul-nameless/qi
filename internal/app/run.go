@@ -41,10 +41,11 @@ const escalationWait = 6 * time.Second
 
 func run(o options) error {
 	defer proc.Settle(escalationWait)
-	cfg, err := resolveConfig(o)
+	cfg, parent, err := resolveConfig(o)
 	if err != nil {
 		return err
 	}
+	isSub := parent.sub
 	key, err := cfg.ResolveAPIKey()
 	if err != nil {
 		return err
@@ -55,7 +56,6 @@ func run(o options) error {
 	}
 	stdinPiped := stdinHasData()
 	headless := o.query != "" || stdinPiped || !ui.IsTerminal(os.Stdin)
-	isSub := os.Getenv(agent.SubagentEnv) != ""
 	if err := checkJSON(o, headless); err != nil {
 		return err
 	}
@@ -86,11 +86,14 @@ func run(o options) error {
 	if err != nil || cancelled {
 		return err
 	}
-	hooks, err := loadHooks(roots, cfg.HookFiles, headless, display)
+	hooks, skipped, err := loadHooks(roots, cfg.HookFiles, headless, isSub, display)
 	if err != nil {
 		return err
 	}
-	if err := openSession(a, o, cfg, cwd, resume, headless, isSub); err != nil {
+	if skipped && runner != nil {
+		runner.Access.HookFiles = userHookFiles(runner.Access.HookFiles)
+	}
+	if err := openSession(a, o, cfg, cwd, resume, headless, parent); err != nil {
 		return err
 	}
 	defer a.Session().Close()
@@ -166,7 +169,7 @@ func resumePath(o options, cfg config.Config, cwd string, headless bool) (string
 	return "", false, nil
 }
 
-func openSession(a *agent.Agent, o options, cfg config.Config, cwd, resume string, headless, isSub bool) error {
+func openSession(a *agent.Agent, o options, cfg config.Config, cwd, resume string, headless bool, parent parentEnv) error {
 	if resume != "" {
 		s, ld, err := session.Open(resume)
 		if err != nil {
@@ -185,9 +188,9 @@ func openSession(a *agent.Agent, o options, cfg config.Config, cwd, resume strin
 	if headless {
 		kind = session.Headless
 	}
-	opts := session.CreateOptions{Cwd: cwd, ID: o.sessionID, Model: cfg.Model, Kind: kind, Subagent: isSub}
-	if parent := os.Getenv(agent.ParentSessionEnv); isSub && session.ValidID(parent) {
-		opts.ParentSession = parent
+	opts := session.CreateOptions{Cwd: cwd, ID: o.sessionID, Model: cfg.Model, Kind: kind, Subagent: parent.sub}
+	if parent.sub && session.ValidID(parent.session) {
+		opts.ParentSession = parent.session
 	}
 	if o.json {
 		opts.Tee = os.Stdout
@@ -200,44 +203,82 @@ func openSession(a *agent.Agent, o options, cfg config.Config, cwd, resume strin
 	return nil
 }
 
-func resolveConfig(o options) (config.Config, error) {
-	parentMCP, mcpFromParent, err := config.MCPFromEnv()
-	if err != nil {
-		return config.Config{}, err
-	}
-	access, accessFromParent, err := config.AccessFromEnv()
-	if err != nil {
-		return config.Config{}, err
-	}
-	isSub := os.Getenv(agent.SubagentEnv) != ""
-	cfg, err := config.Resolve(config.Options{Path: o.configPath, Profile: o.profile, Provider: o.provider, Model: o.model, Effort: o.effort, SystemPromptFile: o.systemPromptFile, Subagent: isSub})
-	if err != nil {
-		return cfg, err
-	}
-	if mcpFromParent && isSub {
-		cfg.MCP = parentMCP
-	}
-	if accessFromParent && isSub {
-		cfg.ApplyAccess(access)
-	}
-	return cfg, nil
+type parentEnv struct {
+	sub     bool
+	session string
+	mcp     map[string]config.MCPServer
+	hasMCP  bool
+	access  config.Access
 }
 
-func loadHooks(roots, configured []string, headless bool, display *ui.Printer) (*agent.Hooks, error) {
+func readParentEnv() (parentEnv, error) {
+	p := parentEnv{sub: os.Getenv(agent.SubagentEnv) != "", session: os.Getenv(agent.ParentSessionEnv)}
+	_ = os.Unsetenv(agent.SubagentEnv)
+	_ = os.Unsetenv(agent.ParentSessionEnv)
+	if !p.sub {
+		_ = os.Unsetenv(config.MCPEnv)
+		_ = os.Unsetenv(config.AccessEnv)
+		return p, nil
+	}
+	var err error
+	if p.mcp, p.hasMCP, err = config.MCPFromEnv(); err != nil {
+		_ = os.Unsetenv(config.AccessEnv)
+		return p, err
+	}
+	access, ok, err := config.AccessFromEnv()
+	if err != nil {
+		return p, err
+	}
+	if !ok {
+		return p, fmt.Errorf("%s is set but %s is missing; only qi starts subagents and it sets both", agent.SubagentEnv, config.AccessEnv)
+	}
+	p.access = access
+	return p, nil
+}
+
+func resolveConfig(o options) (config.Config, parentEnv, error) {
+	parent, err := readParentEnv()
+	if err != nil {
+		return config.Config{}, parent, err
+	}
+	cfg, err := config.Resolve(config.Options{Path: o.configPath, Profile: o.profile, Provider: o.provider, Model: o.model, Effort: o.effort, SystemPromptFile: o.systemPromptFile, Subagent: parent.sub})
+	if err != nil {
+		return cfg, parent, err
+	}
+	if parent.sub {
+		if parent.hasMCP {
+			cfg.MCP = parent.mcp
+		}
+		cfg.ApplyAccess(parent.access)
+	}
+	return cfg, parent, nil
+}
+
+const changedHooksError = "project hooks in %s changed since this session trusted them; restart qi to review them"
+
+func loadHooks(roots, configured []string, headless, isSub bool, display *ui.Printer) (*agent.Hooks, bool, error) {
 	parsed, err := agent.ParseHookFiles(agent.ExpandPaths(roots, configured))
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	files, skipped, err := agent.SelectHookFiles(roots[0], parsed, !headless, agent.TrustPrompt(os.Stdin, os.Stdout))
 	if err != nil {
 		display.Info(err.Error())
 	}
-	if skipped && headless && os.Getenv(agent.SubagentEnv) == "" {
+	switch {
+	case skipped && isSub:
+		return nil, true, fmt.Errorf(changedHooksError, roots[0])
+	case skipped && headless:
 		display.Info("skipping untrusted or changed project hooks in " + roots[0] + " (start qi interactively there to review them)")
 	}
 	h := agent.NewHooks(roots[0], files)
 	h.Info = display.Info
-	return h, nil
+	return h, skipped, nil
+}
+
+func userHookFiles(files []string) []string {
+	user, _ := agent.SplitHookFiles(files)
+	return user
 }
 
 func submitPrompt(ctx context.Context, a *agent.Agent, display notifier, hooks *agent.Hooks, prompt string, images ...string) ([]llm.Block, error) {
