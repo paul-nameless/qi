@@ -151,3 +151,21 @@ func TestRev4Round1(t *testing.T) {
 		}
 	}
 }
+
+func TestLocaleCompareSharedPrefix(t *testing.T) {
+	t.Parallel()
+	pairs := [][2]string{{"abcé", "abcè"}, {"abcE", "abce"}, {"aé", "ae"}, {"aé", "aêb"}, {"x\xe2\x82A", "x\xe2\x82B"}, {"x\xe2\x82", "x\xe2\x82\xac"}, {"path/a-b", "path/a_b"}, {"ab", "abc"}, {"Ab", "ab"}, {"dir/Émile", "dir/emile"}}
+	for _, p := range pairs {
+		for _, ab := range [][2]string{p, {p[1], p[0]}} {
+			want := strings.Compare(ab[0], ab[1])
+			for level := 2; level >= 0; level-- {
+				if c := compareLevel(ab[0], ab[1], level); c != 0 {
+					want = c
+				}
+			}
+			if got := localeCompare(ab[0], ab[1]); got != want {
+				t.Errorf("localeCompare(%q, %q) = %d, want %d", ab[0], ab[1], got, want)
+			}
+		}
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf16"
+	"unicode/utf8"
 )
 
 func (vm *VM) thisStr(this Value, name string) *jstr {
@@ -446,12 +447,26 @@ func localeCompare(a, b string) int {
 	if a == b {
 		return 0
 	}
+	if i := commonPrefix(a, b); i > 0 {
+		a, b = a[i:], b[i:]
+	}
 	for level := range 3 {
 		if c := compareLevel(a, b, level); c != 0 {
 			return c
 		}
 	}
 	return strings.Compare(a, b)
+}
+
+func commonPrefix(a, b string) int {
+	i := 0
+	for i < len(a) && i < len(b) && a[i] == b[i] {
+		i++
+	}
+	for i > 0 && (i < len(a) && !utf8.RuneStart(a[i]) || i < len(b) && !utf8.RuneStart(b[i])) {
+		i--
+	}
+	return i
 }
 
 func compareLevel(a, b string, level int) int {
