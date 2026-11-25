@@ -21,7 +21,12 @@ func runCall(id, code string) llm.Message {
 }
 
 func scripted(replies ...llm.Message) *llmtest.Provider {
-	return script(llmtest.Script(replies...))
+	return script(func(_ context.Context, n int, _ llm.Request) (llm.Message, error) {
+		if n < len(replies) {
+			return replies[n], nil
+		}
+		return llmtest.Text("done"), nil
+	})
 }
 
 func toolNames(req llm.Request) []string {
