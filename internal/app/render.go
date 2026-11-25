@@ -15,18 +15,9 @@ import (
 const compactionRole llm.Role = "compaction"
 
 func transcript(entries []session.Entry) []llm.Message {
-	var msgs []llm.Message
-	for _, e := range entries {
-		switch {
-		case e.Type == "message" && e.Message != nil:
-			msgs = append(msgs, *e.Message)
-		case e.Type == "drop" && len(msgs) > 0:
-			msgs = msgs[:len(msgs)-1]
-		case e.Type == "compaction":
-			msgs = append(msgs, llm.Message{Role: compactionRole, Blocks: []llm.Block{{Type: llm.BlockText, Text: e.Summary}}})
-		}
-	}
-	return msgs
+	return session.Replay(entries, func(msgs []llm.Message, e session.Entry) []llm.Message {
+		return append(msgs, llm.Message{Role: compactionRole, Blocks: []llm.Block{{Type: llm.BlockText, Text: e.Summary}}})
+	})
 }
 
 type painter struct {

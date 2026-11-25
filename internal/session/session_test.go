@@ -259,3 +259,34 @@ func TestSubagentMetaRecordsParent(t *testing.T) {
 		t.Fatalf("entries %+v err %v", entries, err)
 	}
 }
+
+func TestLoadReplaysDropsAndCompactions(t *testing.T) {
+	t.Setenv("QI_SESSION_DIR", t.TempDir())
+	s, _ := Create(CreateOptions{Cwd: "/p", Model: "m", Kind: Interactive})
+	s.Message(llm.UserText("a"), "m", nil)
+	s.Message(llm.UserText("b"), "m", &llm.Usage{Input: 10, Output: 5})
+	s.Compaction("sum", []llm.Message{llm.UserText("kept")}, "m", nil)
+	s.Drop()
+	s.Message(llm.UserText("c"), "m", nil)
+	s.Close()
+	ld, err := Load(s.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, m := range ld.Messages {
+		got = append(got, m.Text())
+	}
+	entries, _ := Entries(s.Path)
+	if strings.Join(got, ",") != "sum,c" || ld.CtxTokens != 0 || ld.LastID != entries[len(entries)-1].ID {
+		t.Errorf("load: %q ctx %d last %q", got, ld.CtxTokens, ld.LastID)
+	}
+	marked := Replay(entries, func(msgs []llm.Message, e Entry) []llm.Message { return append(msgs, llm.UserText("<"+e.Summary+">")) })
+	got = got[:0]
+	for _, m := range marked {
+		got = append(got, m.Text())
+	}
+	if strings.Join(got, ",") != "a,b,c" {
+		t.Errorf("replay with a marker: %q", got)
+	}
+}

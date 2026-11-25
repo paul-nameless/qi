@@ -1,7 +1,6 @@
 package session
 
 import (
-	"bufio"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -38,19 +37,18 @@ func summarize(path string, interactive bool) (Info, bool) {
 		return info, false
 	}
 	defer f.Close()
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 64<<10), 256<<20)
+	sc := NewScanner(f, 64<<10)
 	answered := false
 	for sc.Scan() {
 		line := sc.Text()
 		switch {
 		case interactive && headlessMeta(line):
 			return info, false
-		case strings.HasPrefix(line, `{"type":"drop"`):
+		case strings.HasPrefix(line, dropPrefix):
 			info.Messages = max(info.Messages-1, 0)
-		case strings.HasPrefix(line, `{"type":"compaction"`):
+		case strings.HasPrefix(line, compactionPrefix):
 			answered = true
-		case strings.HasPrefix(line, `{"type":"message"`):
+		case strings.HasPrefix(line, messagePrefix):
 			info.Messages++
 			answered = answered || strings.Contains(line, `"role":"assistant"`)
 			if info.First == "" && strings.Contains(line, `"role":"user"`) {

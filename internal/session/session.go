@@ -21,6 +21,38 @@ import (
 
 const Version = 1
 
+const (
+	TypeMeta       = "meta"
+	TypeMessage    = "message"
+	TypeUsage      = "usage"
+	TypeDrop       = "drop"
+	TypeCompaction = "compaction"
+)
+
+const maxLine = 256 << 20
+
+var (
+	metaPrefix       = typePrefix(TypeMeta)
+	messagePrefix    = typePrefix(TypeMessage)
+	dropPrefix       = typePrefix(TypeDrop)
+	compactionPrefix = typePrefix(TypeCompaction)
+	compactionField  = typeField(TypeCompaction)
+)
+
+func typeField(t string) string {
+	return `"type":"` + t + `"`
+}
+
+func typePrefix(t string) string {
+	return "{" + typeField(t)
+}
+
+func NewScanner(r io.Reader, initial int) *bufio.Scanner {
+	sc := bufio.NewScanner(r)
+	sc.Buffer(make([]byte, initial), maxLine)
+	return sc
+}
+
 type Entry struct {
 	Type          string        `json:"type"`
 	ID            string        `json:"id"`
@@ -144,7 +176,7 @@ func Create(o CreateOptions) (*Session, error) {
 		return nil, err
 	}
 	s := &Session{Path: path, ID: id, f: f, tee: o.Tee}
-	if err := s.write(Entry{Type: "meta", Version: Version, Cwd: o.Cwd, Model: o.Model, Kind: o.Kind, ParentSession: o.ParentSession}); err != nil {
+	if err := s.write(Entry{Type: TypeMeta, Version: Version, Cwd: o.Cwd, Model: o.Model, Kind: o.Kind, ParentSession: o.ParentSession}); err != nil {
 		f.Close()
 		return nil, err
 	}
@@ -188,7 +220,7 @@ func Latest(cwd string, interactive bool) (string, error) {
 }
 
 func headlessMeta(line string) bool {
-	return strings.HasPrefix(line, `{"type":"meta"`) && strings.Contains(line, `"kind":"headless"`)
+	return strings.HasPrefix(line, metaPrefix) && strings.Contains(line, `"kind":"headless"`)
 }
 
 func hasMessages(path string, interactive bool) bool {
@@ -197,14 +229,13 @@ func hasMessages(path string, interactive bool) bool {
 		return false
 	}
 	defer f.Close()
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 64<<10), 256<<20)
+	sc := NewScanner(f, 64<<10)
 	for sc.Scan() {
 		line := sc.Text()
 		if interactive && headlessMeta(line) {
 			return false
 		}
-		if strings.Contains(line, `"role":"assistant"`) || strings.Contains(line, `"type":"compaction"`) {
+		if strings.Contains(line, `"role":"assistant"`) || strings.Contains(line, compactionField) {
 			return true
 		}
 	}
@@ -223,8 +254,7 @@ func Entries(path string) ([]Entry, error) {
 		return nil, fmt.Errorf("open session: %w", err)
 	}
 	defer f.Close()
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 1<<20), 256<<20)
+	sc := NewScanner(f, 1<<20)
 	var out []Entry
 	for sc.Scan() {
 		var e Entry
@@ -244,27 +274,46 @@ func Load(path string) (Loaded, error) {
 	if err != nil {
 		return ld, err
 	}
+	if n := len(entries); n > 0 {
+		ld.LastID = entries[n-1].ID
+	}
+	ld.Messages = Repair(Replay(entries, func(_ []llm.Message, e Entry) []llm.Message {
+		return append([]llm.Message{llm.UserText(e.Summary)}, e.Kept...)
+	}))
+	ld.CtxTokens = contextTokens(entries)
+	return ld, nil
+}
+
+func Replay(entries []Entry, compacted func(msgs []llm.Message, e Entry) []llm.Message) []llm.Message {
+	var msgs []llm.Message
 	for _, e := range entries {
-		ld.LastID = e.ID
 		switch e.Type {
-		case "message":
+		case TypeMessage:
 			if e.Message != nil {
-				ld.Messages = append(ld.Messages, *e.Message)
+				msgs = append(msgs, *e.Message)
 			}
-			if e.Usage != nil {
-				ld.CtxTokens = e.Usage.Input + e.Usage.Output
+		case TypeDrop:
+			if n := len(msgs); n > 0 {
+				msgs = msgs[:n-1]
 			}
-		case "drop":
-			if n := len(ld.Messages); n > 0 {
-				ld.Messages = ld.Messages[:n-1]
-			}
-		case "compaction":
-			ld.Messages = append([]llm.Message{llm.UserText(e.Summary)}, e.Kept...)
-			ld.CtxTokens = 0
+		case TypeCompaction:
+			msgs = compacted(msgs, e)
 		}
 	}
-	ld.Messages = Repair(ld.Messages)
-	return ld, nil
+	return msgs
+}
+
+func contextTokens(entries []Entry) int {
+	n := 0
+	for _, e := range entries {
+		switch {
+		case e.Type == TypeCompaction:
+			n = 0
+		case e.Type == TypeMessage && e.Usage != nil:
+			n = e.Usage.Input + e.Usage.Output
+		}
+	}
+	return n
 }
 
 func Open(path string) (*Session, Loaded, error) {
@@ -378,7 +427,7 @@ func (s *Session) Tee(w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if strings.HasPrefix(meta, `{"type":"meta"`) {
+	if strings.HasPrefix(meta, metaPrefix) {
 		if _, err := io.WriteString(w, meta+"\n"); err != nil {
 			return fmt.Errorf("write session to stdout: %w", err)
 		}
@@ -402,19 +451,19 @@ func firstLine(path string) (string, error) {
 }
 
 func (s *Session) Message(m llm.Message, model string, u *llm.Usage) error {
-	return s.write(Entry{Type: "message", Message: &m, Model: model, Usage: u})
+	return s.write(Entry{Type: TypeMessage, Message: &m, Model: model, Usage: u})
 }
 
 func (s *Session) Usage(model string, u *llm.Usage) error {
-	return s.write(Entry{Type: "usage", Model: model, Usage: u})
+	return s.write(Entry{Type: TypeUsage, Model: model, Usage: u})
 }
 
 func (s *Session) Drop() error {
-	return s.write(Entry{Type: "drop"})
+	return s.write(Entry{Type: TypeDrop})
 }
 
 func (s *Session) Compaction(summary string, kept []llm.Message, model string, u *llm.Usage) error {
-	return s.write(Entry{Type: "compaction", Summary: summary, Kept: kept, Model: model, Usage: u})
+	return s.write(Entry{Type: TypeCompaction, Summary: summary, Kept: kept, Model: model, Usage: u})
 }
 
 func (s *Session) Close() {

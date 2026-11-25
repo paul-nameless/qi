@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -164,12 +163,11 @@ func (r *SubagentRunner) grace() time.Duration {
 }
 
 func (r *SubagentRunner) readEntries(rd io.Reader, progress func(string)) entriesResult {
-	sc := bufio.NewScanner(rd)
-	sc.Buffer(make([]byte, 1<<20), 256<<20)
+	sc := session.NewScanner(rd, 1<<20)
 	answer, final := "", false
 	for sc.Scan() {
 		var e session.Entry
-		if json.Unmarshal(sc.Bytes(), &e) != nil || e.Type != "message" || e.Message == nil {
+		if json.Unmarshal(sc.Bytes(), &e) != nil || e.Type != session.TypeMessage || e.Message == nil {
 			continue
 		}
 		if e.Message.Role != llm.RoleAssistant {

@@ -151,8 +151,7 @@ func eachUsage(path string, fn func(f usageFile, e usageLine, p pricedUsage)) er
 		return err
 	}
 	defer f.Close()
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 1<<20), 256<<20)
+	sc := session.NewScanner(f, 1<<20)
 	var file usageFile
 	model := ""
 	for sc.Scan() {
@@ -160,7 +159,7 @@ func eachUsage(path string, fn func(f usageFile, e usageLine, p pricedUsage)) er
 		if json.Unmarshal(sc.Bytes(), &e) != nil {
 			continue
 		}
-		if e.Type == "meta" {
+		if e.Type == session.TypeMeta {
 			file = usageFile{project: e.Cwd, long: e.Kind == session.Interactive}
 		}
 		if e.Model != "" {
@@ -204,7 +203,7 @@ func metaParent(path string) string {
 	defer f.Close()
 	line, _ := bufio.NewReader(f).ReadBytes('\n')
 	var e session.Entry
-	if json.Unmarshal(line, &e) != nil || e.Type != "meta" {
+	if json.Unmarshal(line, &e) != nil || e.Type != session.TypeMeta {
 		return ""
 	}
 	return e.ParentSession
