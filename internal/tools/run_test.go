@@ -377,6 +377,7 @@ func testEndlessFormatStopped(t *testing.T) {
 	case <-time.After(formatSeconds*k.run.r.unit() + 5*time.Second):
 		t.Fatal("formatting an endless toJSON was not stopped")
 	}
+	k.second(0)
 	k.want("1 + 1", "2")
 }
 
@@ -952,7 +953,6 @@ func TestRunDescriptionReservedNames(t *testing.T) {
 func TestCellFormatJobsDoNotLeak(t *testing.T) {
 	t.Parallel()
 	k := newCellKit(t)
-	k.second(300 * time.Millisecond)
 	k.want(`return {toJSON() { Promise.resolve().then(() => write("late.txt", "x")); Promise.resolve().then(() => console.log("job ran")); return 1 }}`, "job ran\n1")
 	res := k.cell(`await sleep(1); 2`)
 	if res.IsError || res.Text != "2" || len(res.Calls) != 0 {
@@ -971,6 +971,7 @@ func TestCellEndlessFormatJobsStopped(t *testing.T) {
 	if d := time.Since(start); d > formatSeconds*k.run.r.unit()+5*time.Second {
 		t.Errorf("an endless job loop held the result for %v", d)
 	}
+	k.second(0)
 	k.want(`await sleep(1); 4`, "4")
 }
 
