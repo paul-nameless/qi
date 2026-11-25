@@ -129,6 +129,42 @@ func TestSubagentCancelWithGrandchildHoldingStdout(t *testing.T) {
 	}
 }
 
+func TestSubagentTimeoutKeepsFinalAnswer(t *testing.T) {
+	t.Parallel()
+	call := llm.Block{Type: llm.BlockToolUse, ID: "c1", Name: "bash", Input: json.RawMessage(`{"command":"ls"}`)}
+	for _, c := range []struct {
+		name string
+		last llm.Message
+		want string
+	}{
+		{"final", llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: "Server checked."}}}, "Server checked.\n(the subagent answered, then hit its time limit"},
+		{"mid-turn", llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: "Looking."}, call}}, ""},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			script := filepath.Join(dir, "qi")
+			if err := os.WriteFile(script+".out", []byte(entryLines(t, session.Entry{Type: "message", Message: &c.last})), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(script, []byte("#!/bin/sh\ncat \"$0.out\"\nexec sleep 30\n"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			r := &SubagentRunner{Mode: func() Mode { return ModeYolo }, Label: func(b llm.Block) string { return b.Name }, Cwd: dir, Exe: script, Grace: 100 * time.Millisecond, Timeout: 300 * time.Millisecond}
+			answer, err := r.Run(context.Background(), tools.SubagentTask{Prompt: "x", Model: "m"}, func(string) {})
+			if c.want == "" {
+				if !errors.Is(err, context.DeadlineExceeded) {
+					t.Fatalf("answer %q err %v", answer, err)
+				}
+				return
+			}
+			if err != nil || !strings.HasPrefix(answer, c.want) {
+				t.Fatalf("answer %q err %v", answer, err)
+			}
+		})
+	}
+}
+
 func waitPid(path string) int {
 	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
 		if data, err := os.ReadFile(path); err == nil {

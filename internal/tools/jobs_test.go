@@ -73,6 +73,10 @@ func TestBackgroundJobKilledOutsideNotifies(t *testing.T) {
 	for !env.Jobs.Exited() {
 		<-env.Jobs.Changed()
 	}
+	env.Jobs.Hold()
+	if env.Jobs.Exited() || !env.Jobs.HasNotices() {
+		t.Fatal("a held notice should stay but not start a turn")
+	}
 	if n := waitNotice(t, env.Jobs); n.Status != "signal: terminated" || !strings.Contains(n.Text, `status="signal: terminated"`) {
 		t.Fatalf("notice %+v", n)
 	}
@@ -125,7 +129,7 @@ func TestBackgroundJobTimeout(t *testing.T) {
 	if env.Jobs.Exited() {
 		t.Error("a timeout counts as an exit, so it would start a turn")
 	}
-	if n := waitNotice(t, env.Jobs); n.Status != "timed out after 1s" || !n.TimedOut {
+	if n := waitNotice(t, env.Jobs); n.Status != "timed out after 1s" || !n.Quiet {
 		t.Fatalf("notice %+v", n)
 	}
 }

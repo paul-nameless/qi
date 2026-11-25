@@ -43,6 +43,7 @@ type SubagentRunner struct {
 	Label            func(llm.Block) string
 	Exe              string
 	Grace            time.Duration
+	Timeout          time.Duration
 }
 
 func (r *SubagentRunner) Env() ([]string, error) {
@@ -90,7 +91,7 @@ func (r *SubagentRunner) args(task tools.SubagentTask) []string {
 }
 
 func (r *SubagentRunner) Run(parent context.Context, task tools.SubagentTask, progress func(string)) (string, error) {
-	ctx, cancel := context.WithTimeout(parent, tools.SubagentTimeout)
+	ctx, cancel := context.WithTimeout(parent, r.timeout())
 	defer cancel()
 	cmd, err := r.command(ctx, task)
 	if err != nil {
@@ -108,6 +109,8 @@ func (r *SubagentRunner) Run(parent context.Context, task tools.SubagentTask, pr
 	out.Close()
 	res := <-read
 	switch {
+	case ctx.Err() != nil && parent.Err() == nil && res.final && res.answer != "":
+		return res.answer + "\n(the subagent answered, then hit its time limit while its background jobs were still running; they were stopped)", nil
 	case ctx.Err() != nil:
 		return "", ctx.Err()
 	case waitErr != nil && !errors.Is(waitErr, exec.ErrWaitDelay):
@@ -122,6 +125,7 @@ func (r *SubagentRunner) Run(parent context.Context, task tools.SubagentTask, pr
 
 type entriesResult struct {
 	answer string
+	final  bool
 	err    error
 }
 
@@ -144,6 +148,13 @@ func (r *SubagentRunner) command(ctx context.Context, task tools.SubagentTask) (
 	return cmd, nil
 }
 
+func (r *SubagentRunner) timeout() time.Duration {
+	if r.Timeout > 0 {
+		return r.Timeout
+	}
+	return tools.SubagentTimeout
+}
+
 func (r *SubagentRunner) grace() time.Duration {
 	if r.Grace > 0 {
 		return r.Grace
@@ -154,7 +165,7 @@ func (r *SubagentRunner) grace() time.Duration {
 func (r *SubagentRunner) readEntries(rd io.Reader, progress func(string)) entriesResult {
 	sc := bufio.NewScanner(rd)
 	sc.Buffer(make([]byte, 1<<20), 256<<20)
-	answer := ""
+	answer, final := "", false
 	for sc.Scan() {
 		var e session.Entry
 		if json.Unmarshal(sc.Bytes(), &e) != nil || e.Type != "message" || e.Message == nil || e.Message.Role != llm.RoleAssistant {
@@ -164,12 +175,13 @@ func (r *SubagentRunner) readEntries(rd io.Reader, progress func(string)) entrie
 			progress(r.Label(call))
 		}
 		answer = strings.TrimSpace(e.Message.Text())
+		final = len(e.Message.ToolUses()) == 0
 	}
 	err := sc.Err()
 	if err != nil {
 		_, _ = io.Copy(io.Discard, rd)
 	}
-	return entriesResult{answer, err}
+	return entriesResult{answer, final, err}
 }
 
 func childError(waitErr error, cause string) error {

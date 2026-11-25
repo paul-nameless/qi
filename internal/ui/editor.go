@@ -25,6 +25,7 @@ type Editor struct {
 	P         *Printer
 	Interrupt chan struct{}
 	Wake      <-chan struct{}
+	Woken     func() bool
 	OnToggle  func() string
 	IsImage   func(text string) []string
 	OnSlash   func() (text string, submit bool)
@@ -104,9 +105,12 @@ func (e *Editor) ReadLine(prompt, initial string) (string, error) {
 	defer e.P.SetPrompt(nil, nil)
 	histIdx := len(e.history)
 	draft := ""
-	woken := false
+	woken := e.woken()
 	drain(e.Interrupt)
 	for {
+		if woken && e.emptyLine(st) {
+			return "", ErrWake
+		}
 		var k Key
 		select {
 		case <-e.Interrupt:
@@ -124,10 +128,7 @@ func (e *Editor) ReadLine(prompt, initial string) (string, error) {
 			e.P.FinishPrompt()
 			return "", ErrInterrupt
 		case <-e.Wake:
-			woken = true
-			if e.emptyLine(st) {
-				return "", ErrWake
-			}
+			woken = e.woken()
 			continue
 		case k = <-e.T.Keys:
 		}
@@ -181,6 +182,10 @@ func (e *Editor) ReadLine(prompt, initial string) (string, error) {
 		}
 		e.P.RenderPrompt()
 	}
+}
+
+func (e *Editor) woken() bool {
+	return e.Woken != nil && e.Woken()
 }
 
 func (e *Editor) emptyLine(st *lineState) bool {

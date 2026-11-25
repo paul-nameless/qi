@@ -45,7 +45,10 @@ type repl struct {
 	idleGen       int
 	lastIntr      time.Time
 	lastCancelled bool
+	autoTurns     int
 }
+
+const maxAutoTurns = 3
 
 func (r *repl) prompt() string {
 	switch r.agent.Mode() {
@@ -126,6 +129,7 @@ func (r *repl) run() error {
 	}
 	r.editor.OnCopyID = func() { r.report(r.copyAnswer("id")) }
 	r.editor.Wake = r.agent.JobsChanged()
+	r.editor.Woken = r.agent.JobExited
 	r.handleSignals()
 	r.handleResize()
 	r.banner()
@@ -155,6 +159,7 @@ func (r *repl) run() error {
 			continue
 		}
 		r.stopIdle()
+		r.autoTurns = 0
 		images := r.editor.TakeImages(line)
 		text, quit := r.handleInput(line)
 		if quit {
@@ -174,6 +179,12 @@ func (r *repl) jobTurn() string {
 	if !r.agent.JobExited() {
 		return ""
 	}
+	if r.autoTurns >= maxAutoTurns {
+		r.agent.HoldJobNotices()
+		r.display.Info("background jobs keep finishing; their notices wait for your next message")
+		return ""
+	}
+	r.autoTurns++
 	r.stopIdle()
 	draft := r.runQueued(r.turn(func(context.Context) ([]llm.Block, error) { return nil, nil }, ""))
 	r.armIdle()
@@ -440,6 +451,9 @@ func (r *repl) turn(prepare func(context.Context) ([]llm.Block, error), draft st
 		r.display.Images(final)
 	}
 	r.lastCancelled = errors.Is(err, context.Canceled)
+	if r.lastCancelled {
+		r.agent.HoldJobNotices()
+	}
 	if !r.lastCancelled {
 		r.notifyTurn(final, err, time.Since(start))
 	}

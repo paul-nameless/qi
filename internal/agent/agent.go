@@ -334,6 +334,10 @@ func (a *Agent) JobExited() bool {
 	return a.env.Jobs.Exited()
 }
 
+func (a *Agent) HoldJobNotices() {
+	a.env.Jobs.Hold()
+}
+
 func (a *Agent) jobBlocks() []llm.Block {
 	var out []llm.Block
 	for _, n := range a.env.Jobs.TakeNotices() {
@@ -639,6 +643,9 @@ func (a *Agent) Turn(ctx context.Context, blocks []llm.Block) (string, TurnStats
 		} else if nudge, ok := a.jobsNudge(&nudged); ok {
 			next = nudge
 		} else if !a.awaitJobs(ctx) {
+			if ctx.Err() != nil && a.headless {
+				return msg.Text(), stats, nil
+			}
 			if ctx.Err() != nil {
 				return "", stats, context.Canceled
 			}

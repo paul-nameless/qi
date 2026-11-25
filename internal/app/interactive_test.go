@@ -568,3 +568,37 @@ func TestFinishedJobStartsTurn(t *testing.T) {
 		t.Fatalf("the turn did not carry the notice: %+v", last)
 	}
 }
+
+func TestAutomaticTurnsAreCapped(t *testing.T) {
+	gate := filepath.Join(t.TempDir(), "gate")
+	cmd, _ := json.Marshal(fmt.Sprintf("while [ ! -e %q ]; do sleep 0.01; done; exit 6", gate))
+	p := &scriptProvider{reply: func(_ context.Context, n int, _ llm.Request) (llm.Message, error) {
+		if n == 0 {
+			return runCall("c1", `await bash(`+string(cmd)+`, {background: true, timeout: 30})`), nil
+		}
+		return textReply("ok"), nil
+	}}
+	r, out := testRepl(t, config.Config{Model: "m"}, p)
+	t.Cleanup(r.agent.KillJobs)
+	r.turn(func(context.Context) ([]llm.Block, error) {
+		return []llm.Block{{Type: llm.BlockText, Text: "go"}}, nil
+	}, "")
+	if err := os.WriteFile(gate, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	timeout := time.After(10 * time.Second)
+	for !r.agent.JobExited() {
+		select {
+		case <-r.agent.JobsChanged():
+		case <-timeout:
+			t.Fatal("the job never finished")
+		}
+	}
+	r.autoTurns = maxAutoTurns
+	if got := r.jobTurn(); got != "" || len(p.requests) != 2 || r.agent.JobExited() {
+		t.Fatalf("a capped wake started a turn or kept waking: %d requests, exited %v", len(p.requests), r.agent.JobExited())
+	}
+	if !strings.Contains(out.String(), "their notices wait for your next message") {
+		t.Errorf("output:\n%s", out.String())
+	}
+}

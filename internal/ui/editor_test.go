@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -285,16 +286,25 @@ func TestReadLineInterruptAndEOF(t *testing.T) {
 func TestReadLineWakesOnlyWhenEmpty(t *testing.T) {
 	e := testEditor(t)
 	e.T.Keys = make(chan Key)
+	e.Interrupt = make(chan struct{}, 1)
 	wake := make(chan struct{})
-	e.Wake = wake
+	var exited atomic.Bool
+	e.Wake, e.Woken = wake, exited.Load
 	done := make(chan error, 1)
 	var line string
-	go func() {
-		var err error
-		line, err = e.ReadLine("> ", "ab")
-		done <- err
-	}()
+	read := func(initial string) {
+		go func() {
+			var err error
+			line, err = e.ReadLine("> ", initial)
+			done <- err
+		}()
+	}
+	read("")
 	wake <- struct{}{}
+	e.T.Keys <- Key{Kind: KeyRune, Rune: 'a'}
+	exited.Store(true)
+	wake <- struct{}{}
+	e.T.Keys <- Key{Kind: KeyRune, Rune: 'b'}
 	e.T.Keys <- Key{Kind: KeyBackspace}
 	select {
 	case err := <-done:
@@ -305,14 +315,20 @@ func TestReadLineWakesOnlyWhenEmpty(t *testing.T) {
 	if err := <-done; !errors.Is(err, ErrWake) || line != "" {
 		t.Fatalf("wake once the line is empty: %q %v", line, err)
 	}
-	go func() {
-		var err error
-		line, err = e.ReadLine("> ", "")
-		done <- err
-	}()
-	wake <- struct{}{}
+	read("")
 	if err := <-done; !errors.Is(err, ErrWake) {
-		t.Fatalf("wake on an empty line: %v", err)
+		t.Fatalf("a job that exited before the prompt: %v", err)
+	}
+	read("ab")
+	e.T.Keys <- Key{Kind: KeyEnd}
+	e.Interrupt <- struct{}{}
+	if err := <-done; !errors.Is(err, ErrWake) {
+		t.Fatalf("clearing the line with Ctrl-C: %v", err)
+	}
+	read("ab")
+	e.T.Keys <- Key{Kind: KeyEnter}
+	if err := <-done; err != nil || line != "ab" {
+		t.Fatalf("Enter submits the line: %q %v", line, err)
 	}
 	if slices.Contains(e.history, "") {
 		t.Error("a wake went into history")

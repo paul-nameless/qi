@@ -49,10 +49,10 @@ type job struct {
 }
 
 type Notice struct {
-	ID       int
-	Status   string
-	Text     string
-	TimedOut bool
+	ID     int
+	Status string
+	Text   string
+	Quiet  bool
 }
 
 func NewJobs() *Jobs {
@@ -95,11 +95,19 @@ func (j *Jobs) Exited() bool {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	for _, n := range j.notices {
-		if !n.TimedOut {
+		if !n.Quiet {
 			return true
 		}
 	}
 	return false
+}
+
+func (j *Jobs) Hold() {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	for i := range j.notices {
+		j.notices[i].Quiet = true
+	}
 }
 
 func (j *Jobs) TakeNotices() []Notice {
@@ -244,7 +252,7 @@ func (j *Jobs) finish(jb *job, err error, timedOut bool, timeout time.Duration) 
 		return
 	}
 	jb.status = status
-	j.notices = append(j.notices, Notice{ID: jb.id, Status: status, Text: notice, TimedOut: timedOut})
+	j.notices = append(j.notices, Notice{ID: jb.id, Status: status, Text: notice, Quiet: timedOut})
 	select {
 	case j.changed <- struct{}{}:
 	default:

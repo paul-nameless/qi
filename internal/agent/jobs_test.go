@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -55,16 +54,16 @@ func TestHeadlessTurnWaitsForBackgroundJob(t *testing.T) {
 	}
 }
 
-func TestCancelWhileHeadlessWaitsForJob(t *testing.T) {
+func TestCancelWhileHeadlessWaitsKeepsAnswer(t *testing.T) {
 	t.Parallel()
 	p := &fakeProvider{replies: []llm.Message{bgCall("c1", "sleep 30"), textMsg("waiting")}}
 	ctx, cancel := context.WithCancel(context.Background())
 	a := newHeadlessAgent(t, p, onJobWait(cancel))
 	t.Cleanup(a.KillJobs)
 	start := time.Now()
-	_, _, err := a.Turn(ctx, []llm.Block{{Type: llm.BlockText, Text: "go"}})
-	if !errors.Is(err, context.Canceled) || time.Since(start) > 5*time.Second {
-		t.Fatalf("err %v after %s", err, time.Since(start))
+	final, _, err := a.Turn(ctx, []llm.Block{{Type: llm.BlockText, Text: "go"}})
+	if err != nil || final != "done" || time.Since(start) > 5*time.Second {
+		t.Fatalf("final %q err %v after %s", final, err, time.Since(start))
 	}
 	if !strings.Contains(a.env.Jobs.Describe(), "running") {
 		t.Fatal("Ctrl-C should leave the job running")
