@@ -127,7 +127,7 @@ func Retryable(err error) bool {
 	var dnsErr *net.DNSError
 	var urlErr *url.Error
 	switch {
-	case err == nil, errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded),
+	case err == nil, errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded) && !headerTimeout(err),
 		errors.As(err, &exhausted), errors.Is(err, ErrInvalidURL), certError(err):
 		return false
 	case errors.As(err, &apiErr):
@@ -145,6 +145,10 @@ func Retryable(err error) bool {
 		return urlErr.Op != "parse"
 	}
 	return false
+}
+
+func headerTimeout(err error) bool {
+	return strings.Contains(err.Error(), "timeout awaiting response headers")
 }
 
 func netTimeout(err error) bool {

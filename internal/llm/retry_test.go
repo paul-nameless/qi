@@ -169,3 +169,21 @@ func TestRequestAttempts(t *testing.T) {
 		}
 	}
 }
+
+func TestHTTP1HeaderTimeoutRetryable(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { <-r.Context().Done() }))
+	defer srv.Close()
+	c := &http.Client{Transport: &http.Transport{ResponseHeaderTimeout: 50 * time.Millisecond}}
+	resp, err := c.Post(srv.URL, "application/json", nil)
+	if err == nil {
+		resp.Body.Close()
+		t.Fatal("no header timeout")
+	}
+	if !Retryable(err) {
+		t.Errorf("HTTP/1.1 header timeout not retried: %v", err)
+	}
+	if Retryable(&url.Error{Op: "Post", URL: srv.URL, Err: context.DeadlineExceeded}) || Retryable(&exhaustedError{err}) {
+		t.Error("a context deadline or an exhausted header timeout is retried")
+	}
+}
