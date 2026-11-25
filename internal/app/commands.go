@@ -10,10 +10,12 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/paul-nameless/qi/internal/agent"
 	"github.com/paul-nameless/qi/internal/llm"
 	"github.com/paul-nameless/qi/internal/mcp"
+	"github.com/paul-nameless/qi/internal/session"
 	"github.com/paul-nameless/qi/internal/tools"
 )
 
@@ -48,7 +50,7 @@ func init() {
 		{name: "status", help: "model, effort, profile, mode, context, session id and file", short: "show the current session status", run: func(r *repl, _ string) { r.display.Info(r.status()) }},
 		{name: "config", args: "[setting]", help: "config file, external tools and settings; switch a setting and save it (picker without a name)", short: "show the config and switch settings", run: (*repl).configCmd},
 		{name: "clear", help: "start a new session", short: "start a new session", run: func(r *repl, _ string) { r.clear() }},
-		{name: "cost", help: "tokens, cache hits and cost of this session and its subagents, as recorded (a request cut off before the provider reported usage is missing; cost only where the provider reports it, e.g. OpenRouter)", short: "show what this session cost", run: (*repl).cost},
+		{name: "usage", help: "spend of this session (with its subagents), each of the last 7 days and the last 30 days, by model and by project, from all session files; cost the provider reported is exact (OpenRouter), the rest is estimated (~) from models.dev prices, refreshed daily; models it does not list show no price", short: "show spend: session, days, models, projects", run: (*repl).usage},
 		{name: "context", help: "show what takes space in the context", short: "show what takes space in the context", run: func(r *repl, _ string) { r.display.Info(r.agent.ContextReport()) }},
 		{name: "reload", help: "re-read skills, commands and CLAUDE.md files (rebuilds the cached prompt)", short: "re-read skills, commands and CLAUDE.md files", run: func(r *repl, _ string) { r.reload() }},
 		{name: "compact", args: "[focus]", help: "summarize the conversation to free context (optional focus for the summary)", short: "summarize the conversation to free context", run: (*repl).compact},
@@ -269,13 +271,25 @@ func (r *repl) reload() {
 	r.display.Info(fmt.Sprintf("reloaded %d skills, %d commands; system prompt %s · %s", len(r.skills), len(r.commands), note, "context "+r.agent.ContextUsage()))
 }
 
-func (r *repl) cost(string) {
-	text, err := r.costReport()
+func (r *repl) usage(string) {
+	src := r.prices
+	if src.stale() {
+		r.display.Info("fetching prices from " + src.url)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	book, priceErr := src.load(ctx)
+	text, err := usageReport(usageOptions{root: session.Root(), session: r.agent.Session(), now: time.Now(), book: book})
 	if err != nil {
 		r.report(err)
 		return
 	}
-	r.display.Info(text)
+	note := "~ is estimated from " + src.url + " prices"
+	if book != nil {
+		note += " (fetched " + book.Fetched.Local().Format("01-02 15:04") + ")"
+	}
+	r.display.Info(text + "\n" + note)
+	r.report(priceErr)
 }
 
 func (r *repl) report(err error) {

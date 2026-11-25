@@ -118,7 +118,7 @@ func run(o options) error {
 		}
 		return runHeadless(a, display, hooks, prompt, o.json)
 	}
-	r := &repl{agent: a, display: display, skills: skills, commands: agent.LoadCommands(roots), hooks: hooks, runner: runner, opts: o, mcp: manager}
+	r := &repl{agent: a, display: display, skills: skills, commands: agent.LoadCommands(roots), hooks: hooks, runner: runner, opts: o, mcp: manager, prices: defaultPrices()}
 	return r.run()
 }
 

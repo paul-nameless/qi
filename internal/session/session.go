@@ -46,11 +46,15 @@ type Session struct {
 	last string
 }
 
-func Dir(cwd string) string {
-	base := os.Getenv("QI_SESSION_DIR")
-	if base == "" {
-		base = filepath.Join(config.DataDir(), "sessions")
+func Root() string {
+	if base := os.Getenv("QI_SESSION_DIR"); base != "" {
+		return base
 	}
+	return filepath.Join(config.DataDir(), "sessions")
+}
+
+func Dir(cwd string) string {
+	base := Root()
 	name := strings.NewReplacer("/", "-", "\\", "-", ":", "", ".", "-").Replace(cwd)
 	dir := filepath.Join(base, name)
 	old := filepath.Join(base, strings.Trim(strings.NewReplacer("/", "-", "\\", "-", ":", "").Replace(cwd), "-"))
