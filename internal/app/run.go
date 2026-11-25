@@ -248,16 +248,16 @@ func submitPrompt(ctx context.Context, a *agent.Agent, display notifier, hooks *
 	return blocks, nil
 }
 
-func startMode(o options, cfg config.Config) agent.Mode {
+func startMode(o options, cfg config.Config) config.Mode {
 	switch {
 	case o.readOnly:
-		return agent.ModeReadOnly
+		return config.ModeReadOnly
 	case o.project:
-		return agent.ModeProject
+		return config.ModeProject
 	case o.yolo:
-		return agent.ModeYolo
+		return config.ModeYolo
 	}
-	return agent.ParseMode(cfg.StartMode())
+	return cfg.StartMode()
 }
 
 func buildAgent(cfg config.Config, o options, cwd string, p llm.Provider, display agent.Display, headless, isSub bool, extra ...*tools.Function) (*agent.Agent, *agent.SubagentRunner) {

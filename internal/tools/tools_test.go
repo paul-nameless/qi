@@ -15,9 +15,14 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/paul-nameless/qi/internal/config"
 	"github.com/paul-nameless/qi/internal/llm"
 	"github.com/paul-nameless/qi/internal/mcp"
 )
+
+func readOnlyMode() config.Mode { return config.ModeReadOnly }
+
+func projectMode() config.Mode { return config.ModeProject }
 
 type nopUI struct{}
 
@@ -56,7 +61,7 @@ func (s funcSet) Execute(ctx context.Context, env *Env, calls []llm.Block, ui UI
 func TestReadOnlyRefusesWrites(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	env := &Env{Cwd: dir, ReadOnly: func() bool { return true }}
+	env := &Env{Cwd: dir, Mode: readOnlyMode}
 	r := newFuncSet(Write(), Edit())
 	res := r.Execute(context.Background(), env, []llm.Block{
 		{ID: "w", Name: "write", Input: json.RawMessage(`{"file_path":"x.txt","content":"hi"}`)},

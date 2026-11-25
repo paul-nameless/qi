@@ -54,9 +54,9 @@ const maxAutoTurns = 3
 
 func (r *repl) prompt() string {
 	switch r.agent.Mode() {
-	case agent.ModeReadOnly:
+	case config.ModeReadOnly:
 		return r.display.Color(ui.Yellow, "read-only") + r.display.Color(ui.Cyan, " ❯ ")
-	case agent.ModeProject:
+	case config.ModeProject:
 		return r.display.Color(ui.Green, "project") + r.display.Color(ui.Cyan, " ❯ ")
 	}
 	return r.display.Color(ui.Cyan, "❯ ")
@@ -68,9 +68,9 @@ func (r *repl) toggleMode() {
 	r.warnMode(m)
 }
 
-func (r *repl) warnMode(m agent.Mode) {
+func (r *repl) warnMode(m config.Mode) {
 	warnNoSandbox(r.display, m)
-	if m == agent.ModeProject && broadProject(r.agent.Cwd()) {
+	if m == config.ModeProject && broadProject(r.agent.Cwd()) {
 		r.display.Info(broadProjectNote)
 	}
 }
@@ -87,11 +87,11 @@ const (
 	noProjectSandboxNote = "no usable OS sandbox (bubblewrap missing, user namespaces blocked, or qi already sandboxed): project mode refuses bash, write and edit stay limited to the project"
 )
 
-func warnNoSandbox(display notifier, m agent.Mode) {
+func warnNoSandbox(display notifier, m config.Mode) {
 	switch {
-	case m == agent.ModeProject && !tools.HasSandbox():
+	case m == config.ModeProject && !tools.HasSandbox():
 		display.Info(noProjectSandboxNote)
-	case m != agent.ModeReadOnly:
+	case m != config.ModeReadOnly:
 	case !tools.HasSandbox():
 		display.Info(noSandboxNote)
 	case !tools.SandboxIsolatesNetwork():
@@ -577,8 +577,8 @@ func (r *repl) switchProfile(name string) error {
 	if err := r.apply(cfg, cfg.Provider); err != nil {
 		return err
 	}
-	if cfg.ProfileMode() != "" {
-		m := agent.ParseMode(cfg.StartMode())
+	if cfg.ProfileSetsMode() {
+		m := cfg.StartMode()
 		r.agent.SetMode(m)
 		r.warnMode(m)
 	}

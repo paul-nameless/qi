@@ -172,14 +172,14 @@ func TestCellBashShape(t *testing.T) {
 func TestCellToolError(t *testing.T) {
 	t.Parallel()
 	k := newCellKit(t)
-	k.env.ReadOnly = func() bool { return true }
+	k.env.Mode = readOnlyMode
 	k.wantErr("\n\nawait write('x.txt', 'y')", "ToolError: read-only mode: write is not allowed\n    at cell.js:3:")
 	k.want(`try { await write("x.txt", "y") } catch (e) { return [e.name, e.denied, e.message].join("|") }`, "ToolError|true|read-only mode: write is not allowed\nFailed calls:\n✗ write x.txt: read-only mode: write is not allowed")
 	k.want(`try { await bash("touch x.txt") } catch (e) { return e.denied }`, "true\nFailed calls:\n✗ bash touch x.txt: read-only mode: \"touch x.txt\" is not in the read-only allowlist")
 	if res := k.cell(`try { await read("nope.txt") } catch (e) { return e.denied }`); res.IsError || !strings.HasPrefix(res.Text, "false\nFailed calls:\n✗ read nope.txt: stat ") {
 		t.Errorf("caught read failure: %+v", res)
 	}
-	k.env.ReadOnly = nil
+	k.env.Mode = nil
 	k.env.PreHook = func(ctx context.Context, c HookCall) (bool, string, json.RawMessage) {
 		if c.Tool == "Write" && strings.Contains(string(c.Input), "blocked") {
 			return true, "no writes there", nil
@@ -660,7 +660,7 @@ func TestCellMCP(t *testing.T) {
 	}
 	k.env.PreHook = nil
 	k.wantErr(`await mcp("fake")`, "mcp: tool is undefined")
-	k.env.ReadOnly = func() bool { return true }
+	k.env.Mode = readOnlyMode
 	k.want(`try { await mcp({server: "fake", tool: "echo", arguments: {}}) } catch (e) { return e.denied }`, "true\nFailed calls:\n✗ mcp fake.echo: read-only mode: MCP tools may have side effects and are disabled")
 	for in, want := range map[string]string{`{"a": 1}`: `{"a": 1}`, ` [1] `: `[1]`, `{bad`: ``, `echo:{}`: ``, `"s"`: ``} {
 		if got := string(jsonValue(in)); got != want {

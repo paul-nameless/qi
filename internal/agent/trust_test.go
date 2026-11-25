@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/paul-nameless/qi/internal/config"
 	"github.com/paul-nameless/qi/internal/tools"
 )
 
@@ -125,17 +126,17 @@ func TestTrustFingerprint(t *testing.T) {
 
 func TestSubagentArgs(t *testing.T) {
 	t.Parallel()
-	mode := ModeReadOnly
-	r := &SubagentRunner{Profile: "p", Provider: "openrouter", SystemPromptFile: "/x/prompt.md", Mode: func() Mode { return mode }}
+	mode := config.ModeReadOnly
+	r := &SubagentRunner{Profile: "p", Provider: "openrouter", SystemPromptFile: "/x/prompt.md", Mode: func() config.Mode { return mode }}
 	args := strings.Join(r.args(tools.SubagentTask{Prompt: "do it", Model: "m", Effort: "low"}), " ")
 	if !strings.Contains(args, "-read-only") || !strings.Contains(args, "-provider openrouter") || !strings.Contains(args, "-p p") || !strings.Contains(args, "-system-prompt-file /x/prompt.md") {
 		t.Errorf("args %q", args)
 	}
-	mode = ModeYolo
+	mode = config.ModeYolo
 	if a := strings.Join(r.args(tools.SubagentTask{Prompt: "x", Model: "m", Provider: "anth"}), " "); strings.Contains(a, "-read-only") || strings.Contains(a, "-project") {
 		t.Error("mode flag without a mode")
 	}
-	mode = ModeProject
+	mode = config.ModeProject
 	if !strings.Contains(strings.Join(r.args(tools.SubagentTask{Prompt: "x", Model: "m"}), " "), "-project") {
 		t.Error("project mode not passed to subagents")
 	}

@@ -40,24 +40,24 @@ func devNullPrinter(t *testing.T) *ui.Printer {
 func TestReadOnlyWiring(t *testing.T) {
 	display := devNullPrinter(t)
 	a, runner := buildAgent(config.Config{Model: "m"}, options{}, t.TempDir(), nopProvider{}, display, true, false)
-	if a.ReadOnly() || runner.Mode() != agent.ModeYolo {
+	if a.Mode() == config.ModeReadOnly || runner.Mode() != config.ModeYolo {
 		t.Fatal("read-only on by default")
 	}
-	a.SetReadOnly(true)
-	if runner.Mode() != agent.ModeReadOnly {
+	a.SetMode(config.ModeReadOnly)
+	if runner.Mode() != config.ModeReadOnly {
 		t.Error("subagent runner does not follow the agent's read-only mode")
 	}
 	a2, _ := buildAgent(config.Config{Model: "m"}, options{readOnly: true}, t.TempDir(), nopProvider{}, display, true, false)
-	if !a2.ReadOnly() {
+	if a2.Mode() != config.ModeReadOnly {
 		t.Error("-read-only flag not applied")
 	}
 	a3, _ := buildAgent(config.Config{Model: "m", ReadOnly: true, Mode: "project"}, options{}, t.TempDir(), nopProvider{}, display, true, false)
-	if !a3.ReadOnly() {
+	if a3.Mode() != config.ModeReadOnly {
 		t.Error("read_only: true in config not applied, or lost to mode")
 	}
 	a4, _ := buildAgent(config.Config{Model: "m", Mode: "project"}, options{}, t.TempDir(), nopProvider{}, display, true, false)
 	a5, _ := buildAgent(config.Config{Model: "m"}, options{project: true}, t.TempDir(), nopProvider{}, display, true, false)
-	if a4.Mode() != agent.ModeProject || a5.Mode() != agent.ModeProject {
+	if a4.Mode() != config.ModeProject || a5.Mode() != config.ModeProject {
 		t.Errorf("project from config %v, from -project %v", a4.Mode(), a5.Mode())
 	}
 }
@@ -343,9 +343,9 @@ func TestMalformedHookFileFailsStartup(t *testing.T) {
 
 func TestNoSandboxWarning(t *testing.T) {
 	display, out := capturePrinter(t)
-	warnNoSandbox(display, agent.ModeReadOnly)
-	warnNoSandbox(display, agent.ModeProject)
-	warnNoSandbox(display, agent.ModeYolo)
+	warnNoSandbox(display, config.ModeReadOnly)
+	warnNoSandbox(display, config.ModeProject)
+	warnNoSandbox(display, config.ModeYolo)
 	got := out.String()
 	if tools.HasSandbox() == strings.Contains(got, noSandboxNote) || tools.HasSandbox() == strings.Contains(got, noProjectSandboxNote) {
 		t.Errorf("sandbox %v, output %q", tools.HasSandbox(), got)

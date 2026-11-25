@@ -351,6 +351,7 @@ func TestSchemaMatchesConfig(t *testing.T) {
 		"cache_ttl":        {root.Properties["cache_ttl"].Enum, cacheTTLs},
 		"reasoning_effort": {root.Properties["reasoning_effort"].Enum, Efforts},
 		"subagent_efforts": {root.Properties["subagent_efforts"].Items.Enum, Efforts},
+		"mode":             {root.Properties["mode"].Enum, modeNames},
 	}
 	for key, e := range enums {
 		if !slices.Equal(e[0], e[1]) {

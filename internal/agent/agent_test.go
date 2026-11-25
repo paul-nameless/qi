@@ -147,12 +147,12 @@ func TestModeNoteSentOnChangeOnly(t *testing.T) {
 	t.Parallel()
 	p := &fakeProvider{}
 	a := newAgent(t, p)
-	a.SetReadOnly(true)
+	a.SetMode(config.ModeReadOnly)
 	_, _, _ = a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "one"}})
 	_, _, _ = a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "two"}})
-	a.SetReadOnly(false)
+	a.SetMode(config.ModeYolo)
 	_, _, _ = a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "three"}})
-	a.SetMode(ModeProject)
+	a.SetMode(config.ModeProject)
 	_, _, _ = a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "four"}})
 	users := []string{}
 	for _, m := range a.conv.messages {
@@ -163,7 +163,7 @@ func TestModeNoteSentOnChangeOnly(t *testing.T) {
 	if !strings.Contains(users[0], "Read-only mode is on") || strings.Contains(users[1], "<mode>") || !strings.Contains(users[2], "Yolo mode is on") || !strings.Contains(users[3], "Project mode is on") {
 		t.Errorf("mode notes: %q", users)
 	}
-	if m, ok := lastModeNote([]llm.Message{llm.UserText(legacyYoloNote)}); !ok || m != ModeYolo {
+	if m, ok := lastModeNote([]llm.Message{llm.UserText(legacyYoloNote)}); !ok || m != config.ModeYolo {
 		t.Errorf("sessions from before project mode end in yolo: %v %v", m, ok)
 	}
 }
@@ -302,13 +302,13 @@ func TestStoredModeNotesStillRestore(t *testing.T) {
 	t.Parallel()
 	stored := []struct {
 		note    string
-		mode    Mode
+		mode    config.Mode
 		current bool
 	}{
-		{"<mode>Read-only mode is on: write and edit are refused, and bash only runs allowlisted read-only commands.</mode>", ModeReadOnly, true},
-		{"<mode>Project mode is on: write, edit and bash can only change files inside the working directory (plus temp and build caches), not .git/config or .git/hooks; bash runs sandboxed with the network on; git cannot change its config, so remotes and upstreams cannot be set.</mode>", ModeProject, true},
-		{"<mode>Yolo mode is on: all tools are available with no limits.</mode>", ModeYolo, true},
-		{"<mode>Read-only mode is off: all tools are available again.</mode>", ModeYolo, false},
+		{"<mode>Read-only mode is on: write and edit are refused, and bash only runs allowlisted read-only commands.</mode>", config.ModeReadOnly, true},
+		{"<mode>Project mode is on: write, edit and bash can only change files inside the working directory (plus temp and build caches), not .git/config or .git/hooks; bash runs sandboxed with the network on; git cannot change its config, so remotes and upstreams cannot be set.</mode>", config.ModeProject, true},
+		{"<mode>Yolo mode is on: all tools are available with no limits.</mode>", config.ModeYolo, true},
+		{"<mode>Read-only mode is off: all tools are available again.</mode>", config.ModeYolo, false},
 	}
 	for _, c := range stored {
 		msgs := []llm.Message{{Role: llm.RoleUser, Blocks: []llm.Block{{Type: llm.BlockText, Text: c.note}}}, llm.UserText("later")}
@@ -360,7 +360,7 @@ func TestRejectedPromptKeepsTurnNotes(t *testing.T) {
 	if err := os.Chtimes(path, later, later); err != nil {
 		t.Fatal(err)
 	}
-	a.SetReadOnly(true)
+	a.SetMode(config.ModeReadOnly)
 	a.live.provider = &rejectProvider{}
 	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "bad"}}); err == nil {
 		t.Fatal("expected error")
@@ -546,7 +546,7 @@ func TestReconfigureUpdatesBashAllowlistAndTimeout(t *testing.T) {
 	t.Parallel()
 	p := &fakeProvider{}
 	a := newAgent(t, p)
-	a.SetReadOnly(true)
+	a.SetMode(config.ModeReadOnly)
 	if got := toolResultOf(t, a, p, "uname"); !strings.Contains(got, "not in the read-only allowlist") {
 		t.Fatalf("uname before reconfigure: %q", got)
 	}
@@ -556,7 +556,7 @@ func TestReconfigureUpdatesBashAllowlistAndTimeout(t *testing.T) {
 	if got := toolResultOf(t, a, p, "uname"); strings.Contains(got, "read-only mode") {
 		t.Errorf("uname after allowing it: %q", got)
 	}
-	a.SetReadOnly(false)
+	a.SetMode(config.ModeYolo)
 	cfg.BashTimeout = 1
 	a.Reconfigure(cfg, p)
 	if got := toolResultOf(t, a, p, "sleep 5"); !strings.Contains(got, `"timed_out": true`) {

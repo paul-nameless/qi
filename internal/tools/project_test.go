@@ -36,7 +36,7 @@ func projectEnv(t *testing.T) (env *Env, proj, outside string) {
 		t.Fatal(err)
 	}
 	os.WriteFile(filepath.Join(proj, ".git", "config"), []byte("[core]\n"), 0o600)
-	env = &Env{Cwd: proj, Project: func() bool { return true }, Scratch: func() string { return scratch }, SpillDir: t.TempDir()}
+	env = &Env{Cwd: proj, Mode: projectMode, Scratch: func() string { return scratch }, SpillDir: t.TempDir()}
 	return env, proj, outside
 }
 
@@ -167,7 +167,7 @@ func TestProjectModeGitWorktree(t *testing.T) {
 	git(repo, "commit", "-qm", "a")
 	git(repo, "worktree", "add", "-q", "-b", "w", wt)
 	scratch, _ := filepath.EvalSymlinks(t.TempDir())
-	env := &Env{Cwd: wt, Project: func() bool { return true }, Scratch: func() string { return scratch }, SpillDir: t.TempDir()}
+	env := &Env{Cwd: wt, Mode: projectMode, Scratch: func() string { return scratch }, SpillDir: t.TempDir()}
 	in, _ := json.Marshal(bashArgs{Command: "echo b > b && git add b && git -c user.email=t@t -c user.name=t commit -qm b && git log --oneline | wc -l; echo x >> " + filepath.Join(repo, ".git", "config")})
 	out := runBash(context.Background(), env, in, nil).Text
 	if !strings.HasPrefix(strings.TrimSpace(out), "2") {
@@ -238,7 +238,7 @@ func TestProjectModeGitInit(t *testing.T) {
 	}
 	proj, _ := filepath.EvalSymlinks(t.TempDir())
 	scratch, _ := filepath.EvalSymlinks(t.TempDir())
-	env := &Env{Cwd: proj, Project: func() bool { return true }, Scratch: func() string { return scratch }, SpillDir: t.TempDir()}
+	env := &Env{Cwd: proj, Mode: projectMode, Scratch: func() string { return scratch }, SpillDir: t.TempDir()}
 	in, _ := json.Marshal(bashArgs{Command: "git init -q && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m x && echo committed"})
 	if out := runBash(context.Background(), env, in, nil).Text; !strings.Contains(out, "committed") {
 		t.Errorf("git init in a folder without a repo should work: %s", out)
@@ -257,7 +257,7 @@ func TestProjectModeRepoSubdirCannotMoveGit(t *testing.T) {
 		t.Fatalf("%v %s", err, out)
 	}
 	scratch, _ := filepath.EvalSymlinks(t.TempDir())
-	env := &Env{Cwd: sub, Project: func() bool { return true }, Scratch: func() string { return scratch }, SpillDir: t.TempDir()}
+	env := &Env{Cwd: sub, Mode: projectMode, Scratch: func() string { return scratch }, SpillDir: t.TempDir()}
 	in, _ := json.Marshal(bashArgs{Command: "mv ../.git ./x; ls -a"})
 	out := runBash(context.Background(), env, in, nil).Text
 	if fi, err := os.Stat(filepath.Join(repo, ".git")); err != nil || !fi.IsDir() {

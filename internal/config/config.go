@@ -481,31 +481,25 @@ func isOpenRouter(baseURL string) bool {
 	return host == "openrouter.ai" || strings.HasSuffix(host, ".openrouter.ai")
 }
 
-func (c Config) ProfileMode() string {
+func (c Config) ProfileSetsMode() bool {
 	if c.profileRaw == nil {
-		return ""
+		return false
 	}
 	var p struct {
 		Mode     string `json:"mode"`
 		ReadOnly bool   `json:"read_only"`
 	}
 	if json.Unmarshal(c.profileRaw, &p) != nil {
-		return ""
+		return false
 	}
-	if p.ReadOnly {
-		return "read-only"
-	}
-	return p.Mode
+	return p.ReadOnly || p.Mode != ""
 }
 
-func (c Config) StartMode() string {
+func (c Config) StartMode() Mode {
 	if c.ReadOnly {
-		return "read-only"
+		return ModeReadOnly
 	}
-	if c.Mode == "" {
-		return "yolo"
-	}
-	return c.Mode
+	return ParseMode(c.Mode)
 }
 
 func (c *Config) DefaultCacheTTL(headless bool) {

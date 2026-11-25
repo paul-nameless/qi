@@ -36,7 +36,7 @@ type SubagentRunner struct {
 	Profile          string
 	Provider         string
 	SystemPromptFile string
-	Mode             func() Mode
+	Mode             func() config.Mode
 	SessionID        func() string
 	Cwd              string
 	MCP              map[string]config.MCPServer
@@ -80,9 +80,9 @@ func (r *SubagentRunner) args(task tools.SubagentTask) []string {
 		args = append(args, "-system-prompt-file", r.SystemPromptFile)
 	}
 	switch r.Mode() {
-	case ModeReadOnly:
+	case config.ModeReadOnly:
 		args = append(args, "-read-only")
-	case ModeProject:
+	case config.ModeProject:
 		args = append(args, "-project")
 	default:
 		args = append(args, "-yolo")

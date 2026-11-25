@@ -166,7 +166,7 @@ func TestCompactReannouncesModeLostToSummary(t *testing.T) {
 	t.Parallel()
 	a := newAgent(t, &fakeProvider{replies: []llm.Message{assistantText("SUMMARY")}})
 	a.conv.messages = append([]llm.Message{{Role: llm.RoleUser, Blocks: []llm.Block{{Type: llm.BlockText, Text: "go"}, {Type: llm.BlockText, Text: readOnlyNote}}}}, history()[1:]...)
-	a.conv.announced = ModeReadOnly
+	a.conv.announced = config.ModeReadOnly
 	if err := a.Compact(context.Background(), ""); err != nil {
 		t.Fatal(err)
 	}

@@ -145,7 +145,7 @@ func TestBackgroundJobTimeout(t *testing.T) {
 func TestReadOnlyRefusesBackgroundWrite(t *testing.T) {
 	t.Parallel()
 	env := jobEnv(t)
-	env.ReadOnly = func() bool { return true }
+	env.Mode = readOnlyMode
 	res := runBash(context.Background(), env, bashIn(t, map[string]any{"command": "rm -rf x", "background": true}), nil)
 	if !res.IsError || !strings.Contains(res.Text, "read-only") || len(env.Jobs.list) != 0 {
 		t.Fatalf("read-only background: %+v", res)

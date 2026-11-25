@@ -71,8 +71,7 @@ type SubagentFunc func(ctx context.Context, task SubagentTask, progress func(str
 
 type Env struct {
 	Cwd         string
-	ReadOnly    func() bool
-	Project     func() bool
+	Mode        func() config.Mode
 	Scratch     func() string
 	Writable    []string
 	Allow       []string
@@ -88,13 +87,16 @@ type Env struct {
 	dotGit      string
 }
 
-func (e *Env) readOnly() bool {
-	return e.ReadOnly != nil && e.ReadOnly()
+func (e *Env) mode() config.Mode {
+	if e.Mode == nil {
+		return config.ModeYolo
+	}
+	return e.Mode()
 }
 
-func (e *Env) project() bool {
-	return e.Project != nil && e.Project()
-}
+func (e *Env) readOnly() bool { return e.mode() == config.ModeReadOnly }
+
+func (e *Env) project() bool { return e.mode() == config.ModeProject }
 
 func (e *Env) resolve(p string) string {
 	if strings.HasPrefix(p, EmbeddedPrefix) {

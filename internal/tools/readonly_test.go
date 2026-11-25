@@ -214,7 +214,7 @@ func TestRunBashUsesSandbox(t *testing.T) {
 	t.Setenv("TMPDIR", t.TempDir())
 	outside := t.TempDir()
 	target := filepath.Join(outside, "x")
-	env := &Env{Cwd: outside, ReadOnly: func() bool { return true }, Allow: []string{"touch"}, SpillDir: t.TempDir()}
+	env := &Env{Cwd: outside, Mode: readOnlyMode, Allow: []string{"touch"}, SpillDir: t.TempDir()}
 	runBash(context.Background(), env, json.RawMessage(`{"command":"touch `+target+`"}`), nil)
 	if _, err := os.Stat(target); err == nil {
 		t.Error("allowlisted touch wrote outside TMP: runBash is not sandboxed")
@@ -224,7 +224,7 @@ func TestRunBashUsesSandbox(t *testing.T) {
 func TestReadOnlyBashThroughHooksPath(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	env := &Env{Cwd: dir, ReadOnly: func() bool { return true }, SpillDir: t.TempDir()}
+	env := &Env{Cwd: dir, Mode: readOnlyMode, SpillDir: t.TempDir()}
 	res := newFuncSet(Bash()).Execute(context.Background(), env, []llm.Block{{ID: "1", Name: "bash", Input: json.RawMessage(`{"command":"touch x"}`)}}, nopUI{})
 	if !res[0].IsError || !strings.Contains(res[0].Text, "read-only") {
 		t.Errorf("touch allowed: %+v", res[0])
@@ -246,7 +246,7 @@ func TestReadOnlyGitIgnoresFsmonitor(t *testing.T) {
 			t.Fatalf("git %v: %v %s", args, err, out)
 		}
 	}
-	env := &Env{Cwd: dir, ReadOnly: func() bool { return true }, SpillDir: t.TempDir()}
+	env := &Env{Cwd: dir, Mode: readOnlyMode, SpillDir: t.TempDir()}
 	runBash(context.Background(), env, json.RawMessage(`{"command":"git status"}`), nil)
 	if _, err := os.Stat(mark); err == nil {
 		t.Error("core.fsmonitor ran in read-only mode")
@@ -347,7 +347,7 @@ func TestReadOnlyEscapePoCs(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "bin", "ls"), []byte("#!/bin/sh\ntouch PWNED-ls\n"), 0o755)
 	os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module x\n\ngo 1.21\n"), 0o644)
 	os.WriteFile(filepath.Join(dir, "x.go"), []byte("package x\n"), 0o644)
-	env := &Env{Cwd: dir, ReadOnly: func() bool { return true }, SpillDir: t.TempDir()}
+	env := &Env{Cwd: dir, Mode: readOnlyMode, SpillDir: t.TempDir()}
 	for _, c := range escapePoCs {
 		if err := CheckReadOnly(c, dir, nil); err == nil {
 			t.Errorf("%q accepted in read-only mode", c)

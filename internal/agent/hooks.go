@@ -51,7 +51,7 @@ type Hooks struct {
 	events     map[string][]hookMatcher
 	Cwd        string
 	Session    func() *session.Session
-	Mode       func() Mode
+	Mode       func() config.Mode
 	SkipPrompt bool
 	Info       func(string)
 	Spill      func(string) (string, error)
@@ -246,9 +246,9 @@ func (h *Hooks) run(ctx context.Context, event string, names []string, payload m
 	mode := "bypassPermissions"
 	if h.Mode != nil {
 		switch h.Mode() {
-		case ModeReadOnly:
+		case config.ModeReadOnly:
 			mode = "plan"
-		case ModeProject:
+		case config.ModeProject:
 			mode = "acceptEdits"
 		}
 	}

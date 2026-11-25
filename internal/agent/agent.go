@@ -36,7 +36,7 @@ type Options struct {
 	Provider llm.Provider
 	UI       Display
 	Headless bool
-	Mode     Mode
+	Mode     config.Mode
 	Tool     *tools.Tool
 	Subagent tools.SubagentFunc
 	SpillDir string
@@ -69,7 +69,7 @@ type conversation struct {
 	messages     []llm.Message
 	tool         *tools.Tool
 	onStop       StopHook
-	announced    Mode
+	announced    config.Mode
 	carry        []llm.Block
 	paused       bool
 	thrashAt     int
@@ -79,40 +79,13 @@ type conversation struct {
 func New(o Options) *Agent {
 	a := &Agent{cwd: o.Cwd, ui: o.UI, headless: o.Headless}
 	a.mode.Store(int32(o.Mode))
-	a.env = &tools.Env{Cwd: o.Cwd, ReadOnly: a.ReadOnly, Project: a.Project, Scratch: a.scratch, Writable: o.Config.ProjectWritable, Allow: o.Config.ReadOnlyAllow, BashTimeout: o.Config.BashTimeout, SpillDir: o.SpillDir, Subagent: o.Subagent, Jobs: tools.NewJobs()}
+	a.env = &tools.Env{Cwd: o.Cwd, Mode: a.Mode, Scratch: a.scratch, Writable: o.Config.ProjectWritable, Allow: o.Config.ReadOnlyAllow, BashTimeout: o.Config.BashTimeout, SpillDir: o.SpillDir, Subagent: o.Subagent, Jobs: tools.NewJobs()}
 	a.live = live{cfg: o.Config, provider: o.Provider}
 	a.conv.tool = o.Tool
 	return a
 }
 
-type Mode int32
-
-const (
-	ModeYolo Mode = iota
-	ModeReadOnly
-	ModeProject
-	modeUnknown Mode = -1
-)
-
-func (m Mode) String() string {
-	switch m {
-	case ModeReadOnly:
-		return "read-only"
-	case ModeProject:
-		return "project"
-	}
-	return "yolo"
-}
-
-func (m Mode) Next() Mode {
-	switch m {
-	case ModeYolo:
-		return ModeReadOnly
-	case ModeReadOnly:
-		return ModeProject
-	}
-	return ModeYolo
-}
+const modeUnknown config.Mode = -1
 
 const (
 	readOnlyNote   = "<mode>Read-only mode is on: write and edit are refused, and bash only runs allowlisted read-only commands.</mode>"
@@ -121,30 +94,11 @@ const (
 	legacyYoloNote = "<mode>Read-only mode is off: all tools are available again.</mode>"
 )
 
-var modeNotes = map[Mode]string{ModeReadOnly: readOnlyNote, ModeProject: projectNote, ModeYolo: yoloNote}
+var modeNotes = map[config.Mode]string{config.ModeReadOnly: readOnlyNote, config.ModeProject: projectNote, config.ModeYolo: yoloNote}
 
-func (a *Agent) Mode() Mode { return Mode(a.mode.Load()) }
+func (a *Agent) Mode() config.Mode { return config.Mode(a.mode.Load()) }
 
-func (a *Agent) SetMode(m Mode) { a.mode.Store(int32(m)) }
-
-func (a *Agent) SetReadOnly(v bool) {
-	if v {
-		a.SetMode(ModeReadOnly)
-		return
-	}
-	a.SetMode(ModeYolo)
-}
-
-func ParseMode(s string) Mode {
-	for _, m := range []Mode{ModeYolo, ModeReadOnly, ModeProject} {
-		if m.String() == s {
-			return m
-		}
-	}
-	return ModeYolo
-}
-
-func (a *Agent) ReadOnly() bool { return a.Mode() == ModeReadOnly }
+func (a *Agent) SetMode(m config.Mode) { a.mode.Store(int32(m)) }
 
 func (a *Agent) scratch() string {
 	if s := a.Session(); s != nil {
@@ -152,8 +106,6 @@ func (a *Agent) scratch() string {
 	}
 	return ""
 }
-
-func (a *Agent) Project() bool { return a.Mode() == ModeProject }
 
 func (a *Agent) Cwd() string { return a.cwd }
 
@@ -190,7 +142,7 @@ func (a *Agent) setSession(s *session.Session) {
 func (a *Agent) resetConversation(msgs []llm.Message) {
 	a.conv.messages = msgs
 	a.env.ForgetFiles()
-	a.conv.announced, a.conv.carry = ModeYolo, nil
+	a.conv.announced, a.conv.carry = config.ModeYolo, nil
 	a.conv.paused, a.conv.thrashAt = false, 0
 }
 
@@ -412,11 +364,11 @@ func (a *Agent) DrainQueue() []llm.Block {
 	return q
 }
 
-func lastModeNote(msgs []llm.Message) (Mode, bool) {
+func lastModeNote(msgs []llm.Message) (config.Mode, bool) {
 	for _, msg := range slices.Backward(msgs) {
 		for _, b := range msg.Blocks {
 			if b.Text == legacyYoloNote {
-				return ModeYolo, true
+				return config.ModeYolo, true
 			}
 			for m, note := range modeNotes {
 				if b.Text == note {
@@ -425,7 +377,7 @@ func lastModeNote(msgs []llm.Message) (Mode, bool) {
 			}
 		}
 	}
-	return ModeYolo, false
+	return config.ModeYolo, false
 }
 
 func (a *Agent) restoreMode() {
@@ -442,7 +394,7 @@ func (a *Agent) restoreModeAfter(hadNote bool) {
 	case hadNote:
 		a.conv.announced = modeUnknown
 	default:
-		a.conv.announced = ModeYolo
+		a.conv.announced = config.ModeYolo
 	}
 }
 

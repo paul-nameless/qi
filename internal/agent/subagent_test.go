@@ -16,6 +16,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/paul-nameless/qi/internal/config"
 	"github.com/paul-nameless/qi/internal/llm"
 	"github.com/paul-nameless/qi/internal/session"
 	"github.com/paul-nameless/qi/internal/strutil"
@@ -62,7 +63,7 @@ func TestSubagentReadsJSONEntries(t *testing.T) {
 		session.Entry{Type: "message", Message: &llm.Message{Role: llm.RoleUser, Blocks: []llm.Block{{Type: llm.BlockToolResult, ToolUseID: "c1", Text: "a\nb"}}}},
 		session.Entry{Type: "message", Message: &llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: " There are 2 files. "}}}},
 	) + "not json\n"
-	r := &SubagentRunner{Mode: func() Mode { return ModeYolo }, Cwd: t.TempDir(), Exe: fakeChild(t, stream, "progress noise\n", 0)}
+	r := &SubagentRunner{Mode: func() config.Mode { return config.ModeYolo }, Cwd: t.TempDir(), Exe: fakeChild(t, stream, "progress noise\n", 0)}
 	r.Label = func(b llm.Block) string { return tools.Bash().Label(nil, b.Input) }
 	var progress []string
 	answer, err := r.Run(context.Background(), tools.SubagentTask{Prompt: "count files", Model: "m"}, func(s string) { progress = append(progress, s) })
@@ -85,7 +86,7 @@ func TestSubagentFailureReportsFatalError(t *testing.T) {
 		{"", "exit status 1"},
 		{long + "\n", "exit status 1: " + strutil.CutStart(long, maxCause) + "…"},
 	}
-	r := &SubagentRunner{Mode: func() Mode { return ModeYolo }, Label: func(b llm.Block) string { return b.Name }, Cwd: t.TempDir(), Exe: fakeChild(t, "", "", 1)}
+	r := &SubagentRunner{Mode: func() config.Mode { return config.ModeYolo }, Label: func(b llm.Block) string { return b.Name }, Cwd: t.TempDir(), Exe: fakeChild(t, "", "", 1)}
 	for _, c := range cases {
 		setChild(t, r.Exe, "", c.stderr, 1)
 		_, err := r.Run(context.Background(), tools.SubagentTask{Prompt: "x", Model: "m"}, func(string) {})
@@ -109,7 +110,7 @@ func TestSubagentCancelWithGrandchildHoldingStdout(t *testing.T) {
 	if err := os.WriteFile(script, []byte(body), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	r := &SubagentRunner{Mode: func() Mode { return ModeYolo }, Label: func(b llm.Block) string { return b.Name }, Cwd: dir, Exe: script, Grace: 100 * time.Millisecond}
+	r := &SubagentRunner{Mode: func() config.Mode { return config.ModeYolo }, Label: func(b llm.Block) string { return b.Name }, Cwd: dir, Exe: script, Grace: 100 * time.Millisecond}
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
 		if pid := waitPid(marker); pid > 0 {
@@ -152,7 +153,7 @@ func TestSubagentTimeoutKeepsFinalAnswer(t *testing.T) {
 			if err := os.WriteFile(script, []byte("#!/bin/sh\ncat \"$0.out\"\nexec sleep 30\n"), 0o700); err != nil {
 				t.Fatal(err)
 			}
-			r := &SubagentRunner{Mode: func() Mode { return ModeYolo }, Label: func(b llm.Block) string { return b.Name }, Cwd: dir, Exe: script, Grace: 100 * time.Millisecond, Timeout: time.Second}
+			r := &SubagentRunner{Mode: func() config.Mode { return config.ModeYolo }, Label: func(b llm.Block) string { return b.Name }, Cwd: dir, Exe: script, Grace: 100 * time.Millisecond, Timeout: time.Second}
 			answer, err := r.Run(context.Background(), tools.SubagentTask{Prompt: "x", Model: "m"}, func(string) {})
 			if c.name == "final" {
 				ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
