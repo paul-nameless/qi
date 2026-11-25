@@ -105,10 +105,11 @@ func (s *jstr) nearest(e *strExt, byByte bool, target int) (int, int) {
 	return int(m.markB[lo]), int(m.markU[lo])
 }
 
+func (s *jstr) cachesSubject() bool {
+	return s.info&strShared == 0 && s.n >= 256
+}
+
 func (s *jstr) regexSubject() *regex.Subject {
-	if s.info&strShared != 0 || s.n < 256 {
-		return regex.NewSubject(s.flat())
-	}
 	e := s.x().more()
 	if e.sub == nil {
 		e.sub = regex.NewSubject(s.flat())

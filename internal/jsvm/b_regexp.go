@@ -9,6 +9,8 @@ import (
 )
 
 type reEngine interface {
+	Exec(s string, startUTF16 int) []int
+	ExecBytes(s string, startByte int) []int
 	ExecSubject(sub *regex.Subject, startUTF16 int) []int
 	ExecSubjectBytes(sub *regex.Subject, startByte int) []int
 	NumGroups() int
@@ -69,18 +71,28 @@ func (vm *VM) execUnits(re *jsRegex, s *jstr, start int) (m []int) {
 	}()
 	if s.isASCII() {
 		vm.flat(s)
+		if !s.cachesSubject() {
+			return re.eng.ExecBytes(s.flat(), start)
+		}
 		return re.eng.ExecSubjectBytes(s.regexSubject(), start)
 	}
 	vm.flat(s)
 	s.scan()
 	if s.info&strAstral == 0 {
-		m = re.eng.ExecSubjectBytes(s.regexSubject(), s.byteOf(start))
+		if s.cachesSubject() {
+			m = re.eng.ExecSubjectBytes(s.regexSubject(), s.byteOf(start))
+		} else {
+			m = re.eng.ExecBytes(s.flat(), s.byteOf(start))
+		}
 		for i, b := range m {
 			if b >= 0 {
 				m[i] = s.unitAt(b)
 			}
 		}
 		return m
+	}
+	if !s.cachesSubject() {
+		return re.eng.Exec(s.flat(), start)
 	}
 	return re.eng.ExecSubject(s.regexSubject(), start)
 }

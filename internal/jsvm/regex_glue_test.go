@@ -58,7 +58,9 @@ func TestHostStringsSanitized(t *testing.T) {
 
 type panicEngine struct{ reEngine }
 
+func (panicEngine) Exec(string, int) []int                { panic("boom") }
 func (panicEngine) ExecSubject(*regex.Subject, int) []int { panic("boom") }
+func (panicEngine) ExecBytes(string, int) []int           { panic(struct{ x int }{1}) }
 func (panicEngine) ExecSubjectBytes(*regex.Subject, int) []int {
 	panic(struct{ x int }{1})
 }
