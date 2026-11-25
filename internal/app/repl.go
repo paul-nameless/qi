@@ -25,7 +25,7 @@ import (
 )
 
 type repl struct {
-	prices   priceSource
+	prices   *priceSource
 	agent    *agent.Agent
 	display  *ui.Printer
 	editor   *ui.Editor

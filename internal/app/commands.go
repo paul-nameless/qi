@@ -17,6 +17,7 @@ import (
 	"github.com/paul-nameless/qi/internal/mcp"
 	"github.com/paul-nameless/qi/internal/session"
 	"github.com/paul-nameless/qi/internal/tools"
+	"github.com/paul-nameless/qi/internal/ui"
 )
 
 const keysText = `Keys:
@@ -273,22 +274,33 @@ func (r *repl) reload() {
 
 func (r *repl) usage(string) {
 	src := r.prices
-	if src.stale() {
+	if src == nil {
+		src = defaultPrices()
+		r.prices = src
+	}
+	if src.willFetch() {
 		r.display.Info("fetching prices from " + src.url)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
-	book, priceErr := src.load(ctx)
-	text, err := usageReport(usageOptions{root: session.Root(), session: r.agent.Session(), now: time.Now(), book: book})
+	var text string
+	var book *priceBook
+	var priceErr error
+	err := r.cancellable(func(ctx context.Context) error {
+		book, priceErr = src.load(ctx)
+		var err error
+		text, err = usageReport(ctx, usageOptions{root: session.Root(), session: r.agent.Session(), subagent: session.Dir(r.agent.Cwd()), now: time.Now(), book: book})
+		return err
+	})
 	if err != nil {
 		r.report(err)
 		return
 	}
-	note := "~ is estimated from " + src.url + " prices"
-	if book != nil {
-		note += " (fetched " + book.Fetched.Local().Format("01-02 15:04") + ")"
+	if r.display.TTY {
+		text = ui.Markdown(text, r.display.Width())
 	}
-	r.display.Info(text + "\n" + note)
+	r.display.Line(strings.TrimRight(text, "\n"))
+	if book != nil {
+		r.display.Info("~ is estimated from " + src.url + " prices (fetched " + book.Fetched.Local().Format("01-02 15:04") + "); amounts without ~ are what the provider reported")
+	}
 	r.report(priceErr)
 }
 

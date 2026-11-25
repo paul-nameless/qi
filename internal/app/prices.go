@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,9 +17,10 @@ import (
 )
 
 const (
-	pricesURL     = "https://models.dev/api.json"
-	pricesMaxAge  = 24 * time.Hour
-	pricesMaxBody = 64 << 20
+	pricesURL      = "https://models.dev/api.json"
+	pricesMaxAge   = 24 * time.Hour
+	pricesMaxBody  = 64 << 20
+	pricesRetryGap = 10 * time.Minute
 )
 
 var priceProviders = []string{"openrouter", "amazon-bedrock", "anthropic", "openai", "google"}
@@ -47,32 +49,49 @@ type priceBook struct {
 	Providers map[string]map[string]modelCost `json:"providers"`
 }
 
-func (b *priceBook) lookup(model string) (modelCost, bool) {
+type price struct {
+	modelCost
+	provider string
+}
+
+func (b *priceBook) lookup(model string) (price, bool) {
 	if b == nil {
-		return modelCost{}, false
+		return price{}, false
 	}
 	if strings.Contains(model, "/") {
 		c, ok := b.Providers["openrouter"][model]
-		return c, ok
+		return price{c, "openrouter"}, ok
 	}
 	for _, p := range priceProviders[1:] {
 		if c, ok := b.Providers[p][model]; ok {
-			return c, true
+			return price{c, p}, true
 		}
 	}
-	return modelCost{}, false
+	return price{}, false
 }
 
-func (c modelCost) estimate(u llm.Usage) float64 {
-	in, out, read, write := c.Input, c.Output, c.CacheRead, c.CacheWrite
-	for _, t := range c.Tiers {
+func (p price) estimate(u llm.Usage, longCache bool) float64 {
+	in, out, read, write := p.Input, p.Output, p.CacheRead, p.CacheWrite
+	for _, t := range p.Tiers {
 		if t.Tier.Type == "context" && u.Input > t.Tier.Size {
-			in, out, read, write = t.Input, t.Output, t.CacheRead, t.CacheWrite
+			in, out = t.Input, t.Output
+			read, write = cmpPrice(t.CacheRead, read), cmpPrice(t.CacheWrite, write)
 		}
 	}
+	writePrice := orPrice(write, in)
+	if longCache && p.provider == "anthropic" {
+		writePrice = 2 * in
+	}
 	uncached := max(0, u.Input-u.CacheRead-u.CacheWrite)
-	total := float64(uncached)*in + float64(u.CacheRead)*orPrice(read, in) + float64(u.CacheWrite)*orPrice(write, in) + float64(u.Output)*out
+	total := float64(uncached)*in + float64(u.CacheRead)*orPrice(read, in) + float64(u.CacheWrite)*writePrice + float64(u.Output)*out
 	return total / 1e6
+}
+
+func cmpPrice(p, fallback *float64) *float64 {
+	if p != nil {
+		return p
+	}
+	return fallback
 }
 
 func orPrice(p *float64, fallback float64) float64 {
@@ -83,28 +102,42 @@ func orPrice(p *float64, fallback float64) float64 {
 }
 
 type priceSource struct {
-	url    string
-	cache  string
-	now    func() time.Time
-	client *http.Client
+	url      string
+	cache    string
+	now      func() time.Time
+	client   *http.Client
+	failedAt time.Time
 }
 
-func defaultPrices() priceSource {
-	return priceSource{url: pricesURL, cache: filepath.Join(config.DataDir(), "prices.json"), now: time.Now, client: &http.Client{Timeout: 30 * time.Second}}
+func defaultPrices() *priceSource {
+	return &priceSource{url: pricesURL, cache: filepath.Join(config.DataDir(), "prices.json"), now: time.Now, client: &http.Client{Timeout: time.Minute}}
 }
 
-func (s priceSource) stale() bool {
+func (s *priceSource) stale() bool {
 	b, err := s.read()
 	return err != nil || s.now().Sub(b.Fetched) >= pricesMaxAge
 }
 
-func (s priceSource) load(ctx context.Context) (*priceBook, error) {
+func (s *priceSource) willFetch() bool {
+	return s.stale() && s.now().Sub(s.failedAt) >= pricesRetryGap
+}
+
+func (s *priceSource) load(ctx context.Context) (*priceBook, error) {
 	cached, cacheErr := s.read()
 	if cacheErr == nil && s.now().Sub(cached.Fetched) < pricesMaxAge {
 		return cached, nil
 	}
+	if !s.willFetch() {
+		if cacheErr == nil {
+			return cached, nil
+		}
+		return nil, fmt.Errorf("prices from %s: the last fetch failed less than %v ago", s.url, pricesRetryGap)
+	}
 	fresh, err := s.fetch(ctx)
 	if err != nil {
+		if ctx.Err() == nil {
+			s.failedAt = s.now()
+		}
 		if cacheErr == nil {
 			return cached, fmt.Errorf("prices from %s not refreshed: %w", s.url, err)
 		}
@@ -116,7 +149,7 @@ func (s priceSource) load(ctx context.Context) (*priceBook, error) {
 	return fresh, nil
 }
 
-func (s priceSource) read() (*priceBook, error) {
+func (s *priceSource) read() (*priceBook, error) {
 	data, err := os.ReadFile(s.cache)
 	if err != nil {
 		return nil, err
@@ -128,22 +161,36 @@ func (s priceSource) read() (*priceBook, error) {
 	return &b, nil
 }
 
-func (s priceSource) write(b *priceBook) error {
+func (s *priceSource) write(b *priceBook) error {
 	data, err := json.Marshal(b)
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(s.cache), 0o755); err != nil {
+	dir := filepath.Dir(s.cache)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	tmp := s.cache + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	f, err := os.CreateTemp(dir, ".prices-*.json")
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, s.cache)
+	_, werr := f.Write(data)
+	if cerr := f.Close(); werr == nil {
+		werr = cerr
+	}
+	if werr == nil {
+		werr = os.Chmod(f.Name(), 0o644)
+	}
+	if werr == nil {
+		werr = os.Rename(f.Name(), s.cache)
+	}
+	if werr != nil {
+		_ = os.Remove(f.Name())
+	}
+	return werr
 }
 
-func (s priceSource) fetch(ctx context.Context) (*priceBook, error) {
+func (s *priceSource) fetch(ctx context.Context) (*priceBook, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.url, nil)
 	if err != nil {
 		return nil, err
@@ -159,21 +206,27 @@ func (s priceSource) fetch(ctx context.Context) (*priceBook, error) {
 	}
 	var all map[string]struct {
 		Models map[string]struct {
-			Cost *modelCost `json:"cost"`
+			Cost json.RawMessage `json:"cost"`
 		} `json:"models"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, pricesMaxBody)).Decode(&all); err != nil {
 		return nil, fmt.Errorf("decode: %w", err)
 	}
 	b := &priceBook{Fetched: s.now(), Providers: map[string]map[string]modelCost{}}
+	n := 0
 	for _, p := range priceProviders {
 		models := map[string]modelCost{}
 		for id, m := range all[p].Models {
-			if m.Cost != nil {
-				models[id] = *m.Cost
+			var c modelCost
+			if len(m.Cost) > 0 && json.Unmarshal(m.Cost, &c) == nil && string(m.Cost) != "null" {
+				models[id] = c
 			}
 		}
 		b.Providers[p] = models
+		n += len(models)
+	}
+	if n == 0 {
+		return nil, errors.New("no prices for " + strings.Join(priceProviders, ", "))
 	}
 	return b, nil
 }
