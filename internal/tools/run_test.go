@@ -746,17 +746,28 @@ func TestCellFailureSavesSubagentAnswers(t *testing.T) {
 	t.Parallel()
 	k := newCellKit(t, Subagent("m", nil, nil))
 	k.second(300 * time.Millisecond)
+	failed := make(chan struct{})
+	var failOnce sync.Once
 	k.env.Subagent = func(ctx context.Context, task SubagentTask, progress func(string)) (string, error) {
 		switch task.Prompt {
 		case "fail":
-			time.Sleep(50 * time.Millisecond)
 			return "", errors.New("api error 402")
 		case "slow":
-			time.Sleep(300 * time.Millisecond)
+			<-failed
 		}
 		return "report for " + task.Prompt, nil
 	}
-	res := k.wantErr(`await Promise.all([subagent("quick"), subagent("slow"), subagent("fail")])`, "ToolError: subagent failed: api error 402", "Note: the code failed while 1 call was still running; it was waited for.")
+	code := `const q = subagent("quick"); const f = q.then(() => subagent("fail")).catch(e => { console.log("failing"); throw e }); await Promise.all([q, subagent("slow"), f])`
+	res := k.cellProgress(k.ctx, code, 0, func(text string) {
+		if text == "failing" {
+			failOnce.Do(func() { close(failed) })
+		}
+	})
+	for _, part := range []string{"ToolError: subagent failed: api error 402", "Note: the code failed while 1 call was still running; it was waited for."} {
+		if !res.IsError || !strings.Contains(res.Text, part) {
+			t.Errorf("failed cell: %q lacks %q", res.Text, part)
+		}
+	}
 	if strings.Contains(res.Text, "await every call") {
 		t.Errorf("failed cell blames unawaited calls: %q", res.Text)
 	}
@@ -1004,7 +1015,7 @@ func TestCellEndlessFormatJobsStopped(t *testing.T) {
 	start := time.Now()
 	k.want(`return {toJSON() { const spin = () => Promise.resolve().then(spin); spin(); return 3 }}`, "3")
 	bound := formatSeconds * k.run.r.unit()
-	if d := time.Since(start); d < bound || d > bound+3*time.Second {
+	if d := time.Since(start); d < bound || d > bound+time.Second {
 		t.Errorf("an endless job loop held the result for %v, want the %v format bound", d, bound)
 	}
 	k.second(0)
