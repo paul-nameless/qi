@@ -51,11 +51,19 @@ func readDir(dir string) []ui.PickItem {
 	items := make([]ui.PickItem, 0, len(des))
 	for _, de := range des {
 		item := ui.PickItem{Name: de.Name()}
-		if st, err := os.Stat(filepath.Join(dir, de.Name())); err == nil && st.IsDir() {
+		if isDirEntry(dir, de) {
 			item = ui.PickItem{Name: de.Name() + "/", Color: ui.Blue}
 		}
 		items = append(items, item)
 	}
 	sort.SliceStable(items, func(i, j int) bool { return items[i].Color != "" && items[j].Color == "" })
 	return items
+}
+
+func isDirEntry(dir string, de os.DirEntry) bool {
+	if de.Type()&os.ModeSymlink == 0 {
+		return de.IsDir()
+	}
+	st, err := os.Stat(filepath.Join(dir, de.Name()))
+	return err == nil && st.IsDir()
 }
