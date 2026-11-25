@@ -385,3 +385,26 @@ func TestSpillGoesToTheSessionScratch(t *testing.T) {
 		t.Error("spill used an out dir others can read")
 	}
 }
+
+func TestProgressWriterKeepsHeadAndTail(t *testing.T) {
+	t.Parallel()
+	for _, total := range []int{100, keepBytes, 2 * keepBytes, 2*keepBytes + 7, 3*keepBytes + 1, 5*keepBytes + 12345} {
+		data := make([]byte, total)
+		for i := range data {
+			data[i] = byte('a' + i%23)
+		}
+		w := &progressWriter{}
+		for p := data; len(p) > 0; {
+			n := min(len(p), 1000+len(p)%7000)
+			w.Write(p[:n])
+			p = p[n:]
+		}
+		want := string(data)
+		if total > 2*keepBytes {
+			want = string(data[:keepBytes]) + fmt.Sprintf("\n… [%d bytes dropped] …\n", total-2*keepBytes) + string(data[total-keepBytes:])
+		}
+		if got := w.String(); got != want || w.truncated() != (total > 2*keepBytes) {
+			t.Errorf("%d bytes: got %d bytes, truncated %v", total, len(got), w.truncated())
+		}
+	}
+}

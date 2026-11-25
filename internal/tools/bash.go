@@ -68,9 +68,8 @@ func (w *progressWriter) Write(p []byte) (int, error) {
 	}
 	if len(p) > 0 {
 		w.tail = append(w.tail, p...)
-		if over := len(w.tail) - keepBytes; over > 0 {
-			w.dropped += over
-			w.tail = append(w.tail[:0], w.tail[over:]...)
+		if len(w.tail) >= 2*keepBytes {
+			w.trim()
 		}
 	}
 	if w.progress != nil && time.Since(w.last) > 150*time.Millisecond {
@@ -84,9 +83,17 @@ func (w *progressWriter) Write(p []byte) (int, error) {
 	return n, nil
 }
 
+func (w *progressWriter) trim() {
+	if over := len(w.tail) - keepBytes; over > 0 {
+		w.dropped += over
+		w.tail = append(w.tail[:0], w.tail[over:]...)
+	}
+}
+
 func (w *progressWriter) String() string {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	w.trim()
 	if w.dropped == 0 {
 		return string(w.head) + string(w.tail)
 	}
@@ -96,6 +103,7 @@ func (w *progressWriter) String() string {
 func (w *progressWriter) truncated() bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	w.trim()
 	return w.dropped > 0
 }
 
