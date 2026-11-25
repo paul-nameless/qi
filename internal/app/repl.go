@@ -4,25 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"os/signal"
 	"path/filepath"
-	"reflect"
-	"slices"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/paul-nameless/qi/internal/agent"
 	"github.com/paul-nameless/qi/internal/config"
 	"github.com/paul-nameless/qi/internal/llm"
 	"github.com/paul-nameless/qi/internal/mcp"
-	"github.com/paul-nameless/qi/internal/proc"
 	"github.com/paul-nameless/qi/internal/session"
 	"github.com/paul-nameless/qi/internal/tools"
 	"github.com/paul-nameless/qi/internal/ui"
-	"golang.org/x/sys/unix"
 )
 
 type repl struct {
@@ -271,74 +264,6 @@ func orDash(s string) string {
 	return s
 }
 
-func (r *repl) handleSignals() {
-	ch := make(chan os.Signal, 4)
-	signal.Notify(ch, os.Interrupt, syscall.SIGTSTP, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT)
-	go func() {
-		defer ui.CleanupOnPanic()
-		for s := range ch {
-			switch s {
-			case os.Interrupt:
-				if !r.cancelTurn() {
-					select {
-					case r.editor.Interrupt <- struct{}{}:
-					default:
-					}
-				}
-			case syscall.SIGTSTP:
-				r.stop()
-			default:
-				r.shutdown()
-			}
-		}
-	}()
-}
-
-func (r *repl) handleResize() {
-	ch := make(chan os.Signal, 1)
-	signal.Notify(ch, syscall.SIGWINCH)
-	go func() {
-		defer ui.CleanupOnPanic()
-		for range ch {
-			r.display.Redraw()
-		}
-	}()
-}
-
-func jobControl() bool {
-	self, err := unix.Getsid(0)
-	if err != nil {
-		return false
-	}
-	parent, err := unix.Getsid(os.Getppid())
-	return err == nil && parent == self
-}
-
-func (r *repl) stop() {
-	if !jobControl() {
-		return
-	}
-	child := r.term.ChildRunning()
-	if !child {
-		r.display.ClearFooter()
-		r.term.Suspend()
-	}
-	stopSelf()
-	if !child {
-		r.term.Resume()
-		r.display.RenderPrompt()
-	}
-}
-
-func stopSelf() {
-	cont := make(chan os.Signal, 1)
-	signal.Notify(cont, syscall.SIGCONT)
-	defer signal.Stop(cont)
-	if syscall.Kill(os.Getpid(), syscall.SIGSTOP) == nil {
-		<-cont
-	}
-}
-
 func (r *repl) cancelTurn() bool {
 	r.mu.Lock()
 	cancel := r.turnCancel
@@ -348,61 +273,6 @@ func (r *repl) cancelTurn() bool {
 	}
 	cancel()
 	return true
-}
-
-func (r *repl) shutdown() {
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		r.quit()
-		proc.Settle(time.Second)
-		r.resumeHint()
-	}()
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		if r.term != nil {
-			r.term.Restore()
-		}
-	}
-	r.display.EndLine()
-	os.Exit(1)
-}
-
-func (r *repl) quit() {
-	r.settle(3 * time.Second)
-	r.closeResources()
-	if r.term != nil {
-		r.term.Restore()
-	}
-}
-
-func (r *repl) settle(limit time.Duration) {
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		r.stopIdle()
-		r.mu.Lock()
-		turnDone := r.turnDone
-		r.mu.Unlock()
-		if r.cancelTurn() && turnDone != nil {
-			<-turnDone
-		}
-	}()
-	select {
-	case <-done:
-	case <-time.After(limit):
-	}
-}
-
-func (r *repl) closeResources() {
-	r.agent.Jobs().KillAll()
-	if r.mcp != nil {
-		r.mcp.Close()
-	}
-	if s := r.agent.Session(); s != nil {
-		s.Close()
-	}
 }
 
 func (r *repl) cancellable(fn func(ctx context.Context) error) error {
@@ -511,154 +381,6 @@ func (r *repl) queueMessage(ctx context.Context, s string) {
 	r.autoTurns = 0
 	r.agent.Queue(blocks)
 	r.display.Info("queued: " + tools.OneLine(s, 80))
-}
-
-func (r *repl) armIdle() {
-	ttl, err := time.ParseDuration(r.agent.Config().CacheTTL)
-	if err != nil || ttl <= 5*time.Minute {
-		return
-	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.idle != nil {
-		r.idle.Stop()
-	}
-	r.idleGen++
-	gen := r.idleGen
-	r.idle = time.AfterFunc(ttl-5*time.Minute, func() { r.idleCompact(gen) })
-}
-
-func (r *repl) idleCompact(gen int) {
-	defer ui.CleanupOnPanic()
-	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
-	defer cancel()
-	done := make(chan struct{})
-	defer close(done)
-	r.mu.Lock()
-	if gen != r.idleGen {
-		r.mu.Unlock()
-		return
-	}
-	r.idleCancel, r.idleDone = cancel, done
-	r.mu.Unlock()
-	if err := r.agent.TryCompactIdle(ctx); err != nil && ctx.Err() == nil {
-		r.display.Error("idle compaction failed: " + err.Error())
-	}
-}
-
-func (r *repl) stopIdle() {
-	r.mu.Lock()
-	r.idleGen++
-	if r.idle != nil {
-		r.idle.Stop()
-		r.idle = nil
-	}
-	if r.idleCancel != nil {
-		r.idleCancel()
-	}
-	done := r.idleDone
-	r.idleCancel, r.idleDone = nil, nil
-	r.mu.Unlock()
-	if done != nil {
-		<-done
-	}
-}
-
-func (r *repl) resolve(profile string) (config.Config, error) {
-	return config.Resolve(config.Options{Path: r.opts.configPath, Profile: profile, Provider: r.opts.provider, Effort: r.opts.effort, SystemPromptFile: r.opts.systemPromptFile})
-}
-
-func (r *repl) switchProfile(name string) error {
-	r.opts.provider = ""
-	cfg, err := r.resolve(name)
-	if err != nil {
-		return err
-	}
-	if err := r.apply(cfg, cfg.Provider); err != nil {
-		return err
-	}
-	if cfg.ProfileSetsMode() {
-		m := cfg.StartMode()
-		r.agent.SetMode(m)
-		r.warnMode(m)
-	}
-	r.report(r.loadPrompt())
-	if r.runner != nil && !sameMCP(cfg.MCP, r.runner.MCP) {
-		r.display.Info("MCP servers unchanged; restart qi to apply the new profile's MCP setup")
-	}
-	if _, err := config.SetValue(r.opts.configPath, "", "default_profile", cfg.Profile); err != nil {
-		r.display.Error("couldn't save the default profile: " + err.Error())
-	}
-	return nil
-}
-
-func sameMCP(a, b map[string]config.MCPServer) bool {
-	return len(a) == 0 && len(b) == 0 || reflect.DeepEqual(a, b)
-}
-
-func effortNames() []string {
-	return append([]string{"default"}, config.Efforts...)
-}
-
-func effortName(e string) string {
-	if e == "" {
-		return "default"
-	}
-	return e
-}
-
-func (r *repl) setEffort(level string) error {
-	if !slices.Contains(effortNames(), level) {
-		return fmt.Errorf("unknown effort %q", level)
-	}
-	if level == "default" {
-		level = ""
-	}
-	r.opts.effort = level
-	r.agent.EditConfig(func(c *config.Config) { c.ReasoningEffort = level })
-	return nil
-}
-
-func withProvider(menu []config.SubagentModel, provider string) []config.SubagentModel {
-	out := make([]config.SubagentModel, len(menu))
-	for i, m := range menu {
-		if m.Provider == "" {
-			m.Provider = provider
-		}
-		out[i] = m
-	}
-	return out
-}
-
-func (r *repl) apply(cfg config.Config, baseProvider string) error {
-	cfg.DefaultCacheTTL(false)
-	key, err := cfg.ResolveAPIKey()
-	if err != nil {
-		return err
-	}
-	r.agent.Reconfigure(cfg, newProvider(cfg, key))
-	if r.runner != nil {
-		r.runner.Profile, r.runner.Provider = cfg.Profile, baseProvider
-		r.agent.ReplaceFunction(tools.Subagent(cfg.Model, withProvider(cfg.SubagentModels, baseProvider), cfg.SubagentEfforts))
-	}
-	return nil
-}
-
-func (r *repl) profileInfo() string {
-	cfg := r.agent.Config()
-	var b strings.Builder
-	fmt.Fprintf(&b, "model: %s", cfg.Model)
-	if cfg.Provider != "" {
-		fmt.Fprintf(&b, " (provider %s)", cfg.Provider)
-	}
-	fmt.Fprintf(&b, " · effort %s", effortName(cfg.ReasoningEffort))
-	if cfg.Profile != "" {
-		fmt.Fprintf(&b, " · profile %s", cfg.Profile)
-	}
-	for _, p := range cfg.ProfileNames() {
-		fmt.Fprintf(&b, "\n  /profile %s", p)
-	}
-	return b.String()
 }
 
 const historyShown = 40
