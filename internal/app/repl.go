@@ -713,11 +713,14 @@ func (r *repl) newSession() error {
 	if err != nil {
 		return err
 	}
+	r.switchSession(func() { r.agent.Reset(s) })
+	return nil
+}
+
+func (r *repl) switchSession(swap func()) {
 	if cur := r.agent.Session(); cur != nil {
 		agent.RemoveScratchIfEmpty(cur.ID)
 	}
-	r.agent.Reset(s)
-	r.hooks.Session, r.hooks.SessionID = s.Path, s.ID
+	swap()
 	r.report(r.loadPrompt())
-	return nil
 }

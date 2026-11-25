@@ -98,7 +98,7 @@ func run(o options) error {
 	defer a.KillJobs()
 	skills, sys := agent.LoadPrompt(cwd, cfg, agent.ScratchDir(a.Session().ID))
 	a.SetSystem(sys)
-	hooks.Session, hooks.SessionID, hooks.Mode, hooks.Spill = a.Session().Path, a.Session().ID, a.Mode, a.Spill
+	hooks.Attach(a)
 	if !hooks.Empty() {
 		var stop agent.StopHook
 		if !isSub {

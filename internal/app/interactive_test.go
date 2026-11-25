@@ -87,6 +87,7 @@ func testRepl(t *testing.T, cfg config.Config, p llm.Provider) (*repl, capture) 
 	}
 	a, _ := buildAgent(cfg, options{}, t.TempDir(), p, display, false, true)
 	r := &repl{agent: a, display: display, hooks: &agent.Hooks{}}
+	r.hooks.Attach(a)
 	if err := r.newSession(); err != nil {
 		t.Fatal(err)
 	}
@@ -162,8 +163,8 @@ func TestHandleInputClearStartsNewSession(t *testing.T) {
 	r, out := testRepl(t, config.Config{Model: "m"}, nopProvider{})
 	old := r.agent.Session().ID
 	r.handleInput("/clear")
-	if id := r.agent.Session().ID; id == old || r.hooks.SessionID != id || !strings.Contains(out.String(), "new session "+id) {
-		t.Errorf("clear: old %s new %s hooks %s", old, id, r.hooks.SessionID)
+	if id := r.agent.Session().ID; id == old || r.hooks.Session().ID != id || !strings.Contains(out.String(), "new session "+id) {
+		t.Errorf("clear: old %s new %s hooks %s", old, id, r.hooks.Session().ID)
 	}
 }
 

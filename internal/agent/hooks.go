@@ -20,6 +20,7 @@ import (
 
 	"github.com/paul-nameless/qi/internal/config"
 	"github.com/paul-nameless/qi/internal/proc"
+	"github.com/paul-nameless/qi/internal/session"
 	"github.com/paul-nameless/qi/internal/tools"
 	"github.com/paul-nameless/qi/internal/ui"
 )
@@ -49,12 +50,25 @@ func (m *hookMatcher) compile() {
 type Hooks struct {
 	events     map[string][]hookMatcher
 	Cwd        string
-	SessionID  string
-	Session    string
+	Session    func() *session.Session
 	Mode       func() Mode
 	SkipPrompt bool
 	Info       func(string)
 	Spill      func(string) (string, error)
+}
+
+func (h *Hooks) Attach(a *Agent) {
+	h.Session, h.Mode, h.Spill = a.Session, a.Mode, a.Spill
+}
+
+func (h *Hooks) sessionRef() (id, path string) {
+	if h.Session == nil {
+		return "", ""
+	}
+	if s := h.Session(); s != nil {
+		return s.ID, s.Path
+	}
+	return "", ""
 }
 
 const (
@@ -238,8 +252,7 @@ func (h *Hooks) run(ctx context.Context, event string, names []string, payload m
 			mode = "acceptEdits"
 		}
 	}
-	payload["session_id"] = h.SessionID
-	payload["transcript_path"] = h.Session
+	payload["session_id"], payload["transcript_path"] = h.sessionRef()
 	payload["cwd"] = h.Cwd
 	payload["hook_event_name"] = event
 	payload["permission_mode"] = mode

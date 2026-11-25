@@ -57,6 +57,7 @@ func TestResume(t *testing.T) {
 	}
 	a.Reset(cur)
 	r := &repl{agent: a, display: devNullPrinter(t), hooks: &agent.Hooks{}}
+	r.hooks.Attach(a)
 	editConfig(r.agent, func(c *config.Config) { c.SessionPicker = "grep second" })
 	items := sessionItems(a.Cwd(), cur.ID)
 	if len(items) != 2 || !strings.Contains(items[0].desc+items[1].desc, "(current)") {
@@ -65,7 +66,7 @@ func TestResume(t *testing.T) {
 	if err := r.resume(""); err != nil {
 		t.Fatal(err)
 	}
-	if a.Session().ID != second.ID || r.hooks.SessionID != second.ID || len(a.Messages()) != 2 || a.Messages()[0].Text() != "the summary" {
+	if a.Session().ID != second.ID || r.hooks.Session().ID != second.ID || len(a.Messages()) != 2 || a.Messages()[0].Text() != "the summary" {
 		t.Errorf("not switched: %s %d", a.Session().ID, len(a.Messages()))
 	}
 	if err := r.resume(first.ID); err != nil || a.Session().ID != first.ID {

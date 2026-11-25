@@ -13,6 +13,7 @@ import (
 
 	"github.com/paul-nameless/qi/internal/llm"
 	"github.com/paul-nameless/qi/internal/mcp"
+	"github.com/paul-nameless/qi/internal/session"
 	"github.com/paul-nameless/qi/internal/tools"
 )
 
@@ -371,5 +372,35 @@ func TestHookOutputCap(t *testing.T) {
 	}
 	if got := h.capText(strings.Repeat("é", 10000)); got != strings.Repeat("é", 10000) {
 		t.Error("text at the cap was cut")
+	}
+}
+
+func TestHookPayloadReadsSessionLive(t *testing.T) {
+	t.Parallel()
+	out := filepath.Join(t.TempDir(), "payloads")
+	h := writeHooks(t, `{"UserPromptSubmit":[{"hooks":[{"type":"command","command":"cat >> '`+out+`'; echo >> '`+out+`'"}]}]}`)
+	h.UserPromptSubmit(context.Background(), "none")
+	cur := &session.Session{ID: "one", Path: "/s/one.jsonl"}
+	h.Session = func() *session.Session { return cur }
+	h.UserPromptSubmit(context.Background(), "first")
+	cur = &session.Session{ID: "two", Path: "/s/two.jsonl"}
+	h.UserPromptSubmit(context.Background(), "second")
+	data, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for line := range strings.Lines(strings.TrimSpace(string(data))) {
+		var p struct {
+			ID   string `json:"session_id"`
+			Path string `json:"transcript_path"`
+		}
+		if err := json.Unmarshal([]byte(line), &p); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, p.ID+" "+p.Path)
+	}
+	if want := []string{" ", "one /s/one.jsonl", "two /s/two.jsonl"}; !slices.Equal(got, want) {
+		t.Errorf("payload sessions %q, want %q", got, want)
 	}
 }

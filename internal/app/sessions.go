@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/paul-nameless/qi/internal/agent"
 	"github.com/paul-nameless/qi/internal/config"
 	"github.com/paul-nameless/qi/internal/session"
 	"github.com/paul-nameless/qi/internal/ui"
@@ -87,12 +86,7 @@ func (r *repl) resume(ref string) error {
 	if err != nil {
 		return err
 	}
-	if cur := r.agent.Session(); cur != nil {
-		agent.RemoveScratchIfEmpty(cur.ID)
-	}
-	r.agent.Load(s, ld)
-	r.hooks.Session, r.hooks.SessionID = s.Path, s.ID
-	r.report(r.loadPrompt())
+	r.switchSession(func() { r.agent.Load(s, ld) })
 	r.display.Info("session " + s.ID)
 	r.printHistory()
 	return nil
