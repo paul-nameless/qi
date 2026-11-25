@@ -147,6 +147,9 @@ func (c *client) request(ctx context.Context, method string, params any) (json.R
 		c.mu.Unlock()
 	}()
 	if err := c.send(rpcMsg{JSONRPC: "2.0", ID: &id, Method: method, Params: params}); err != nil {
+		if c.gone(ctx) {
+			return nil, fmt.Errorf("mcp server %s exited", c.name)
+		}
 		return nil, fmt.Errorf("mcp %s: %w", c.name, err)
 	}
 	select {
@@ -224,6 +227,16 @@ func (c *client) toolNames() []string {
 		names[i] = t.Name
 	}
 	return names
+}
+
+func (c *client) gone(ctx context.Context) bool {
+	select {
+	case <-c.done:
+		return true
+	case <-ctx.Done():
+	case <-time.After(time.Second):
+	}
+	return false
 }
 
 func (c *client) exited() bool {

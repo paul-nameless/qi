@@ -261,3 +261,20 @@ func TestSearchStartsServersInParallel(t *testing.T) {
 		t.Errorf("each server waits for the other to start: %d tools, errors %v", len(l.Tools), l.Errs)
 	}
 }
+
+func TestWriteToExitedServerReportsExit(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Close()
+	defer w.Close()
+	stderr := &tailWriter{}
+	stderr.Write([]byte("missing API token\n"))
+	c := &client{name: "bad", stdin: w, stderr: stderr, pending: map[int64]chan rpcMsg{}, done: make(chan struct{})}
+	close(c.done)
+	_, err = c.request(context.Background(), "initialize", nil)
+	if err = c.withStderr(err); err == nil || err.Error() != "mcp server bad exited; stderr: missing API token" {
+		t.Errorf("got %v", err)
+	}
+}
