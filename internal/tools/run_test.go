@@ -951,26 +951,19 @@ func TestRunDescriptionReservedNames(t *testing.T) {
 
 func TestCellFormatJobsDoNotLeak(t *testing.T) {
 	t.Parallel()
-	t.Run("queued jobs", func(t *testing.T) {
-		t.Parallel()
-		k := newCellKit(t)
-		k.second(300 * time.Millisecond)
-		k.want(`return {toJSON() { Promise.resolve().then(() => write("late.txt", "x")); Promise.resolve().then(() => console.log("job ran")); return 1 }}`, "job ran\n1")
-		res := k.cell(`await sleep(1); 2`)
-		if res.IsError || res.Text != "2" || len(res.Calls) != 0 {
-			t.Errorf("next cell: %+v", res)
-		}
-		if _, err := os.Stat(filepath.Join(k.dir, "late.txt")); err == nil {
-			t.Error("a promise job queued while formatting wrote a file")
-		}
-	})
-	t.Run("endless jobs", func(t *testing.T) {
-		t.Parallel()
-		testEndlessFormatJobs(t)
-	})
+	k := newCellKit(t)
+	k.second(300 * time.Millisecond)
+	k.want(`return {toJSON() { Promise.resolve().then(() => write("late.txt", "x")); Promise.resolve().then(() => console.log("job ran")); return 1 }}`, "job ran\n1")
+	res := k.cell(`await sleep(1); 2`)
+	if res.IsError || res.Text != "2" || len(res.Calls) != 0 {
+		t.Errorf("next cell: %+v", res)
+	}
+	if _, err := os.Stat(filepath.Join(k.dir, "late.txt")); err == nil {
+		t.Error("a promise job queued while formatting wrote a file")
+	}
 }
 
-func testEndlessFormatJobs(t *testing.T) {
+func TestCellEndlessFormatJobsStopped(t *testing.T) {
 	k := newCellKit(t)
 	k.second(100 * time.Millisecond)
 	start := time.Now()
