@@ -251,9 +251,9 @@ func TestRunFiresHooksOnlyForInnerCalls(t *testing.T) {
 		record("pre", c.Tool)
 		return false, "", nil
 	}
-	k.env.PostHook = func(ctx context.Context, c HookCall, r Result) string {
+	k.env.PostHook = func(ctx context.Context, c HookCall, r Result) (string, *ToolOutput) {
 		record("post", c.Tool)
-		return ""
+		return "", nil
 	}
 	in, _ := json.Marshal(runArgs{Code: `await read("f.txt")`})
 	res := k.run.Execute(k.ctx, k.env, []llm.Block{{ID: "1", Name: "run", Input: in}}, nopUI{})
@@ -268,11 +268,11 @@ func TestCellPostHookStaysOutOfValues(t *testing.T) {
 	k.file("f.txt", "content\n")
 	var calls []HookCall
 	var mu sync.Mutex
-	k.env.PostHook = func(ctx context.Context, c HookCall, r Result) string {
+	k.env.PostHook = func(ctx context.Context, c HookCall, r Result) (string, *ToolOutput) {
 		mu.Lock()
 		calls = append(calls, c)
 		mu.Unlock()
-		return "POST " + c.Tool
+		return "POST " + c.Tool, nil
 	}
 	res := k.cell(`const r = await read("f.txt"); JSON.stringify(r)`)
 	if res.Text != "\"content\\n\"\nPOST Read" {
@@ -280,6 +280,39 @@ func TestCellPostHookStaysOutOfValues(t *testing.T) {
 	}
 	if len(calls) != 1 || string(calls[0].Input) != `{"file_path":"f.txt"}` || calls[0].Names[0] != "read" {
 		t.Errorf("hook calls %+v", calls)
+	}
+}
+
+func TestCellPostHookReplacesOutput(t *testing.T) {
+	t.Parallel()
+	k := newCellKit(t)
+	k.file("f.txt", "secret\n")
+	fail := true
+	k.env.PostHook = func(ctx context.Context, c HookCall, r Result) (string, *ToolOutput) {
+		switch c.Tool {
+		case "Bash":
+			return "", &ToolOutput{Output: "[redacted]"}
+		case "Edit":
+			return "", &ToolOutput{Output: "edit refused by policy", IsError: &fail}
+		}
+		return "", &ToolOutput{Output: "[redacted read]"}
+	}
+	res := k.cell(`const b = await bash("echo secret; exit 3"); const r = await read("f.txt"); let e; try { await edit("f.txt", "secret", "x") } catch (err) { e = err.message } return [b.output, b.exit_code, r, e].join("|")`)
+	if res.Text != "[redacted]|3|[redacted read]|edit refused by policy\nFailed calls:\n✗ edit f.txt: edit refused by policy" {
+		t.Errorf("got %q", res.Text)
+	}
+}
+
+func TestCellPostHookEchoKeepsBashOutput(t *testing.T) {
+	t.Parallel()
+	k := newCellKit(t)
+	k.file("big.txt", strings.Repeat("line\n", 1000))
+	k.env.PostHook = func(ctx context.Context, c HookCall, r Result) (string, *ToolOutput) {
+		return "", &ToolOutput{Output: strings.ReplaceAll(r.Text, "secret", "***")}
+	}
+	res := k.cell(`const a = await bash("echo secret; exit 3"); const b = await bash("true"); const f = await read("big.txt"); return JSON.stringify([a.output, a.exit_code, b.output, f.length])`)
+	if res.Text != `["***",3,"",5000]` {
+		t.Errorf("got %q", res.Text)
 	}
 }
 
@@ -887,13 +920,13 @@ func TestCellBashErrorResolves(t *testing.T) {
 	k := newCellKit(t)
 	var mu sync.Mutex
 	var hookErrs []bool
-	k.env.PostHook = func(ctx context.Context, c HookCall, r Result) string {
+	k.env.PostHook = func(ctx context.Context, c HookCall, r Result) (string, *ToolOutput) {
 		mu.Lock()
 		if c.Tool == "Bash" {
 			hookErrs = append(hookErrs, r.IsError)
 		}
 		mu.Unlock()
-		return ""
+		return "", nil
 	}
 	code := `const a = await bash("echo x; exit 3"); const b = await bash("sleep 5", {timeout: 1}); return [a.exit_code, b.timed_out].join(" ")`
 	b := k.run.Execute(context.Background(), k.env, []llm.Block{{ID: "c1", Name: "run", Input: mustJSON(t, runArgs{Code: code})}}, nopUI{})[0]

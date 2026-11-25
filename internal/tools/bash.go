@@ -352,7 +352,7 @@ func (r bashRun) value() Result {
 	if r.interrupted {
 		return Result{Text: text, IsError: true, Summary: r.summary()}
 	}
-	return Result{Text: text, JS: r.jsObject, IsError: r.code != 0, Summary: r.summary()}
+	return Result{Text: text, JS: r.jsObject, IsError: r.code != 0, Summary: r.summary(), raw: r.output}
 }
 
 func (r bashRun) jsObject(vm *jsvm.VM) jsvm.Value {

@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/paul-nameless/qi/internal/config"
 	"github.com/paul-nameless/qi/internal/proc"
@@ -24,10 +25,15 @@ import (
 )
 
 type hookCmd struct {
-	Type    string `json:"type"`
-	Command string `json:"command"`
-	Timeout int    `json:"timeout"`
-	Async   bool   `json:"async"`
+	Type      string `json:"type"`
+	Command   string `json:"command"`
+	Timeout   int    `json:"timeout"`
+	Async     bool   `json:"async"`
+	OnFailure string `json:"onFailure"`
+}
+
+func (c hookCmd) blocksOnFailure() bool {
+	return c.OnFailure == "block" && !c.Async
 }
 
 type hookMatcher struct {
@@ -48,7 +54,13 @@ type Hooks struct {
 	Mode       func() Mode
 	SkipPrompt bool
 	Info       func(string)
+	Spill      func(string) (string, error)
 }
+
+const (
+	hookTextCap     = 10000
+	hookPreviewSize = 2000
+)
 
 type HookFile struct {
 	Path   string
@@ -108,6 +120,15 @@ func parseHookFile(path string) (map[string][]hookMatcher, string, error) {
 	if err := json.Unmarshal(data, &s); err != nil {
 		return nil, real, jsonProblem(data, err)
 	}
+	for ev, ms := range s.Hooks {
+		for _, m := range ms {
+			for _, c := range m.Hooks {
+				if c.OnFailure != "" && c.OnFailure != "continue" && c.OnFailure != "block" {
+					return nil, real, fmt.Errorf("%s hook %q: onFailure must be \"continue\" or \"block\", not %q", ev, c.Command, c.OnFailure)
+				}
+			}
+		}
+	}
 	return s.Hooks, real, nil
 }
 
@@ -154,9 +175,11 @@ func (h *Hooks) Empty() bool {
 }
 
 type hookOutcome struct {
-	code   int
-	stdout string
-	stderr string
+	cmd     hookCmd
+	code    int
+	stdout  string
+	stderr  string
+	failure string
 }
 
 func (o hookOutcome) json() map[string]any {
@@ -193,6 +216,9 @@ func (h *Hooks) run(ctx context.Context, event string, names []string, payload m
 				}
 				if i, ok := seen[c.Command]; ok {
 					cmds[i].Async = cmds[i].Async && c.Async
+					if c.OnFailure == "block" {
+						cmds[i].OnFailure = "block"
+					}
 					continue
 				}
 				seen[c.Command] = len(cmds)
@@ -275,11 +301,60 @@ func (h *Hooks) exec(ctx context.Context, c hookCmd, input []byte) hookOutcome {
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	err := cmd.Run()
-	out := hookOutcome{code: exitCode(err), stdout: stdout.String(), stderr: stderr.String()}
+	out := hookOutcome{cmd: c, code: exitCode(err), stdout: stdout.String(), stderr: stderr.String()}
 	if ctx.Err() == nil {
 		h.reportFailure(c, timeout, tctx.Err(), err, out)
 	}
+	out.failure = failure(tctx.Err(), out)
 	return out
+}
+
+func failure(deadline error, o hookOutcome) string {
+	switch {
+	case errors.Is(deadline, context.DeadlineExceeded):
+		return "timed out"
+	case o.code != 0 && o.code != 2:
+		return "failed"
+	case o.code == 0 && invalidJSON(o.stdout):
+		return "failed"
+	}
+	return ""
+}
+
+func invalidJSON(stdout string) bool {
+	s := strings.TrimSpace(stdout)
+	return strings.HasPrefix(s, "{") && strings.HasSuffix(s, "}") && !json.Valid([]byte(s))
+}
+
+func (h *Hooks) failureBlock(event, tool string, o hookOutcome) string {
+	if o.failure == "" || !o.cmd.blocksOnFailure() {
+		return ""
+	}
+	if tool != "" {
+		event += ":" + tool
+	}
+	msg := fmt.Sprintf("%s hook error: [%s]: %s; blocking because onFailure is \"block\"", event, o.cmd.Command, o.failure)
+	if e := strings.TrimSpace(o.stderr); e != "" {
+		msg += "\n" + e
+	}
+	return h.capText(msg)
+}
+
+func (h *Hooks) capText(s string) string {
+	n := utf8.RuneCountInString(s)
+	if n <= hookTextCap {
+		return s
+	}
+	path := "(not saved: no spill dir)"
+	if h.Spill != nil {
+		if p, err := h.Spill(s); err != nil {
+			path = "(not saved: " + err.Error() + ")"
+		} else {
+			path = p
+		}
+	}
+	preview := string([]rune(s)[:hookPreviewSize])
+	return fmt.Sprintf("%s\n… hook output of %d characters cut to the first %d. Full output: %s", preview, n, hookPreviewSize, path)
 }
 
 func exitCode(err error) int {
@@ -347,18 +422,21 @@ func toolInput(call tools.HookCall) any {
 func (h *Hooks) PreToolUse(ctx context.Context, call tools.HookCall) (bool, string, json.RawMessage) {
 	var updated json.RawMessage
 	for _, o := range h.run(ctx, "PreToolUse", call.Names, map[string]any{"tool_name": call.Tool, "tool_input": toolInput(call), "tool_use_id": call.ID}) {
+		if r := h.failureBlock("PreToolUse", call.Tool, o); r != "" {
+			return true, r, nil
+		}
 		if o.code == 2 {
-			return true, strings.TrimSpace(o.stderr), nil
+			return true, h.capText(strings.TrimSpace(o.stderr)), nil
 		}
 		j := o.json()
 		switch str(j, "hookSpecificOutput", "permissionDecision") {
 		case "deny":
-			return true, str(j, "hookSpecificOutput", "permissionDecisionReason"), nil
+			return true, h.capText(str(j, "hookSpecificOutput", "permissionDecisionReason")), nil
 		case "ask":
-			return true, "a hook asked for confirmation, which qi cannot prompt for: " + str(j, "hookSpecificOutput", "permissionDecisionReason"), nil
+			return true, h.capText("a hook asked for confirmation, which qi cannot prompt for: " + str(j, "hookSpecificOutput", "permissionDecisionReason")), nil
 		}
 		if str(j, "decision") == "block" {
-			return true, str(j, "reason"), nil
+			return true, h.capText(str(j, "reason")), nil
 		}
 		if hso, ok := j["hookSpecificOutput"].(map[string]any); ok && hso["updatedInput"] != nil {
 			updated, _ = json.Marshal(hso["updatedInput"])
@@ -367,24 +445,59 @@ func (h *Hooks) PreToolUse(ctx context.Context, call tools.HookCall) (bool, stri
 	return false, "", updated
 }
 
-func (h *Hooks) PostToolUse(ctx context.Context, call tools.HookCall, res tools.Result) string {
+func (h *Hooks) PostToolUse(ctx context.Context, call tools.HookCall, res tools.Result) (string, *tools.ToolOutput) {
 	var notes []string
+	var updated *tools.ToolOutput
 	payload := map[string]any{"tool_name": call.Tool, "tool_input": toolInput(call), "tool_use_id": call.ID, "tool_response": map[string]any{"output": res.Text, "is_error": res.IsError}}
 	for _, o := range h.run(ctx, "PostToolUse", call.Names, payload) {
+		if r := h.failureBlock("PostToolUse", call.Tool, o); r != "" {
+			notes = append(notes, r)
+			continue
+		}
 		j := o.json()
+		if u := h.updatedOutput(call, o, j); u != nil {
+			updated = u
+		}
 		switch {
 		case o.code == 2:
-			notes = append(notes, strings.TrimSpace(o.stderr))
+			notes = append(notes, h.capText(strings.TrimSpace(o.stderr)))
 		case str(j, "decision") == "block":
-			notes = append(notes, str(j, "reason"))
+			notes = append(notes, h.capText(str(j, "reason")))
 		case str(j, "hookSpecificOutput", "additionalContext") != "":
-			notes = append(notes, str(j, "hookSpecificOutput", "additionalContext"))
+			notes = append(notes, h.capText(str(j, "hookSpecificOutput", "additionalContext")))
 		}
 	}
 	if len(notes) == 0 {
-		return ""
+		return "", updated
 	}
-	return "<hook>\n" + strings.Join(notes, "\n") + "\n</hook>"
+	return "<hook>\n" + strings.Join(notes, "\n") + "\n</hook>", updated
+}
+
+func (h *Hooks) updatedOutput(call tools.HookCall, o hookOutcome, j map[string]any) *tools.ToolOutput {
+	hso, _ := j["hookSpecificOutput"].(map[string]any)
+	key := "updatedToolOutput"
+	v, ok := hso[key]
+	if !ok && strings.HasPrefix(call.Tool, "mcp__") {
+		key = "updatedMCPToolOutput"
+		v, ok = hso[key]
+	}
+	if !ok {
+		return nil
+	}
+	m, _ := v.(map[string]any)
+	text, isText := m["output"].(string)
+	isErr, errOK := m["is_error"].(bool)
+	if _, has := m["is_error"]; !isText || has && !errOK {
+		if h.Info != nil {
+			h.Info("hook " + strconv.Quote(o.cmd.Command) + ": " + key + " ignored: it must look like tool_response, {\"output\": string, \"is_error\": bool}")
+		}
+		return nil
+	}
+	out := &tools.ToolOutput{Output: text}
+	if errOK {
+		out.IsError = &isErr
+	}
+	return out
 }
 
 func (h *Hooks) UserPromptSubmit(ctx context.Context, prompt string) (blocked bool, reason, extra string) {
@@ -393,18 +506,21 @@ func (h *Hooks) UserPromptSubmit(ctx context.Context, prompt string) (blocked bo
 	}
 	var ctxs []string
 	for _, o := range h.run(ctx, "UserPromptSubmit", nil, map[string]any{"prompt": prompt}) {
+		if r := h.failureBlock("UserPromptSubmit", "", o); r != "" {
+			return true, r, ""
+		}
 		j := o.json()
 		switch {
 		case o.code == 2:
-			return true, strings.TrimSpace(o.stderr), ""
+			return true, h.capText(strings.TrimSpace(o.stderr)), ""
 		case str(j, "decision") == "block":
-			return true, str(j, "reason"), ""
+			return true, h.capText(str(j, "reason")), ""
 		case j != nil:
 			if c := str(j, "hookSpecificOutput", "additionalContext"); c != "" {
-				ctxs = append(ctxs, c)
+				ctxs = append(ctxs, h.capText(c))
 			}
-		case o.code == 0 && strings.TrimSpace(o.stdout) != "":
-			ctxs = append(ctxs, strings.TrimSpace(o.stdout))
+		case o.code == 0 && strings.TrimSpace(o.stdout) != "" && !invalidJSON(o.stdout):
+			ctxs = append(ctxs, h.capText(strings.TrimSpace(o.stdout)))
 		}
 	}
 	return false, "", strings.Join(ctxs, "\n")
@@ -413,10 +529,10 @@ func (h *Hooks) UserPromptSubmit(ctx context.Context, prompt string) (blocked bo
 func (h *Hooks) Stop(ctx context.Context, lastText string, active bool) (bool, string) {
 	for _, o := range h.run(ctx, "Stop", nil, map[string]any{"stop_hook_active": active, "last_assistant_message": lastText}) {
 		if o.code == 2 {
-			return true, strings.TrimSpace(o.stderr)
+			return true, h.capText(strings.TrimSpace(o.stderr))
 		}
 		if j := o.json(); str(j, "decision") == "block" {
-			return true, str(j, "reason")
+			return true, h.capText(str(j, "reason"))
 		}
 	}
 	return false, ""

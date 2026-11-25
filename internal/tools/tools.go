@@ -31,6 +31,7 @@ type Result struct {
 	JS      func(vm *jsvm.VM) jsvm.Value
 	Denied  bool
 	Calls   []llm.InnerCall
+	raw     string
 }
 
 func errResult(format string, a ...any) Result {
@@ -52,7 +53,12 @@ type HookCall struct {
 }
 
 type Hook func(ctx context.Context, call HookCall) (block bool, reason string, input json.RawMessage)
-type PostHook func(ctx context.Context, call HookCall, res Result) string
+type PostHook func(ctx context.Context, call HookCall, res Result) (note string, updated *ToolOutput)
+
+type ToolOutput struct {
+	Output  string
+	IsError *bool
+}
 
 type SubagentTask struct {
 	Prompt   string
@@ -247,9 +253,39 @@ func callFunction(ctx context.Context, env *Env, f *Function, call llm.Block, ui
 	}
 	res = f.Run(ctx, env, call.Input, func(s string) { ui.ToolProgress(call.ID, s) })
 	if env.PostHook != nil {
-		extra = env.PostHook(ctx, f.HookCall(call), res)
+		var updated *ToolOutput
+		extra, updated = env.PostHook(ctx, f.HookCall(call), res)
+		if updated != nil {
+			res = replaceOutput(res, *updated)
+		}
 	}
 	return res, extra
+}
+
+func replaceOutput(res Result, u ToolOutput) Result {
+	raw := rawOutput(res, u.Output)
+	res.Text = u.Output
+	if u.IsError != nil {
+		res.IsError = *u.IsError
+	}
+	if res.Value != nil {
+		res.Value = jsonValue(raw)
+	}
+	if js := res.JS; js != nil {
+		res.JS = func(vm *jsvm.VM) jsvm.Value {
+			v := js(vm)
+			_ = vm.SetProp(v, "output", jsvm.Str(raw))
+			return v
+		}
+	}
+	return res
+}
+
+func rawOutput(res Result, text string) string {
+	if res.JS == nil || !strings.HasPrefix(res.Text, res.raw) {
+		return text
+	}
+	return strings.TrimSuffix(text, res.Text[len(res.raw):])
 }
 
 func panicSite() string {
@@ -297,7 +333,7 @@ func (e *Env) capText(out string, maxLines, maxBytes int) string {
 		return out
 	}
 	lines := strings.Split(out, "\n")
-	path, err := e.spill(out)
+	path, err := e.Spill(out)
 	if err != nil {
 		path = "(not saved: " + err.Error() + ")"
 	}
@@ -339,7 +375,7 @@ func PrivateDir(path string) bool {
 	return ok && int(sys.Uid) == os.Getuid()
 }
 
-func (e *Env) spill(out string) (string, error) {
+func (e *Env) Spill(out string) (string, error) {
 	dir, err := e.outDir()
 	if err != nil {
 		return "", err

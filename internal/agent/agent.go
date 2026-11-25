@@ -273,6 +273,10 @@ func (a *Agent) execute(ctx context.Context, calls []llm.Block) []llm.Block {
 	return out
 }
 
+func (a *Agent) Spill(out string) (string, error) {
+	return a.env.Spill(out)
+}
+
 func (a *Agent) SetHooks(pre tools.Hook, post tools.PostHook, stop StopHook) {
 	a.busy.Lock()
 	defer a.busy.Unlock()

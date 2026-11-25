@@ -120,7 +120,7 @@ func (c *cell) answerMarks(before int) []string {
 
 func (c *cell) saveAnswers() {
 	for _, a := range c.answers {
-		path, err := c.env.spill(a.text)
+		path, err := c.env.Spill(a.text)
 		if err != nil {
 			c.marks[a.mark] += " → answer not saved: " + err.Error()
 			continue

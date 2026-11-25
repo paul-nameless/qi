@@ -174,7 +174,10 @@ func TestHooksWiring(t *testing.T) {
 			}
 			return c.ID == "blocked", "nope", nil
 		},
-		PostHook: func(ctx context.Context, c HookCall, r Result) string { postCalls.Add(1); return "x" },
+		PostHook: func(ctx context.Context, c HookCall, r Result) (string, *ToolOutput) {
+			postCalls.Add(1)
+			return "x", nil
+		},
 	}
 	res := newFuncSet(Write()).Execute(context.Background(), env, []llm.Block{
 		{ID: "blocked", Name: "write", Input: json.RawMessage(`{"file_path":"a.txt","content":"1"}`)},
@@ -328,7 +331,7 @@ func TestSpillFailureIsReported(t *testing.T) {
 		t.Fatal(err)
 	}
 	env := &Env{SpillDir: filepath.Join(blocker, "sub")}
-	if _, err := env.spill("x"); err == nil {
+	if _, err := env.Spill("x"); err == nil {
 		t.Error("spill into a file path succeeded")
 	}
 	if out := env.capOutput(strings.Repeat("line\n", 1000)); !strings.Contains(out, "Full output: (not saved: ") {
@@ -363,22 +366,22 @@ func TestSpillGoesToTheSessionScratch(t *testing.T) {
 	t.Parallel()
 	scratch := t.TempDir()
 	env := &Env{Scratch: func() string { return scratch }}
-	path, err := env.spill("big output")
+	path, err := env.Spill("big output")
 	if err != nil || !strings.HasPrefix(path, filepath.Join(scratch, ".qi-out")+string(filepath.Separator)) {
 		t.Errorf("spill went to %q: %v", path, err)
 	}
-	if _, err := (&Env{}).spill("x"); err == nil {
+	if _, err := (&Env{}).Spill("x"); err == nil {
 		t.Error("spill without a scratch dir should fail, not fall back to a shared dir")
 	}
 	other := t.TempDir()
 	link := t.TempDir()
 	os.Symlink(other, filepath.Join(link, ".qi-out"))
-	if _, err := (&Env{Scratch: func() string { return link }}).spill("x"); err == nil {
+	if _, err := (&Env{Scratch: func() string { return link }}).Spill("x"); err == nil {
 		t.Error("spill followed an out symlink")
 	}
 	open := t.TempDir()
 	os.Mkdir(filepath.Join(open, ".qi-out"), 0o755)
-	if _, err := (&Env{Scratch: func() string { return open }}).spill("x"); err == nil {
+	if _, err := (&Env{Scratch: func() string { return open }}).Spill("x"); err == nil {
 		t.Error("spill used an out dir others can read")
 	}
 }

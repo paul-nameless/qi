@@ -276,7 +276,7 @@ func mcpImage(env *Env, mimeType, data string) (preparedImage, error) {
 }
 
 func (e *Env) saveImage(data []byte, mimeType string) string {
-	path, err := e.spill("")
+	path, err := e.Spill("")
 	if err != nil {
 		return ""
 	}

@@ -108,7 +108,7 @@ func TestStopPromptAndPostHooks(t *testing.T) {
 	if blocked, reason, _ := h.UserPromptSubmit(ctx, "my secret"); !blocked || reason != "blocked" {
 		t.Errorf("prompt block: %v %q", blocked, reason)
 	}
-	note := h.PostToolUse(ctx, hookCall("edit", `{}`), tools.Result{Text: "ok"})
+	note, _ := h.PostToolUse(ctx, hookCall("edit", `{}`), tools.Result{Text: "ok"})
 	if !strings.Contains(note, "lint failed") {
 		t.Errorf("post: %q", note)
 	}
@@ -173,6 +173,7 @@ func TestHookFileErrors(t *testing.T) {
 		"syntax.json": "{\n  \"hooks\": {\n    \"Stop\": [,]\n  }\n}",
 		"shape.json":  `{"hooks": {"Stop": [{"hooks": [{"command": "x", "timeout": "60"}]}]}}`,
 		"top.json":    `{"hooks": []}`,
+		"fail.json":   `{"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "x", "onFailure": "deny"}]}]}}`,
 	} {
 		p := filepath.Join(dir, name)
 		os.WriteFile(p, []byte(body), 0o600)
@@ -252,5 +253,123 @@ func TestBlockingDuplicateOfAsyncHookStillBlocks(t *testing.T) {
 	]}`)
 	if block, _, _ := h.PreToolUse(context.Background(), hookCall("bash", `{"command":"ls"}`)); !block {
 		t.Error("the same command marked blocking elsewhere did not block")
+	}
+}
+
+func TestOnFailureBlock(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	for _, c := range []struct {
+		name, hook string
+		block      bool
+		reason     string
+	}{
+		{"missing script", `{"type":"command","command":"no-such-hook-binary","onFailure":"block"}`, true, "PreToolUse:Bash hook error: [no-such-hook-binary]: failed; blocking because onFailure is \"block\"\n"},
+		{"missing script unset", `{"type":"command","command":"no-such-hook-binary"}`, false, ""},
+		{"missing script continue", `{"type":"command","command":"no-such-hook-binary","onFailure":"continue"}`, false, ""},
+		{"exit 1 with allow", `{"type":"command","command":"echo '{\"hookSpecificOutput\":{\"permissionDecision\":\"allow\"}}'; exit 1","onFailure":"block"}`, true, "PreToolUse:Bash hook error: [echo '{\"hookSpecificOutput\":{\"permissionDecision\":\"allow\"}}'; exit 1]: failed; blocking because onFailure is \"block\""},
+		{"timeout", `{"type":"command","command":"sleep 5","timeout":1,"onFailure":"block"}`, true, "PreToolUse:Bash hook error: [sleep 5]: timed out; blocking because onFailure is \"block\""},
+		{"invalid json", `{"type":"command","command":"echo '{nope}'","onFailure":"block"}`, true, "PreToolUse:Bash hook error: [echo '{nope}']: failed; blocking because onFailure is \"block\""},
+		{"plain text", `{"type":"command","command":"echo fine","onFailure":"block"}`, false, ""},
+		{"async", `{"type":"command","command":"exit 1","async":true,"onFailure":"block"}`, false, ""},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			h := writeHooks(t, `{"PreToolUse":[{"matcher":"Bash","hooks":[`+c.hook+`]}]}`)
+			block, reason, _ := h.PreToolUse(ctx, hookCall("bash", `{"command":"ls"}`))
+			if block != c.block || !strings.HasPrefix(reason, c.reason) {
+				t.Errorf("got %v %q", block, reason)
+			}
+		})
+	}
+}
+
+func TestOnFailureBlockPerEvent(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	h := writeHooks(t, `{
+		"UserPromptSubmit":[{"hooks":[{"type":"command","command":"echo boom >&2; exit 1","onFailure":"block"}]}],
+		"PostToolUse":[{"hooks":[{"type":"command","command":"exit 3","onFailure":"block"}]}],
+		"Stop":[{"hooks":[{"type":"command","command":"exit 1","onFailure":"block"}]}]
+	}`)
+	if blocked, reason, _ := h.UserPromptSubmit(ctx, "hi"); !blocked || reason != "UserPromptSubmit hook error: [echo boom >&2; exit 1]: failed; blocking because onFailure is \"block\"\nboom" {
+		t.Errorf("prompt: %v %q", blocked, reason)
+	}
+	if note, _ := h.PostToolUse(ctx, hookCall("edit", `{}`), tools.Result{Text: "ok"}); !strings.Contains(note, "PostToolUse:Edit hook error: [exit 3]: failed") {
+		t.Errorf("post: %q", note)
+	}
+	if cont, _ := h.Stop(ctx, "done", false); cont {
+		t.Error("a failing Stop hook kept the turn going")
+	}
+}
+
+func TestBlockingDuplicateKeepsOnFailure(t *testing.T) {
+	t.Parallel()
+	h := writeHooks(t, `{"PreToolUse":[
+		{"hooks":[{"type":"command","command":"exit 1"}]},
+		{"matcher":"Bash","hooks":[{"type":"command","command":"exit 1","onFailure":"block"}]}
+	]}`)
+	if block, _, _ := h.PreToolUse(context.Background(), hookCall("bash", `{"command":"ls"}`)); !block {
+		t.Error("onFailure block on a duplicate listing was lost")
+	}
+}
+
+func TestPostToolUseUpdatedOutput(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	var info []string
+	var mu sync.Mutex
+	h := writeHooks(t, `{"PostToolUse":[
+		{"matcher":"Bash","hooks":[{"type":"command","command":"echo '{\"hookSpecificOutput\":{\"additionalContext\":\"note\",\"updatedToolOutput\":{\"output\":\"[redacted]\"}}}'"}]},
+		{"matcher":"Read","hooks":[{"type":"command","command":"echo '{\"hookSpecificOutput\":{\"updatedToolOutput\":{\"stdout\":\"x\"}}}'"}]},
+		{"matcher":"Write","hooks":[{"type":"command","command":"echo '{\"hookSpecificOutput\":{\"updatedMCPToolOutput\":{\"output\":\"x\"}}}'"}]},
+		{"matcher":"mcp__.*","hooks":[{"type":"command","command":"echo '{\"hookSpecificOutput\":{\"updatedMCPToolOutput\":{\"output\":\"mcp\",\"is_error\":true}}}'"}]}
+	]}`)
+	h.Info = func(s string) {
+		mu.Lock()
+		defer mu.Unlock()
+		info = append(info, s)
+	}
+	note, out := h.PostToolUse(ctx, hookCall("bash", `{"command":"env"}`), tools.Result{Text: "KEY=1"})
+	if note != "<hook>\nnote\n</hook>" || out == nil || out.Output != "[redacted]" || out.IsError != nil {
+		t.Errorf("bash: %q %+v", note, out)
+	}
+	if _, out := h.PostToolUse(ctx, hookCall("read", `{"file_path":"a"}`), tools.Result{Text: "a"}); out != nil || len(info) != 1 || !strings.Contains(info[0], "updatedToolOutput ignored") {
+		t.Errorf("wrong shape: %+v %q", out, info)
+	}
+	if _, out := h.PostToolUse(ctx, hookCall("write", `{"file_path":"a","content":"b"}`), tools.Result{Text: "ok"}); out != nil {
+		t.Errorf("updatedMCPToolOutput applied to Write: %+v", out)
+	}
+	_, out = h.PostToolUse(ctx, hookCall("mcp_call", `{"server":"s","tool":"t","arguments":{}}`), tools.Result{Text: "{}"})
+	if out == nil || out.Output != "mcp" || out.IsError == nil || !*out.IsError {
+		t.Errorf("mcp: %+v", out)
+	}
+}
+
+func TestHookOutputCap(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	h := writeHooks(t, `{
+		"UserPromptSubmit":[{"hooks":[{"type":"command","command":"awk 'BEGIN{while(i++<12000)printf \"a\"}'"}]}]
+	}`)
+	var spilled []string
+	var mu sync.Mutex
+	h.Spill = func(s string) (string, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		spilled = append(spilled, s)
+		return "/spill/1.txt", nil
+	}
+	_, _, extra := h.UserPromptSubmit(ctx, "hi")
+	want := strings.Repeat("a", 2000) + "\n… hook output of 12000 characters cut to the first 2000. Full output: /spill/1.txt"
+	if extra != want || len(spilled) != 1 || len(spilled[0]) != 12000 {
+		t.Errorf("extra %d chars, want %d, spilled %d", len(extra), len(want), len(spilled))
+	}
+	h.Spill = nil
+	if got := h.capText(strings.Repeat("é", 10001)); !strings.HasSuffix(got, "Full output: (not saved: no spill dir)") || !strings.HasPrefix(got, strings.Repeat("é", 2000)+"\n") {
+		t.Errorf("no spill: %q", got[len(got)-60:])
+	}
+	if got := h.capText(strings.Repeat("é", 10000)); got != strings.Repeat("é", 10000) {
+		t.Error("text at the cap was cut")
 	}
 }
