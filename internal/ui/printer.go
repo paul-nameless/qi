@@ -293,10 +293,9 @@ func (p *Printer) write(s string) {
 	if s == "" {
 		return
 	}
-	p.clearFooter()
-	_, _ = p.out.WriteString(s)
+	seq := p.clearSeq() + s
 	p.atLineStart = strings.HasSuffix(s, "\n")
-	p.drawFooter()
+	_, _ = p.out.WriteString(seq + p.drawSeq())
 }
 
 func (p *Printer) endReasoning() {
