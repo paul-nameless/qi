@@ -144,6 +144,7 @@ func TestValidateMirrorsSchema(t *testing.T) {
 		`{"subagent_efforts": ["low"]}`:                                       {`key "subagent_efforts" was removed`, "delete it"},
 		`{"profiles": {"p": {"subagent_efforts": ["low"]}}}`:                  {`profile "p": key "subagent_efforts" was removed`},
 		`{"subagent_effortz": ["low"]}`:                                       {`unknown key "subagent_effortz"`},
+		`{"providers": {"x": {"api": "openai", "subagent_efforts": []}}}`:     {`unknown key "providers.x.subagent_efforts"`},
 		`{"subagent_models": [{"model": "m"}]}`:                               {`key "subagent_models.0"`, "name is required"},
 		`{"subagent_models": [{"name": "n"}]}`:                                {"model is required"},
 		`{"subagent_models": [{"name": "n", "model": "m", "provider": "x"}]}`: {`key "subagent_models.0.provider"`, `unknown provider "x"`},
