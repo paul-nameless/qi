@@ -17,3 +17,11 @@ func TestCutKeepsRunes(t *testing.T) {
 		t.Error("ascii cuts")
 	}
 }
+
+func TestPlural(t *testing.T) {
+	for n, want := range map[int]string{0: "0 lines", 1: "1 line", 2: "2 lines"} {
+		if got := Plural(n, "line"); got != want {
+			t.Errorf("Plural(%d) = %q, want %q", n, got, want)
+		}
+	}
+}

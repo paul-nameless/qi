@@ -17,6 +17,7 @@ import (
 	"github.com/paul-nameless/qi/internal/config"
 	"github.com/paul-nameless/qi/internal/llm"
 	"github.com/paul-nameless/qi/internal/session"
+	"github.com/paul-nameless/qi/internal/strutil"
 	"github.com/paul-nameless/qi/internal/ui"
 )
 
@@ -102,7 +103,7 @@ func (s spend) detail() string {
 	if n := s.unpriced(); n > 0 && n < s.requests {
 		cost += fmt.Sprintf(", %d unpriced", n)
 	}
-	parts := []string{cost, plural(s.requests, "request"), "input " + agent.FmtTokens(s.Input) + cachedShare(s.Usage), "output " + agent.FmtTokens(s.Output)}
+	parts := []string{cost, strutil.Plural(s.requests, "request"), "input " + agent.FmtTokens(s.Input) + cachedShare(s.Usage), "output " + agent.FmtTokens(s.Output)}
 	if s.CacheWrite > 0 {
 		parts = append(parts, "cache write "+agent.FmtTokens(s.CacheWrite))
 	}
@@ -128,13 +129,6 @@ func cachedShare(u llm.Usage) string {
 		return ""
 	}
 	return fmt.Sprintf(" (%d%% cached)", u.CacheRead*100/u.Input)
-}
-
-func plural(n int, word string) string {
-	if n == 1 {
-		return "1 " + word
-	}
-	return fmt.Sprintf("%d %ss", n, word)
 }
 
 type usageLine struct {
@@ -312,7 +306,7 @@ func usageReport(ctx context.Context, o usageOptions) (string, error) {
 	}
 	nameMax = min(max(nameMax, 16), 60)
 	breakdown(&b, "model", t.models, 0, func(k string) string { return cellName(cmp.Or(k, "unknown"), nameMax) })
-	breakdown(&b, "project", t.projects, usageProjects, func(k string) string { return cellName(shortHome(k), nameMax) })
+	breakdown(&b, "project", t.projects, usageProjects, func(k string) string { return cellName(config.ShortHome(k), nameMax) })
 	return strings.TrimRight(b.String(), "\n"), nil
 }
 
@@ -350,12 +344,4 @@ func cellName(s string, limit int) string {
 		s = "…" + string(r[len(r)-limit+1:])
 	}
 	return s
-}
-
-func shortHome(path string) string {
-	home := config.Home()
-	if rest, ok := strings.CutPrefix(path, home); ok && (rest == "" || strings.HasPrefix(rest, string(filepath.Separator))) {
-		return "~" + rest
-	}
-	return path
 }

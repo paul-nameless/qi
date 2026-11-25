@@ -1,6 +1,9 @@
 package strutil
 
-import "unicode/utf8"
+import (
+	"strconv"
+	"unicode/utf8"
+)
 
 func CutStart(s string, n int) string {
 	if len(s) <= n {
@@ -21,4 +24,11 @@ func CutEnd(s string, n int) string {
 		i++
 	}
 	return s[i:]
+}
+
+func Plural(n int, word string) string {
+	if n == 1 {
+		return "1 " + word
+	}
+	return strconv.Itoa(n) + " " + word + "s"
 }

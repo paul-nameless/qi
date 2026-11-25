@@ -11,6 +11,7 @@ import (
 
 	"github.com/paul-nameless/qi/internal/jsvm"
 	"github.com/paul-nameless/qi/internal/llm"
+	"github.com/paul-nameless/qi/internal/strutil"
 )
 
 const (
@@ -141,7 +142,7 @@ func (c *cell) lateNote(end cellEnd) string {
 }
 
 func (c *cell) lateHead(end cellEnd) string {
-	running := fmt.Sprintf("%s %s still running", plural(c.late, "call"), pluralVerb(c.late))
+	running := fmt.Sprintf("%s %s still running", strutil.Plural(c.late, "call"), pluralVerb(c.late))
 	if end.err != nil {
 		if end.lateStop {
 			return fmt.Sprintf("Note: the code failed while %s.", running)
@@ -192,12 +193,12 @@ func pluralVerb(n int) string {
 }
 
 func (c *cell) summary(text, failure string) string {
-	s := plural(strings.Count(text, "\n")+1, "line")
+	s := strutil.Plural(strings.Count(text, "\n")+1, "line")
 	if failure != "" {
 		s = strings.SplitN(failure, "\n", 2)[0]
 	}
 	if n := len(c.records); n > 0 {
-		s = plural(n, "call") + " · " + s
+		s = strutil.Plural(n, "call") + " · " + s
 	}
 	return s
 }

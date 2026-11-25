@@ -255,10 +255,3 @@ func recordInput(input json.RawMessage) json.RawMessage {
 	}
 	return cut
 }
-
-func plural(n int, word string) string {
-	if n == 1 {
-		return fmt.Sprintf("1 %s", word)
-	}
-	return fmt.Sprintf("%d %ss", n, word)
-}
