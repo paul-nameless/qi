@@ -416,11 +416,11 @@ func TestQueuedPromptHookDoesNotBlockKeys(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{"hooks":{"UserPromptSubmit":[{"hooks":[{"type":"command","command":"sleep 1"}]}]}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	hooks, err := agent.LoadHooks(dir, []string{path})
+	parsed, err := agent.ParseHookFiles([]string{path})
 	if err != nil {
 		t.Fatal(err)
 	}
-	r.hooks = hooks
+	r.hooks = agent.NewHooks(dir, parsed)
 	r.turn(func(context.Context) ([]llm.Block, error) {
 		return []llm.Block{{Type: llm.BlockText, Text: "go"}}, nil
 	}, "")

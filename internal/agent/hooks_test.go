@@ -17,13 +17,21 @@ import (
 	"github.com/paul-nameless/qi/internal/tools"
 )
 
+func loadHooks(projectDir string, files []string) (*Hooks, error) {
+	parsed, err := ParseHookFiles(files)
+	if err != nil {
+		return nil, err
+	}
+	return NewHooks(projectDir, parsed), nil
+}
+
 func writeHooks(t *testing.T, hooks string) *Hooks {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "settings.json")
 	if err := os.WriteFile(p, []byte(`{"hooks":`+hooks+`}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	h, err := LoadHooks(dir, []string{p, filepath.Join(dir, "missing.json")})
+	h, err := loadHooks(dir, []string{p, filepath.Join(dir, "missing.json")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,22 +186,22 @@ func TestHookFileErrors(t *testing.T) {
 	} {
 		p := filepath.Join(dir, name)
 		os.WriteFile(p, []byte(body), 0o600)
-		_, err := LoadHooks(dir, []string{p})
+		_, err := loadHooks(dir, []string{p})
 		if err == nil || !strings.Contains(err.Error(), "hooks: "+p+": ") || !strings.HasSuffix(err.Error(), "; fix it or remove it from hook_files") {
 			t.Errorf("%s: %v", name, err)
 		}
 	}
-	_, err := LoadHooks(dir, []string{filepath.Join(dir, "syntax.json")})
+	_, err := loadHooks(dir, []string{filepath.Join(dir, "syntax.json")})
 	if err == nil || !strings.Contains(err.Error(), "invalid JSON at line 3") {
 		t.Errorf("syntax error line: %v", err)
 	}
-	_, err = LoadHooks(dir, []string{filepath.Join(dir, "shape.json")})
+	_, err = loadHooks(dir, []string{filepath.Join(dir, "shape.json")})
 	if err == nil || !strings.Contains(err.Error(), `"hooks.Stop.0.hooks.0.timeout" has the wrong shape at line 1: string where number is expected`) {
 		t.Errorf("shape error: %v", err)
 	}
 	other := filepath.Join(dir, "other.json")
 	os.WriteFile(other, []byte(`{"model": "x", "permissions": {"allow": ["Bash"]}, "hooks": {"Stop": [{"hooks": [{"type": "command", "command": "true", "extra": 1}]}]}}`), 0o600)
-	h, err := LoadHooks(dir, []string{filepath.Join(dir, "missing.json"), other})
+	h, err := loadHooks(dir, []string{filepath.Join(dir, "missing.json"), other})
 	if err != nil || h.Empty() {
 		t.Errorf("unknown keys or a missing file broke loading: %v", err)
 	}
@@ -203,7 +211,7 @@ func TestHookFileErrors(t *testing.T) {
 		f.Close()
 		t.Skip("running as root, permissions are not enforced")
 	}
-	if _, err := LoadHooks(dir, []string{unreadable}); err == nil || !strings.Contains(err.Error(), "cannot read: permission denied") {
+	if _, err := loadHooks(dir, []string{unreadable}); err == nil || !strings.Contains(err.Error(), "cannot read: permission denied") {
 		t.Errorf("unreadable: %v", err)
 	}
 }

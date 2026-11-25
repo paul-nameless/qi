@@ -81,14 +81,6 @@ type HookFile struct {
 	events map[string][]hookMatcher
 }
 
-func LoadHooks(projectDir string, files []string) (*Hooks, error) {
-	parsed, err := ParseHookFiles(files)
-	if err != nil {
-		return nil, err
-	}
-	return NewHooks(projectDir, parsed), nil
-}
-
 func NewHooks(projectDir string, files []HookFile) *Hooks {
 	h := &Hooks{events: map[string][]hookMatcher{}, Cwd: projectDir}
 	for _, f := range files {
