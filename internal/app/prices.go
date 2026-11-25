@@ -137,9 +137,7 @@ func (s *priceSource) load(ctx context.Context) (*priceBook, error) {
 	}
 	fresh, err := s.fetch(ctx)
 	if err != nil {
-		if ctx.Err() == nil {
-			s.failedAt = s.now()
-		}
+		s.failedAt = s.now()
 		if cacheErr == nil {
 			return cached, fmt.Errorf("prices from %s not refreshed: %w", s.url, err)
 		}

@@ -123,6 +123,13 @@ func TestPriceSourceCachesForADay(t *testing.T) {
 	if b, _ := src.read(); b == nil || len(b.Providers["anthropic"]) == 0 {
 		t.Error("the cache was overwritten")
 	}
+	now = now.Add(pricesRetryGap)
+	body.Store(testModelsDev)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if b, err := src.load(ctx); b == nil || err == nil || src.willFetch() {
+		t.Errorf("a cancelled fetch keeps the stale prices and waits before trying again: %v, %v", b, err)
+	}
 	empty := &priceSource{url: srv.URL, cache: filepath.Join(t.TempDir(), "prices.json"), now: time.Now, client: srv.Client()}
 	body.Store("down")
 	if b, err := empty.load(context.Background()); b != nil || err == nil {
@@ -222,11 +229,11 @@ of which subagents (1) · **~$4.00** · 1 request · input 1M (0% cached) · out
 func TestCellName(t *testing.T) {
 	t.Parallel()
 	for in, want := range map[string]string{
-		"a|b`c":                         "a/b'c",
-		"x\x1b[31my":                   "xy",
+		"a|b`c":                          "a/b'c",
+		"x\x1b[31my\nz":                  "xy z",
 		strings.Repeat("d/", 30) + "end": "…" + (strings.Repeat("d/", 30) + "end")[63-usageNameMax+1:],
 	} {
-		if got := cellName(in); got != want {
+		if got := cellName(in, usageNameMax); got != want {
 			t.Errorf("cellName(%q) = %q, want %q", in, got, want)
 		}
 	}

@@ -266,6 +266,7 @@ type usageOptions struct {
 	root     string
 	session  *session.Session
 	subagent string
+	nameMax  int
 	now      time.Time
 	book     *priceBook
 }
@@ -305,8 +306,13 @@ func usageReport(ctx context.Context, o usageOptions) (string, error) {
 		fmt.Fprintf(&b, "| %s | %s | %s |\n", label, s.amount(), s.count())
 	}
 	fmt.Fprintf(&b, "| **last %d days** | **%s** | **%s** |\n", usageDays, t.all.amount(), t.all.count())
-	breakdown(&b, "model", t.models, 0, func(k string) string { return cmp.Or(k, "unknown") })
-	breakdown(&b, "project", t.projects, usageProjects, shortHome)
+	nameMax := o.nameMax
+	if nameMax <= 0 {
+		nameMax = usageNameMax
+	}
+	nameMax = min(max(nameMax, 16), 60)
+	breakdown(&b, "model", t.models, 0, func(k string) string { return cellName(cmp.Or(k, "unknown"), nameMax) })
+	breakdown(&b, "project", t.projects, usageProjects, func(k string) string { return cellName(shortHome(k), nameMax) })
 	return strings.TrimRight(b.String(), "\n"), nil
 }
 
@@ -329,7 +335,7 @@ func breakdown(b *strings.Builder, title string, m map[string]*spend, limit int,
 	fmt.Fprintf(b, "\n| %s, last %d days | spend | requests | cached |\n|:--|--:|--:|--:|\n", title, usageDays)
 	for _, k := range keys {
 		s := m[k]
-		fmt.Fprintf(b, "| `%s` | %s | %s | %s |\n", cellName(name(k)), s.amount(), s.count(), s.cached())
+		fmt.Fprintf(b, "| `%s` | %s | %s | %s |\n", name(k), s.amount(), s.count(), s.cached())
 	}
 	if more > 0 {
 		fmt.Fprintf(b, "| … %d more | | | |\n", more)
@@ -338,10 +344,10 @@ func breakdown(b *strings.Builder, title string, m map[string]*spend, limit int,
 
 const usageNameMax = 40
 
-func cellName(s string) string {
-	s = strings.NewReplacer("|", "/", "`", "'").Replace(ui.Sanitize(s))
-	if r := []rune(s); len(r) > usageNameMax {
-		s = "…" + string(r[len(r)-usageNameMax+1:])
+func cellName(s string, limit int) string {
+	s = strings.NewReplacer("|", "/", "`", "'", "\n", " ", "\t", " ").Replace(ui.Sanitize(s))
+	if r := []rune(s); len(r) > limit {
+		s = "…" + string(r[len(r)-limit+1:])
 	}
 	return s
 }

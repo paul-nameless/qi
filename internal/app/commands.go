@@ -279,15 +279,18 @@ func (r *repl) usage(string) {
 		r.prices = src
 	}
 	if src.willFetch() {
-		r.display.Info("fetching prices from " + src.url)
+		r.display.Info("fetching prices from " + src.url + " (Ctrl-C skips it)")
 	}
-	var text string
 	var book *priceBook
 	var priceErr error
-	err := r.cancellable(func(ctx context.Context) error {
+	_ = r.cancellable(func(ctx context.Context) error {
 		book, priceErr = src.load(ctx)
+		return nil
+	})
+	var text string
+	err := r.cancellable(func(ctx context.Context) error {
 		var err error
-		text, err = usageReport(ctx, usageOptions{root: session.Root(), session: r.agent.Session(), subagent: session.Dir(r.agent.Cwd()), now: time.Now(), book: book})
+		text, err = usageReport(ctx, usageOptions{root: session.Root(), session: r.agent.Session(), subagent: session.Dir(r.agent.Cwd()), now: time.Now(), book: book, nameMax: r.display.Width() - 45})
 		return err
 	})
 	switch {
