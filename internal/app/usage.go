@@ -305,7 +305,7 @@ func usageReport(ctx context.Context, o usageOptions) (string, error) {
 	}
 	nameMax = min(max(nameMax, 16), 60)
 	breakdown(&b, "model", t.models, 0, func(k string) string { return cellName(cmp.Or(k, "unknown"), nameMax) })
-	breakdown(&b, "project", t.projects, usageProjects, func(k string) string { return cellName(config.ShortHome(k), nameMax) })
+	breakdown(&b, "project", t.projects, usageProjects, func(k string) string { return cellName(projectName(k), nameMax) })
 	return strings.TrimRight(b.String(), "\n"), nil
 }
 
@@ -343,4 +343,11 @@ func cellName(s string, limit int) string {
 		s = "…" + string(r[len(r)-limit+1:])
 	}
 	return s
+}
+
+func projectName(dir string) string {
+	if filepath.IsAbs(dir) {
+		return config.ShortHome(dir)
+	}
+	return dir
 }

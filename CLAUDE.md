@@ -31,7 +31,7 @@ Minimal Go coding agent for the terminal. The model's only tool is `run`: JavaSc
 - Small, focused functions; check errors and return meaningful messages
 - External UI tools (picker, pager, notifier, ...) are shell-string config keys with `{placeholders}`, never hard dependencies, documented in readme "External tools"
 - Only the user's input and the model's answer print in normal color; tool lines, reasoning and info are dim. The one exception: `/usage` tables, rendered with `ui.Markdown`
-- Tests never sleep to wait: react to events (channels, job changes, gate or marker files) and shrink time via `runner.second`, `SubagentRunner.Grace`/`Timeout`, `mcp.Manager.CloseGrace`, `llm.Sleep`
+- New tests never sleep to wait (a few old ones still do, e.g. `internal/app/idle_test.go`; don't copy them): react to events (channels, job changes, gate or marker files) and shrink time via `runner.second`, `SubagentRunner.Grace`/`Timeout`, `mcp.Manager.CloseGrace`, `llm.Sleep`
 - Tools, jsvm and agent tests run with `t.Parallel()`; keep new ones parallel unless they set env or cwd
 - `vendor/` is committed and builds download nothing (`GOPROXY=off` works); the one dependency is `golang.org/x/sys`; don't add modules
 - config, agent, app and tools tests run under `testenv.Run` (`TestMain`), so they never touch the real config or sessions; use it in new test packages
@@ -106,7 +106,7 @@ Minimal Go coding agent for the terminal. The model's only tool is `run`: JavaSc
 - `project.go` project mode: bash under sandbox-exec (macOS) or bwrap; writable roots are cwd, git dirs, temp, scratch, build caches, ~/.Trash and `project_writable`
 - Project mode also: git config/hooks/commondir/gitdir read-only, `.git` pinned; no ptys; network on (macOS unix sockets limited); no usable sandbox refuses bash (`TestProjectMode*`)
 - `checkWritable` guards write/edit after resolving symlinks; hooks and MCP run outside the sandbox
-- `jobs.go` background bash (`background`, 1h default, 24h max): output to the spill dir, a `<background-job>` notice when it exits on its own, all killed on /clear, session load, exit
+- `jobs.go` background bash (`background`, 1h default, 24h max): output to the spill dir, a `<background-job>` notice when it exits, times out or is killed from outside qi (none when qi kills it), all killed on /clear, session load, exit
 - A headless answer that ends with jobs running gets one `<background-jobs>` note, then waits for them (tests: `TestBackgroundJob*`, `TestLeftoverProcessesStayKillable`)
 - `subagent.go` the `subagent` function (models, efforts, 30 min `SubagentTimeout`); `mcp.go` `tool_search` and `mcp` (`MCPFuncs`), compact listing past 10 tools, never cut by the output cap
 - `image.go` scales images to ≤1568px (`imgutil.Resize`); `embedded.go` `Embed`/`Embedded` for `qi://` paths
