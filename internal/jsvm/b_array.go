@@ -570,11 +570,8 @@ func joinSize(arr []Value, sep string) int {
 	}
 	n := len(sep) * (len(arr) - 1)
 	for _, v := range arr {
-		switch r := v.r.(type) {
-		case *jstr:
+		if r, ok := v.r.(*jstr); ok {
 			n += r.size()
-		case nil:
-			n += 8
 		}
 	}
 	return n
