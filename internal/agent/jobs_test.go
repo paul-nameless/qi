@@ -99,7 +99,7 @@ func TestHeadlessNudgeLetsModelKillServer(t *testing.T) {
 	if err != nil || final != "final" || stats.Requests != 4 || time.Since(start) > 5*time.Second {
 		t.Fatalf("final %q stats %+v err %v after %s", final, stats, err, time.Since(start))
 	}
-	if got := lastText(p.requests[2][len(p.requests[2])-1]); !strings.Contains(got, "Background job 1 is still running") || !strings.Contains(got, "jobs({kill: N})") {
+	if got := lastText(p.requests[2][len(p.requests[2])-1]); !strings.Contains(got, "Background job 1 is still running") || !strings.Contains(got, "jobs({kill: N})") || !strings.Contains(got, "complete final answer again") {
 		t.Fatalf("nudge %q", got)
 	}
 }

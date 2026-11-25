@@ -181,7 +181,10 @@ func (r *repl) jobTurn() string {
 	}
 	if r.autoTurns >= maxAutoTurns {
 		r.agent.HoldJobNotices()
-		r.display.Info("background jobs keep finishing; their notices wait for your next message")
+		if r.autoTurns == maxAutoTurns {
+			r.autoTurns++
+			r.display.Info("background jobs keep finishing; their notices wait for your next message")
+		}
 		return ""
 	}
 	r.autoTurns++
@@ -193,6 +196,7 @@ func (r *repl) jobTurn() string {
 
 func (r *repl) runQueued(draft string) string {
 	for q := r.agent.DrainQueue(); len(q) > 0 && !r.lastCancelled; q = r.agent.DrainQueue() {
+		r.autoTurns = 0
 		draft = r.turn(func(context.Context) ([]llm.Block, error) { return q, nil }, draft)
 	}
 	if q := r.agent.DrainQueue(); len(q) > 0 {

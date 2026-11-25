@@ -110,7 +110,7 @@ func (r *SubagentRunner) Run(parent context.Context, task tools.SubagentTask, pr
 	res := <-read
 	switch {
 	case ctx.Err() != nil && parent.Err() == nil && res.final && res.answer != "":
-		return res.answer + "\n(the subagent answered, then hit its time limit while its background jobs were still running; they were stopped)", nil
+		return res.answer + "\n(the subagent hit its time limit after this answer and was stopped)", nil
 	case ctx.Err() != nil:
 		return "", ctx.Err()
 	case waitErr != nil && !errors.Is(waitErr, exec.ErrWaitDelay):
@@ -168,7 +168,11 @@ func (r *SubagentRunner) readEntries(rd io.Reader, progress func(string)) entrie
 	answer, final := "", false
 	for sc.Scan() {
 		var e session.Entry
-		if json.Unmarshal(sc.Bytes(), &e) != nil || e.Type != "message" || e.Message == nil || e.Message.Role != llm.RoleAssistant {
+		if json.Unmarshal(sc.Bytes(), &e) != nil || e.Type != "message" || e.Message == nil {
+			continue
+		}
+		if e.Message.Role != llm.RoleAssistant {
+			final = false
 			continue
 		}
 		for _, call := range e.Message.ToolUses() {

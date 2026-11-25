@@ -350,13 +350,13 @@ func (a *Agent) jobBlocks() []llm.Block {
 func (a *Agent) awaitJobs(ctx context.Context) bool {
 	announced := false
 	for {
+		if !a.headless {
+			return a.env.Jobs.HasNotices()
+		}
+		ids := a.env.Jobs.Waiting()
 		if a.env.Jobs.HasNotices() {
 			return true
 		}
-		if !a.headless {
-			return false
-		}
-		ids := a.env.Jobs.Waiting()
 		if len(ids) == 0 {
 			return false
 		}
@@ -385,7 +385,7 @@ func (a *Agent) jobsNudge(nudged *bool) ([]llm.Block, bool) {
 	if len(ids) > 1 {
 		verb = "are"
 	}
-	text := fmt.Sprintf("<background-jobs>Background %s %s still running, and this run waits for running jobs before it ends. Kill servers and anything else you no longer need with jobs({kill: N}), then answer again; to wait for the rest, just answer again.</background-jobs>", jobList(ids), verb)
+	text := fmt.Sprintf("<background-jobs>Background %s %s still running, and this run waits for running jobs before it ends. Kill servers and anything else you no longer need with jobs({kill: N}). Then reply with your complete final answer again: only your last reply is returned. To wait for the rest, reply with it now.</background-jobs>", jobList(ids), verb)
 	return []llm.Block{{Type: llm.BlockText, Text: text}}, true
 }
 

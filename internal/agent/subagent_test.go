@@ -137,21 +137,30 @@ func TestSubagentTimeoutKeepsFinalAnswer(t *testing.T) {
 		last llm.Message
 		want string
 	}{
-		{"final", llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: "Server checked."}}}, "Server checked.\n(the subagent answered, then hit its time limit"},
+		{"final", llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: "Server checked."}}}, "Server checked.\n(the subagent hit its time limit after this answer"},
 		{"mid-turn", llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: "Looking."}, call}}, ""},
+		{"working again", llm.Message{Role: llm.RoleUser, Blocks: []llm.Block{{Type: llm.BlockText, Text: "<background-job id=\"1\">"}}}, ""},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 			dir := t.TempDir()
 			script := filepath.Join(dir, "qi")
-			if err := os.WriteFile(script+".out", []byte(entryLines(t, session.Entry{Type: "message", Message: &c.last})), 0o600); err != nil {
+			answered := llm.Message{Role: llm.RoleAssistant, Blocks: []llm.Block{{Type: llm.BlockText, Text: "Server checked."}}}
+			if err := os.WriteFile(script+".out", []byte(entryLines(t, session.Entry{Type: "message", Message: &answered}, session.Entry{Type: "message", Message: &c.last})), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			if err := os.WriteFile(script, []byte("#!/bin/sh\ncat \"$0.out\"\nexec sleep 30\n"), 0o700); err != nil {
 				t.Fatal(err)
 			}
-			r := &SubagentRunner{Mode: func() Mode { return ModeYolo }, Label: func(b llm.Block) string { return b.Name }, Cwd: dir, Exe: script, Grace: 100 * time.Millisecond, Timeout: 300 * time.Millisecond}
+			r := &SubagentRunner{Mode: func() Mode { return ModeYolo }, Label: func(b llm.Block) string { return b.Name }, Cwd: dir, Exe: script, Grace: 100 * time.Millisecond, Timeout: time.Second}
 			answer, err := r.Run(context.Background(), tools.SubagentTask{Prompt: "x", Model: "m"}, func(string) {})
+			if c.name == "final" {
+				ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+				defer cancel()
+				if _, perr := r.Run(ctx, tools.SubagentTask{Prompt: "x", Model: "m"}, func(string) {}); !errors.Is(perr, context.DeadlineExceeded) {
+					t.Errorf("a cancelled parent got an answer: %v", perr)
+				}
+			}
 			if c.want == "" {
 				if !errors.Is(err, context.DeadlineExceeded) {
 					t.Fatalf("answer %q err %v", answer, err)

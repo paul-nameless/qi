@@ -40,6 +40,18 @@ func waitNotice(t *testing.T, j *Jobs) Notice {
 	}
 }
 
+func waitFor(t *testing.T, j *Jobs, cond func() bool) {
+	t.Helper()
+	deadline := time.After(10 * time.Second)
+	for !cond() {
+		select {
+		case <-j.Changed():
+		case <-deadline:
+			t.Fatal("no job notice")
+		}
+	}
+}
+
 func TestBackgroundJobReturnsAtOnceAndNotifies(t *testing.T) {
 	t.Parallel()
 	env := jobEnv(t)
@@ -70,9 +82,7 @@ func TestBackgroundJobKilledOutsideNotifies(t *testing.T) {
 	if err := syscall.Kill(-env.Jobs.list[0].cmd.Process.Pid, syscall.SIGTERM); err != nil {
 		t.Fatal(err)
 	}
-	for !env.Jobs.Exited() {
-		<-env.Jobs.Changed()
-	}
+	waitFor(t, env.Jobs, env.Jobs.Exited)
 	env.Jobs.Hold()
 	if env.Jobs.Exited() || !env.Jobs.HasNotices() {
 		t.Fatal("a held notice should stay but not start a turn")
@@ -123,11 +133,9 @@ func TestBackgroundJobTimeout(t *testing.T) {
 	t.Parallel()
 	env := jobEnv(t)
 	runBash(context.Background(), env, bashIn(t, map[string]any{"command": "sleep 30", "background": true, "timeout": 1}), nil)
-	for !env.Jobs.HasNotices() {
-		<-env.Jobs.Changed()
-	}
+	waitFor(t, env.Jobs, env.Jobs.HasNotices)
 	if env.Jobs.Exited() {
-		t.Error("a timeout counts as an exit, so it would start a turn")
+		t.Error("a timeout's notice would start a turn")
 	}
 	if n := waitNotice(t, env.Jobs); n.Status != "timed out after 1s" || !n.Quiet {
 		t.Fatalf("notice %+v", n)
