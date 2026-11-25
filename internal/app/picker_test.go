@@ -1,9 +1,11 @@
 package app
 
 import (
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"sort"
 	"strings"
@@ -255,5 +257,38 @@ func TestEffortItemsListConfigEfforts(t *testing.T) {
 	}
 	if want := append([]string{"default"}, config.Efforts...); !slices.Equal(names, want) {
 		t.Errorf("effort items %v, want %v", names, want)
+	}
+}
+
+func TestToolKeysMatchToolDefaults(t *testing.T) {
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "wl-copy"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(path, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed := map[string]bool{}
+	for _, kv := range (&repl{agent: newTestAgent(t, cfg)}).toolKeys() {
+		listed[kv[0]] = true
+	}
+	defaulted := map[string]bool{}
+	v := reflect.ValueOf(cfg)
+	for i := range v.NumField() {
+		f := v.Type().Field(i)
+		if f.IsExported() && f.Type.Kind() == reflect.String && v.Field(i).String() != "" {
+			defaulted[strings.Split(f.Tag.Get("json"), ",")[0]] = true
+		}
+	}
+	delete(defaulted, "api")
+	delete(defaulted, "model")
+	if !maps.Equal(listed, defaulted) {
+		t.Errorf("/config lists tools %v, config defaults %v (other string defaults: update this test)", slices.Sorted(maps.Keys(listed)), slices.Sorted(maps.Keys(defaulted)))
 	}
 }
