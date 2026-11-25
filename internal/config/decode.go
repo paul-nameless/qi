@@ -54,11 +54,25 @@ func syntaxError(data []byte, e *jsontext.SyntacticError) error {
 	return fmt.Errorf("line %d, column %d: invalid JSON: %v", line, col, e.Err)
 }
 
+var removedKeys = map[string]string{
+	"subagent_efforts": "subagents offer the same efforts as reasoning_effort",
+}
+
+func lastKey(path string) string {
+	if i := strings.LastIndexByte(path, '.'); i >= 0 {
+		return path[i+1:]
+	}
+	return path
+}
+
 func semanticError(e *json.SemanticError) error {
 	key := keyPath(e.JSONPointer)
 	var bad badValue
 	switch {
 	case errors.Is(e, json.ErrUnknownName):
+		if why, ok := removedKeys[lastKey(key)]; ok {
+			return fmt.Errorf("key %q was removed (%s): delete it", key, why)
+		}
 		return fmt.Errorf("unknown key %q", key)
 	case key == "":
 		return fmt.Errorf("expected a JSON object, got %s", kindName(e.JSONKind, nil))

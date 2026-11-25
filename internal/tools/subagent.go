@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -36,7 +37,7 @@ func subagentMenu(mainModel string, menu []config.SubagentModel, indent string) 
 	if indent == "" {
 		b.WriteString("\n")
 	}
-	fmt.Fprintf(&b, "%sEfforts: %s. Higher effort thinks longer and costs more.", indent, strings.Join(config.Efforts, ", "))
+	fmt.Fprintf(&b, "%sEfforts: %s. Higher effort thinks longer and costs more; not every model supports none, minimal, xhigh or max.", indent, strings.Join(config.Efforts, ", "))
 	return b.String(), names
 }
 
@@ -71,6 +72,9 @@ func Subagent(mainModel string, menu []config.SubagentModel) *Function {
 			}
 			if env.Subagent == nil {
 				return errResult("subagents are not available here")
+			}
+			if a.Effort != "" && !slices.Contains(config.Efforts, a.Effort) {
+				return errResult("unknown effort %q: use one of %s", a.Effort, strings.Join(config.Efforts, ", "))
 			}
 			model, provider := subagentModel(a.Model, mainModel, menu)
 			answer, err := env.Subagent(ctx, SubagentTask{Prompt: a.Prompt, Model: model, Provider: provider, Effort: a.Effort}, progress)

@@ -753,6 +753,18 @@ func TestCellSubagents(t *testing.T) {
 	k.want(`let n = 0; try { for (; n < 25; n++) await subagent("q" + n) } catch (e) { return n + " " + e.message }`, "20 too many subagent calls in one run call (limit 20)")
 }
 
+func TestSubagentRejectsUnknownEffort(t *testing.T) {
+	t.Parallel()
+	k := newCellKit(t, Subagent("main", nil))
+	k.env.Subagent = func(ctx context.Context, task SubagentTask, progress func(string)) (string, error) {
+		return "ran " + task.Effort, nil
+	}
+	if res := k.cell(`try { await subagent("x", {effort: "lots"}) } catch (e) { return e.message }`); !strings.HasPrefix(res.Text, "unknown effort \"lots\": use one of "+strings.Join(config.Efforts, ", ")+"\n") {
+		t.Errorf("got %q", res.Text)
+	}
+	k.want(`return await subagent("x", {effort: "max"})`, "ran max")
+}
+
 func TestSubagentLabelDefaults(t *testing.T) {
 	t.Parallel()
 	menu := []config.SubagentModel{{Name: "fast", Model: "m-fast"}}
