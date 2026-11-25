@@ -168,7 +168,12 @@ func (r *repl) pickSkill() (string, bool) {
 		r.display.Info("no skills found in ~/.claude/skills or .claude/skills")
 		return "", false
 	}
-	if s, ok := r.pick("skill ", items); ok {
+	erased := false
+	s, ok, _ := r.pickComplete("skill ", items, &erased)
+	switch {
+	case erased:
+		return "/skills", false
+	case ok:
 		return "/" + s + " ", false
 	}
 	return "/", false
