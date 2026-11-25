@@ -79,9 +79,8 @@ type cell struct {
 	toolCalls int
 	subagents int
 	cellReport
-	callbackErr error
-	settled     bool
-	finished    bool
+	settled  bool
+	finished bool
 }
 
 func newCell(ctx context.Context, r *runner, env *Env, progress func(string), timeout time.Duration) *cell {
@@ -234,14 +233,7 @@ func stopWaiting(end cellEnd) cellEnd {
 
 func (c *cell) drainJobs() bool {
 	err := c.vm.RunJobs()
-	if err == nil {
-		return true
-	}
-	if c.stoppedBy(err) {
-		return false
-	}
-	c.noteCallbackErr(err)
-	return true
+	return err == nil || !c.stoppedBy(err)
 }
 
 func (c *cell) cancelTimers() {
@@ -365,7 +357,7 @@ func (c *cell) lockPath(t *Function, input json.RawMessage) func() {
 	return m.Unlock
 }
 
-func (c *cell) startTimer(p *pendingCall, d time.Duration) int {
+func (c *cell) startTimer(p *pendingCall, d time.Duration) {
 	id := c.add(p)
 	stop := make(chan struct{})
 	p.stop, p.due = stop, time.Now().Add(d)
@@ -380,7 +372,6 @@ func (c *cell) startTimer(p *pendingCall, d time.Duration) int {
 		}
 		c.outcomes <- outcome{id: id}
 	})
-	return id
 }
 
 func (c *cell) settle(o outcome) {
@@ -515,12 +506,6 @@ func (c *cell) jsValue(res Result) jsvm.Value {
 		}
 	}
 	return jsvm.Str(res.Text)
-}
-
-func (c *cell) noteCallbackErr(err error) {
-	if c.callbackErr == nil {
-		c.callbackErr = err
-	}
 }
 
 func (c *cell) print(text string) {

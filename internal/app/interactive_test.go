@@ -124,6 +124,7 @@ func TestHandleInput(t *testing.T) {
 		{"//etc/hosts is odd", "/etc/hosts is odd", false, ""},
 		{"/usr/bin/env", "/usr/bin/env", false, ""},
 		{"/exit", "", true, ""},
+		{"/quit", "", false, "unknown command /quit (try /help)"},
 		{"/help", "", false, "/compact [focus]"},
 		{"/keys", "", false, "shift+tab"},
 		{"/nope", "", false, "unknown command /nope (try /help)"},

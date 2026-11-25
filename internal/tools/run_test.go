@@ -355,7 +355,8 @@ func TestCellFiresTimersInDeadlineOrder(t *testing.T) {
 	c := newCell(context.Background(), k.run.r, k.env, nil, time.Hour)
 	defer c.clock.stop()
 	registered := &pendingCall{kind: sleepCall}
-	id := c.startTimer(registered, time.Hour)
+	c.startTimer(registered, time.Hour)
+	id := c.seq
 	if len(c.timers) != 1 || c.timers[0] != (timerAt{due: registered.due, id: id}) || time.Until(registered.due) < 59*time.Minute {
 		t.Fatalf("startTimer queued %v for a timer due %v", c.timers, registered.due)
 	}
@@ -564,7 +565,10 @@ func TestCellErrorsText(t *testing.T) {
 	k.cell("const alpha = 1; function beta() {}")
 	k.wantErr("gamma", "ReferenceError: gamma is not defined\n    at cell.js:1:1", "Variables defined in this VM: ", "alpha", "beta")
 	k.wantErr("await new Promise(r => setTimeout(r, 10))", "ReferenceError: setTimeout is not defined", "There are no timers: wait with await sleep(ms).")
-	k.wantErr("setInterval(() => {}, 10)", "ReferenceError: setInterval is not defined", "There are no timers: wait with await sleep(ms).")
+	k.wantErr("clearInterval(1)", "ReferenceError: clearInterval is not defined", "There are no timers: wait with await sleep(ms).")
+	if res := k.cell(`throw new ReferenceError("setTimeout wrapper failed")`); strings.Contains(res.Text, "no timers") {
+		t.Errorf("a ReferenceError about something else got the timer hint: %q", res.Text)
+	}
 	k.file("f.txt", "x\n")
 	res := k.wantErr(`await read("f.txt"); await tick(); null.x`, "TypeError", "Calls that completed:\n✓ read f.txt\n✓ tick")
 	if res.Summary != "2 calls · TypeError: Cannot read properties of null (reading 'x')" {

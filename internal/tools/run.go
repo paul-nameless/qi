@@ -208,15 +208,15 @@ func (r *runner) sleepFunc(vm *jsvm.VM, args []jsvm.Value) (jsvm.Value, error) {
 		return jsvm.Undefined(), vm.Exception(vm.NewError("Error", "sleep: "+codeFinished))
 	}
 	p, resolve, _ := vm.NewPromise()
-	c.startTimer(&pendingCall{kind: sleepCall, resolve: resolve}, delayArg(args, 0))
+	c.startTimer(&pendingCall{kind: sleepCall, resolve: resolve}, delayArg(args))
 	return p, nil
 }
 
-func delayArg(args []jsvm.Value, i int) time.Duration {
-	if i >= len(args) {
+func delayArg(args []jsvm.Value) time.Duration {
+	if len(args) == 0 {
 		return 0
 	}
-	ms := args[i].Float()
+	ms := args[0].Float()
 	if ms != ms || ms <= 0 {
 		return 0
 	}
