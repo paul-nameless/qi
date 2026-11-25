@@ -354,6 +354,15 @@ func TestCellFiresTimersInDeadlineOrder(t *testing.T) {
 	k := newCellKit(t)
 	c := newCell(context.Background(), k.run.r, k.env, nil, time.Hour)
 	defer c.clock.stop()
+	registered := &pendingCall{kind: timerCall}
+	id := c.startTimer(registered, time.Hour)
+	if len(c.timers) != 1 || c.timers[0] != (timerAt{due: registered.due, id: id}) || time.Until(registered.due) < 59*time.Minute {
+		t.Fatalf("startTimer queued %v for a timer due %v", c.timers, registered.due)
+	}
+	c.clearTimer(id)
+	if !c.next() || len(c.pending) != 0 {
+		t.Fatal("a cleared timer stayed pending")
+	}
 	var got []string
 	timer := func(name string, due time.Time) int {
 		p := &pendingCall{kind: sleepCall, resolve: func(jsvm.Value) { got = append(got, name) }, stop: make(chan struct{}), due: due}
