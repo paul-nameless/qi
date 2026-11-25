@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"container/heap"
 	"context"
 	"encoding/json"
 	"errors"
@@ -74,6 +75,7 @@ type cell struct {
 	note      string
 	outcomes  chan outcome
 	pending   map[int]*pendingCall
+	timers    timerQueue
 	wg        sync.WaitGroup
 	sem       chan struct{}
 	seq       int
@@ -370,6 +372,7 @@ func (c *cell) startTimer(p *pendingCall, d time.Duration) int {
 	id := c.add(p)
 	stop := make(chan struct{})
 	p.stop, p.due = stop, time.Now().Add(d)
+	heap.Push(&c.timers, timerAt{due: p.due, id: id})
 	c.wg.Go(func() {
 		t := time.NewTimer(d)
 		defer t.Stop()
@@ -422,21 +425,39 @@ func (c *cell) dueBefore(id int, p *pendingCall) *pendingCall {
 	if p.kind == toolCall || p.cancelled {
 		return nil
 	}
-	var early *pendingCall
-	earlyID := id
-	for qid, q := range c.pending {
-		if q.kind == toolCall || q.cancelled {
+	for len(c.timers) > 0 {
+		first := c.timers[0]
+		q := c.pending[first.id]
+		if q == nil || q.cancelled {
+			heap.Pop(&c.timers)
 			continue
 		}
-		at := p.due
-		if early != nil {
-			at = early.due
+		if first.id == id {
+			return nil
 		}
-		if q.due.Before(at) || q.due.Equal(at) && qid < earlyID {
-			early, earlyID = q, qid
-		}
+		return q
 	}
-	return early
+	return nil
+}
+
+type timerAt struct {
+	due time.Time
+	id  int
+}
+
+type timerQueue []timerAt
+
+func (q timerQueue) Len() int      { return len(q) }
+func (q timerQueue) Swap(i, j int) { q[i], q[j] = q[j], q[i] }
+func (q timerQueue) Less(i, j int) bool {
+	return q[i].due.Before(q[j].due) || q[i].due.Equal(q[j].due) && q[i].id < q[j].id
+}
+func (q *timerQueue) Push(x any) { *q = append(*q, x.(timerAt)) }
+func (q *timerQueue) Pop() any {
+	old := *q
+	x := old[len(old)-1]
+	*q = old[:len(old)-1]
+	return x
 }
 
 func (c *cell) fire(p *pendingCall) {

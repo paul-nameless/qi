@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"container/heap"
 	"context"
 	"encoding/json"
 	"errors"
@@ -354,19 +355,25 @@ func TestCellFiresTimersInDeadlineOrder(t *testing.T) {
 	c := newCell(context.Background(), k.run.r, k.env, nil, time.Hour)
 	defer c.clock.stop()
 	var got []string
-	fired := func(name string) func(jsvm.Value) { return func(jsvm.Value) { got = append(got, name) } }
-	early := &pendingCall{kind: sleepCall, resolve: fired("early")}
-	c.startTimer(early, 200*time.Millisecond)
-	early.due = time.Now().Add(-time.Minute)
-	c.startTimer(&pendingCall{kind: sleepCall, resolve: fired("late")}, 0)
-	for len(c.pending) > 0 {
-		if !c.next() {
-			t.Fatal("the cell stopped")
-		}
+	timer := func(name string, due time.Time) int {
+		p := &pendingCall{kind: sleepCall, resolve: func(jsvm.Value) { got = append(got, name) }, stop: make(chan struct{}), due: due}
+		id := c.add(p)
+		heap.Push(&c.timers, timerAt{due: due, id: id})
+		return id
+	}
+	now := time.Now()
+	timer("early", now.Add(-time.Second))
+	late := timer("late", now)
+	c.settle(outcome{id: late})
+	if !slices.Equal(got, []string{"early"}) {
+		t.Fatalf("the late timer reported first and timers fired as %v, want the early one first", got)
+	}
+	if !c.next() {
+		t.Fatal("the cell stopped")
 	}
 	c.wg.Wait()
 	if !slices.Equal(got, []string{"early", "late"}) {
-		t.Errorf("timers fired as %v, want early before late", got)
+		t.Errorf("timers fired as %v, want early then late", got)
 	}
 }
 
