@@ -343,27 +343,38 @@ func (p *jsonParser) number() Value {
 }
 
 func (p *jsonParser) rawKey() string {
-	s := p.str()
-	return s.s
+	v, _, esc := p.plain()
+	if esc {
+		return p.strSlow(p.i - len(v)).s
+	}
+	return v
 }
 
 func (p *jsonParser) str() *jstr {
+	v, ascii, esc := p.plain()
+	switch {
+	case esc:
+		return p.strSlow(p.i - len(v))
+	case ascii:
+		return newASCII(v)
+	}
+	return &jstr{s: v, n: int32(len(v))}
+}
+
+func (p *jsonParser) plain() (v string, ascii, esc bool) {
 	p.i++
 	start := p.i
 	s := p.s
-	ascii := true
+	ascii = true
 	for p.i < len(s) {
 		c := s[p.i]
 		if c == '"' {
-			v := s[start:p.i]
+			v = s[start:p.i]
 			p.i++
-			if ascii {
-				return newASCII(v)
-			}
-			return &jstr{s: v, n: int32(len(v))}
+			return v, ascii, false
 		}
 		if c == '\\' {
-			return p.strSlow(start)
+			return s[start:p.i], false, true
 		}
 		if c < 0x20 {
 			p.fail()
@@ -374,7 +385,7 @@ func (p *jsonParser) str() *jstr {
 		p.i++
 	}
 	p.fail()
-	return nil
+	return "", false, false
 }
 
 func (p *jsonParser) strSlow(start int) *jstr {
