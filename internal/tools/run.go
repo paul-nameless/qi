@@ -165,8 +165,6 @@ func (r *runner) bindFuncs() {
 		r.vm.SetFunc(f.Code.Name, r.toolFunc(f.Name))
 	}
 	r.vm.SetFunc("sleep", r.sleepFunc)
-	r.vm.SetFunc("setTimeout", r.setTimeoutFunc)
-	r.vm.SetFunc("clearTimeout", r.clearTimeoutFunc)
 	r.vm.SetFunc("print", r.printFunc)
 }
 
@@ -212,29 +210,6 @@ func (r *runner) sleepFunc(vm *jsvm.VM, args []jsvm.Value) (jsvm.Value, error) {
 	p, resolve, _ := vm.NewPromise()
 	c.startTimer(&pendingCall{kind: sleepCall, resolve: resolve}, delayArg(args, 0))
 	return p, nil
-}
-
-func (r *runner) setTimeoutFunc(vm *jsvm.VM, args []jsvm.Value) (jsvm.Value, error) {
-	c := r.cur
-	if c == nil || len(args) == 0 || args[0].Kind() != jsvm.KindFunction {
-		return jsvm.Undefined(), vm.Exception(vm.NewError("TypeError", "setTimeout needs a function as its first argument"))
-	}
-	if c.settled {
-		return jsvm.Undefined(), vm.Exception(vm.NewError("Error", "setTimeout: "+codeFinished))
-	}
-	var rest []jsvm.Value
-	if len(args) > 2 {
-		rest = args[2:]
-	}
-	id := c.startTimer(&pendingCall{kind: timerCall, fn: args[0], args: rest}, delayArg(args, 1))
-	return jsvm.Number(float64(id)), nil
-}
-
-func (r *runner) clearTimeoutFunc(_ *jsvm.VM, args []jsvm.Value) (jsvm.Value, error) {
-	if c := r.cur; c != nil && len(args) > 0 {
-		c.clearTimer(int(args[0].Float()))
-	}
-	return jsvm.Undefined(), nil
 }
 
 func delayArg(args []jsvm.Value, i int) time.Duration {

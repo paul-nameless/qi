@@ -19,7 +19,6 @@ type callKind int
 const (
 	toolCall callKind = iota
 	sleepCall
-	timerCall
 )
 
 type pendingCall struct {
@@ -27,8 +26,6 @@ type pendingCall struct {
 	resolve   func(jsvm.Value)
 	reject    func(jsvm.Value)
 	site      string
-	fn        jsvm.Value
-	args      []jsvm.Value
 	stop      chan struct{}
 	due       time.Time
 	cancelled bool
@@ -82,9 +79,9 @@ type cell struct {
 	toolCalls int
 	subagents int
 	cellReport
-	timerErr error
-	settled  bool
-	finished bool
+	callbackErr error
+	settled     bool
+	finished    bool
 }
 
 func newCell(ctx context.Context, r *runner, env *Env, progress func(string), timeout time.Duration) *cell {
@@ -243,7 +240,7 @@ func (c *cell) drainJobs() bool {
 	if c.stoppedBy(err) {
 		return false
 	}
-	c.noteTimerErr(err)
+	c.noteCallbackErr(err)
 	return true
 }
 
@@ -386,29 +383,20 @@ func (c *cell) startTimer(p *pendingCall, d time.Duration) int {
 	return id
 }
 
-func (c *cell) clearTimer(id int) {
-	p := c.pending[id]
-	if p == nil || p.kind != timerCall || p.cancelled {
-		return
-	}
-	p.cancelled = true
-	close(p.stop)
-}
-
 func (c *cell) settle(o outcome) {
 	p := c.pending[o.id]
 	if early := c.dueBefore(o.id, p); early != nil {
 		c.wg.Go(func() { c.outcomes <- o })
 		early.cancelled = true
 		close(early.stop)
-		c.fire(early)
+		early.resolve(jsvm.Undefined())
 		return
 	}
 	delete(c.pending, o.id)
 	switch p.kind {
-	case sleepCall, timerCall:
+	case sleepCall:
 		if !p.cancelled {
-			c.fire(p)
+			p.resolve(jsvm.Undefined())
 		}
 	default:
 		c.record(o, p)
@@ -458,16 +446,6 @@ func (q *timerQueue) Pop() any {
 	x := old[len(old)-1]
 	*q = old[:len(old)-1]
 	return x
-}
-
-func (c *cell) fire(p *pendingCall) {
-	if p.kind == sleepCall {
-		p.resolve(jsvm.Undefined())
-		return
-	}
-	if _, err := c.vm.CallValue(p.fn, jsvm.Undefined(), p.args...); err != nil && !c.stoppedBy(err) {
-		c.noteTimerErr(err)
-	}
 }
 
 func (c *cell) discard(o outcome) {
@@ -539,9 +517,9 @@ func (c *cell) jsValue(res Result) jsvm.Value {
 	return jsvm.Str(res.Text)
 }
 
-func (c *cell) noteTimerErr(err error) {
-	if c.timerErr == nil {
-		c.timerErr = err
+func (c *cell) noteCallbackErr(err error) {
+	if c.callbackErr == nil {
+		c.callbackErr = err
 	}
 }
 

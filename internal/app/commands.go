@@ -32,7 +32,6 @@ type command struct {
 	args    string
 	help    string
 	short   string
-	alias   bool
 	quit    bool
 	run     func(r *repl, args string)
 	pickArg func(r *repl) (text string, submit bool)
@@ -61,7 +60,6 @@ func init() {
 		{name: "skills", help: "list skills (/<skill-name> [args] runs one)", short: "pick a skill", run: func(r *repl, _ string) { r.display.Info(r.skillList()) }, pickArg: (*repl).pickSkill},
 		{name: "mcp", help: "start MCP servers and show their status and enabled tools", short: "show MCP servers and their enabled tools", run: func(r *repl, _ string) { r.showMCP() }},
 		{name: "exit", help: "quit", short: "quit", quit: true},
-		{name: "quit", alias: true, quit: true},
 	}
 }
 
@@ -82,9 +80,7 @@ func helpText() string {
 	var b strings.Builder
 	b.WriteString("Commands:")
 	for _, c := range commandList {
-		if !c.alias {
-			fmt.Fprintf(&b, "\n  %-*s  %s", width, usageOf(c), c.help)
-		}
+		fmt.Fprintf(&b, "\n  %-*s  %s", width, usageOf(c), c.help)
 	}
 	return b.String()
 }
@@ -96,9 +92,7 @@ func usageOf(c command) string {
 func pickerItems() []pickItem {
 	var items []pickItem
 	for _, c := range commandList {
-		if !c.alias {
-			items = append(items, pickItem{c.name, c.short})
-		}
+		items = append(items, pickItem{c.name, c.short})
 	}
 	return items
 }

@@ -16,8 +16,8 @@ func TestCommandTable(t *testing.T) {
 	}
 	for _, c := range commandList {
 		inHelp := strings.Contains(help, "\n  /"+c.name+" ") || strings.Contains(help, "\n  /"+c.name+"\n")
-		if c.alias == (inHelp || items[c.name]) {
-			t.Errorf("/%s (alias %v): in help %v, in picker %v", c.name, c.alias, inHelp, items[c.name])
+		if !inHelp || !items[c.name] {
+			t.Errorf("/%s: in help %v, in picker %v", c.name, inHelp, items[c.name])
 		}
 		if findCommand(c.name) == nil || c.quit == (c.run != nil) {
 			t.Errorf("/%s: not dispatchable", c.name)

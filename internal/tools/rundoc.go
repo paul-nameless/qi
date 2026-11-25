@@ -21,7 +21,7 @@ Rules:
 - The names {names} are set again at the start of every run call: don't use them for your own variables.
 - The call times out after %d s (timeout changes it, up to %d). bash() has its own timeout and then returns the output so far with timed_out true, so a hanging command does not stop your code.
 - A timeout or interrupt stops the code; variables assigned before it stay.
-- The language is a JavaScript subset: no classes, generators, getters or setters, Symbol, labels, BigInt, import or require. There is no fs, process or fetch: use the functions above. sleep(ms), setTimeout and clearTimeout work.
+- The language is a JavaScript subset: no classes, generators, getters or setters, Symbol, labels, BigInt, import or require. There is no fs, process or fetch: use the functions above. await sleep(ms) waits; there is no setTimeout.
 
 Examples
 Read a file:
@@ -51,6 +51,6 @@ func reservedNames(funcs []*Function) string {
 	for _, f := range funcs {
 		names = append(names, f.Code.Name)
 	}
-	names = append(names, "sleep", "setTimeout", "clearTimeout", "print")
+	names = append(names, "sleep", "print")
 	return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
 }

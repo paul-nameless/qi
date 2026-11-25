@@ -110,7 +110,7 @@ func TestCellBasics(t *testing.T) {
 		{"console.log('one'); print('two', {k: 1}); console.error('three'); 'end'", "one\ntwo {\n  \"k\": 1\n}\nthree\nend"},
 		{"undefined", "(no output)"},
 		{"null", "null"},
-		{"const t = []; setTimeout((x) => t.push(x), 5, 'late'); const c = setTimeout(() => t.push('never'), 1); clearTimeout(c); await sleep(30); t", "[\n \"late\"\n]"},
+		{"const t = []; sleep(5).then(() => t.push('early')); await sleep(30); t", "[\n \"early\"\n]"},
 		{"tick(1)", "{\n \"ticks\": 1\n}"},
 	}
 	for _, c := range cases {
@@ -354,14 +354,14 @@ func TestCellFiresTimersInDeadlineOrder(t *testing.T) {
 	k := newCellKit(t)
 	c := newCell(context.Background(), k.run.r, k.env, nil, time.Hour)
 	defer c.clock.stop()
-	registered := &pendingCall{kind: timerCall}
+	registered := &pendingCall{kind: sleepCall}
 	id := c.startTimer(registered, time.Hour)
 	if len(c.timers) != 1 || c.timers[0] != (timerAt{due: registered.due, id: id}) || time.Until(registered.due) < 59*time.Minute {
 		t.Fatalf("startTimer queued %v for a timer due %v", c.timers, registered.due)
 	}
-	c.clearTimer(id)
+	c.cancelTimers()
 	if !c.next() || len(c.pending) != 0 {
-		t.Fatal("a cleared timer stayed pending")
+		t.Fatal("a cancelled timer stayed pending")
 	}
 	var got []string
 	timer := func(name string, due time.Time) int {
@@ -563,6 +563,8 @@ func TestCellErrorsText(t *testing.T) {
 	k.wantErr("missing", "ReferenceError: missing is not defined", "No variables are defined in this VM yet.")
 	k.cell("const alpha = 1; function beta() {}")
 	k.wantErr("gamma", "ReferenceError: gamma is not defined\n    at cell.js:1:1", "Variables defined in this VM: ", "alpha", "beta")
+	k.wantErr("await new Promise(r => setTimeout(r, 10))", "ReferenceError: setTimeout is not defined", "There are no timers: wait with await sleep(ms).")
+	k.wantErr("setInterval(() => {}, 10)", "ReferenceError: setInterval is not defined", "There are no timers: wait with await sleep(ms).")
 	k.file("f.txt", "x\n")
 	res := k.wantErr(`await read("f.txt"); await tick(); null.x`, "TypeError", "Calls that completed:\n✓ read f.txt\n✓ tick")
 	if res.Summary != "2 calls · TypeError: Cannot read properties of null (reading 'x')" {
@@ -909,7 +911,6 @@ func TestCellNoCallsAfterFinish(t *testing.T) {
 	for _, code := range []string{
 		`return {toJSON() { sleep(1); return 1 }}`,
 		`return {toJSON() { read("f.txt"); return 1 }}`,
-		`return {toJSON() { setTimeout(() => {}, 1); return 1 }}`,
 	} {
 		done := make(chan Result, 1)
 		go func() { done <- k.cell(code) }()
@@ -930,12 +931,12 @@ func TestCellTimersCancelledAfterSettle(t *testing.T) {
 	k := newCellKit(t)
 	k.second(300 * time.Millisecond)
 	start := time.Now()
-	k.want(`return (await Promise.race([bash("echo hi"), new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 60000))])).output`, "hi")
+	k.want(`return (await Promise.race([bash("echo hi"), sleep(60000).then(() => { throw new Error("timeout") })])).output`, "hi")
 	if d := time.Since(start); d > 5*time.Second {
 		t.Errorf("a pending guard timer held the result for %v", d)
 	}
 	k.want(`sleep(50).then(() => write("late.txt", "x")); "ok"`, "ok")
-	time.Sleep(150 * time.Millisecond)
+	k.want("1 + 1", "2")
 	if _, err := os.Stat(filepath.Join(k.dir, "late.txt")); err == nil {
 		t.Error("a sleep fired after the code finished")
 	}
@@ -999,7 +1000,7 @@ func TestCellErrorKeptWhenWaitStops(t *testing.T) {
 func TestRunDescriptionReservedNames(t *testing.T) {
 	t.Parallel()
 	k := newCellKit(t)
-	want := "- The names read, write, edit, bash, jobs, tick, sleep, setTimeout, clearTimeout and print are set again at the start of every run call: don't use them for your own variables.\n"
+	want := "- The names read, write, edit, bash, jobs, tick, sleep and print are set again at the start of every run call: don't use them for your own variables.\n"
 	if desc := k.run.Def.Description; !strings.Contains(desc, want) || strings.Contains(desc, "subagent,") {
 		t.Errorf("description:\n%s", desc)
 	}

@@ -54,8 +54,8 @@ func (c *cell) result(end cellEnd, value, hint string) Result {
 		add(value)
 		add(c.failedNote())
 	}
-	if c.timerErr != nil {
-		add("Uncaught error in a callback: " + errText(c.timerErr))
+	if c.callbackErr != nil {
+		add("Uncaught error in a callback: " + errText(c.callbackErr))
 	}
 	add(strings.Join(c.extras, "\n"))
 	add(c.lateNote(end))
@@ -67,7 +67,7 @@ func (c *cell) result(end cellEnd, value, hint string) Result {
 	if text == "" {
 		text = "(no output)"
 	}
-	isErr := failure != "" || c.timerErr != nil
+	isErr := failure != "" || c.callbackErr != nil
 	return Result{
 		Text:    c.env.capText(text, cellOutLines, cellOutBytes),
 		IsError: isErr,
@@ -229,6 +229,9 @@ func (c *cell) referenceHint(err error) string {
 	var ex *jsvm.Exception
 	if !errors.As(err, &ex) || ex.Name != "ReferenceError" {
 		return ""
+	}
+	if strings.HasPrefix(ex.Message, "setTimeout ") || strings.HasPrefix(ex.Message, "setInterval ") {
+		return "There are no timers: wait with await sleep(ms)."
 	}
 	keys, kerr := c.vm.CallValue(c.r.keys, c.r.object, c.r.global)
 	if kerr != nil {
