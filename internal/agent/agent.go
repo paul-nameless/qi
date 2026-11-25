@@ -267,21 +267,7 @@ func (a *Agent) Queue(blocks []llm.Block) {
 	a.mu.Unlock()
 }
 
-func (a *Agent) KillJobs() {
-	a.env.Jobs.KillAll()
-}
-
-func (a *Agent) JobsChanged() <-chan struct{} {
-	return a.env.Jobs.Changed()
-}
-
-func (a *Agent) JobExited() bool {
-	return a.env.Jobs.Exited()
-}
-
-func (a *Agent) HoldJobNotices() {
-	a.env.Jobs.Hold()
-}
+func (a *Agent) Jobs() *tools.Jobs { return a.env.Jobs }
 
 func (a *Agent) jobBlocks() []llm.Block {
 	var out []llm.Block
@@ -462,8 +448,6 @@ func (s TurnStats) String(context string, elapsed time.Duration, done time.Time)
 	}
 	return fmt.Sprintf("%s · cooked for %s · done %s%s", context, fmtElapsed(elapsed), done.Format("15:04"), jobs)
 }
-
-func (a *Agent) RunningJobs() int { return a.env.Jobs.Running() }
 
 func cachedPct(u llm.Usage) string {
 	if u.Input == 0 {

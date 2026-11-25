@@ -526,7 +526,7 @@ func TestTurnStatsShowRunningJobs(t *testing.T) {
 	if got := out.String(); !strings.Contains(got, " · 1 bg job\n") {
 		t.Errorf("output:\n%s", got)
 	}
-	r.agent.KillJobs()
+	r.agent.Jobs().KillAll()
 	r.turn(func(context.Context) ([]llm.Block, error) {
 		return []llm.Block{{Type: llm.BlockText, Text: "again"}}, nil
 	}, "")
@@ -545,7 +545,7 @@ func TestFinishedJobStartsTurn(t *testing.T) {
 		return textReply("ok"), nil
 	}}
 	r, _ := testRepl(t, config.Config{Model: "m"}, p)
-	t.Cleanup(r.agent.KillJobs)
+	t.Cleanup(r.agent.Jobs().KillAll)
 	r.turn(func(context.Context) ([]llm.Block, error) {
 		return []llm.Block{{Type: llm.BlockText, Text: "go"}}, nil
 	}, "")
@@ -556,9 +556,9 @@ func TestFinishedJobStartsTurn(t *testing.T) {
 		t.Fatal(err)
 	}
 	timeout := time.After(10 * time.Second)
-	for !r.agent.JobExited() {
+	for !r.agent.Jobs().Exited() {
 		select {
-		case <-r.agent.JobsChanged():
+		case <-r.agent.Jobs().Changed():
 		case <-timeout:
 			t.Fatal("the job never finished")
 		}
@@ -582,7 +582,7 @@ func TestAutomaticTurnsAreCapped(t *testing.T) {
 		return textReply("ok"), nil
 	}}
 	r, out := testRepl(t, config.Config{Model: "m"}, p)
-	t.Cleanup(r.agent.KillJobs)
+	t.Cleanup(r.agent.Jobs().KillAll)
 	r.turn(func(context.Context) ([]llm.Block, error) {
 		return []llm.Block{{Type: llm.BlockText, Text: "go"}}, nil
 	}, "")
@@ -590,16 +590,16 @@ func TestAutomaticTurnsAreCapped(t *testing.T) {
 		t.Fatal(err)
 	}
 	timeout := time.After(10 * time.Second)
-	for !r.agent.JobExited() {
+	for !r.agent.Jobs().Exited() {
 		select {
-		case <-r.agent.JobsChanged():
+		case <-r.agent.Jobs().Changed():
 		case <-timeout:
 			t.Fatal("the job never finished")
 		}
 	}
 	r.autoTurns = maxAutoTurns
-	if got := r.jobTurn(); got != "" || len(p.requests) != 2 || r.agent.JobExited() {
-		t.Fatalf("a capped wake started a turn or kept waking: %d requests, exited %v", len(p.requests), r.agent.JobExited())
+	if got := r.jobTurn(); got != "" || len(p.requests) != 2 || r.agent.Jobs().Exited() {
+		t.Fatalf("a capped wake started a turn or kept waking: %d requests, exited %v", len(p.requests), r.agent.Jobs().Exited())
 	}
 	if !strings.Contains(out.String(), "their notices wait for your next message") {
 		t.Errorf("output:\n%s", out.String())

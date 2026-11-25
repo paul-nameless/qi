@@ -130,8 +130,8 @@ func (r *repl) run() error {
 		r.editor.OnAt = r.filePicker
 	}
 	r.editor.OnCopyID = func() { r.report(r.copyAnswer("id")) }
-	r.editor.Wake = r.agent.JobsChanged()
-	r.editor.Woken = r.agent.JobExited
+	r.editor.Wake = r.agent.Jobs().Changed()
+	r.editor.Woken = r.agent.Jobs().Exited
 	r.handleSignals()
 	r.handleResize()
 	r.banner()
@@ -178,11 +178,11 @@ func (r *repl) run() error {
 }
 
 func (r *repl) jobTurn() string {
-	if !r.agent.JobExited() {
+	if !r.agent.Jobs().Exited() {
 		return ""
 	}
 	if r.autoTurns >= maxAutoTurns {
-		r.agent.HoldJobNotices()
+		r.agent.Jobs().Hold()
 		if r.autoTurns == maxAutoTurns {
 			r.autoTurns++
 			r.display.Info("background jobs keep finishing; their notices wait for your next message")
@@ -396,7 +396,7 @@ func (r *repl) settle(limit time.Duration) {
 }
 
 func (r *repl) closeResources() {
-	r.agent.KillJobs()
+	r.agent.Jobs().KillAll()
 	if r.mcp != nil {
 		r.mcp.Close()
 	}
@@ -457,7 +457,7 @@ func (r *repl) turn(prepare func(context.Context) ([]llm.Block, error), draft st
 	}
 	r.lastCancelled = errors.Is(err, context.Canceled)
 	if r.lastCancelled {
-		r.agent.HoldJobNotices()
+		r.agent.Jobs().Hold()
 		r.autoTurns = maxAutoTurns + 1
 	}
 	if !r.lastCancelled {
@@ -471,7 +471,7 @@ func (r *repl) turn(prepare func(context.Context) ([]llm.Block, error), draft st
 	}
 	if stats.Requests > 0 {
 		r.display.Line("")
-		stats.Jobs = r.agent.RunningJobs()
+		stats.Jobs = r.agent.Jobs().Running()
 		r.display.Info(stats.String(r.agent.ContextShort(), time.Since(start), time.Now()))
 		r.display.Line("")
 	}

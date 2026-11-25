@@ -37,7 +37,7 @@ func TestHeadlessTurnWaitsForBackgroundJob(t *testing.T) {
 	gate := filepath.Join(t.TempDir(), "gate")
 	p := &fakeProvider{replies: []llm.Message{bgCall("c1", gated(gate, "echo finished")), textMsg("waiting for it")}}
 	a := newHeadlessAgent(t, p, onJobWait(func() { openGate(t, gate) }))
-	t.Cleanup(a.KillJobs)
+	t.Cleanup(a.Jobs().KillAll)
 	final, stats, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "go"}})
 	if err != nil || final != "done" || stats.Requests != 4 {
 		t.Fatalf("final %q stats %+v err %v", final, stats, err)
@@ -59,7 +59,7 @@ func TestCancelWhileHeadlessWaitsKeepsAnswer(t *testing.T) {
 	p := &fakeProvider{replies: []llm.Message{bgCall("c1", "sleep 30"), textMsg("waiting")}}
 	ctx, cancel := context.WithCancel(context.Background())
 	a := newHeadlessAgent(t, p, onJobWait(cancel))
-	t.Cleanup(a.KillJobs)
+	t.Cleanup(a.Jobs().KillAll)
 	start := time.Now()
 	final, _, err := a.Turn(ctx, []llm.Block{{Type: llm.BlockText, Text: "go"}})
 	if err != nil || final != "done" || time.Since(start) > 5*time.Second {
@@ -78,13 +78,13 @@ func TestInteractiveTurnDoesNotWaitForJobs(t *testing.T) {
 	t.Parallel()
 	p := &fakeProvider{replies: []llm.Message{bgCall("c1", "sleep 30"), textMsg("server up")}}
 	a := newAgent(t, p)
-	t.Cleanup(a.KillJobs)
+	t.Cleanup(a.Jobs().KillAll)
 	start := time.Now()
 	final, stats, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "go"}})
 	if err != nil || final != "server up" || stats.Requests != 2 || time.Since(start) > 5*time.Second {
 		t.Fatalf("final %q stats %+v err %v after %s", final, stats, err, time.Since(start))
 	}
-	if a.JobExited() {
+	if a.Jobs().Exited() {
 		t.Fatal("a running job left a notice")
 	}
 }
@@ -93,7 +93,7 @@ func TestHeadlessNudgeLetsModelKillServer(t *testing.T) {
 	t.Parallel()
 	p := &fakeProvider{replies: []llm.Message{bgCall("c1", "sleep 30"), textMsg("server checked"), runCall("c2", "return await jobs({kill: 1})"), textMsg("final")}}
 	a := newHeadlessAgent(t, p, nopDisplay{})
-	t.Cleanup(a.KillJobs)
+	t.Cleanup(a.Jobs().KillAll)
 	start := time.Now()
 	final, stats, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "go"}})
 	if err != nil || final != "final" || stats.Requests != 4 || time.Since(start) > 5*time.Second {
@@ -109,15 +109,15 @@ func TestNoticeOfIdleJobJoinsNextTurn(t *testing.T) {
 	gate := filepath.Join(t.TempDir(), "gate")
 	p := &fakeProvider{replies: []llm.Message{bgCall("c1", gated(gate, "exit 4")), textMsg("waiting")}}
 	a := newAgent(t, p)
-	t.Cleanup(a.KillJobs)
+	t.Cleanup(a.Jobs().KillAll)
 	if _, _, err := a.Turn(context.Background(), []llm.Block{{Type: llm.BlockText, Text: "go"}}); err != nil {
 		t.Fatal(err)
 	}
 	openGate(t, gate)
 	timeout := time.After(10 * time.Second)
-	for !a.JobExited() {
+	for !a.Jobs().Exited() {
 		select {
-		case <-a.JobsChanged():
+		case <-a.Jobs().Changed():
 		case <-timeout:
 			t.Fatal("the job never finished")
 		}
