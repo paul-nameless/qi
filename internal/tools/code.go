@@ -38,7 +38,7 @@ func callFrom(ctx context.Context) (string, UI) {
 	if c, ok := ctx.Value(callKey).(callInfo); ok && c.ui != nil {
 		return c.id, c.ui
 	}
-	return "run", silentUI{}
+	return RunName, silentUI{}
 }
 
 type silentUI struct{}

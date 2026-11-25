@@ -221,7 +221,7 @@ func (a *Agent) Load(s *session.Session, ld session.Loaded) {
 func hasCells(msgs []llm.Message) bool {
 	for _, m := range msgs {
 		for _, b := range m.Blocks {
-			if b.Type == llm.BlockToolUse && b.Name == "run" {
+			if b.Type == llm.BlockToolUse && b.Name == tools.RunName {
 				return true
 			}
 		}

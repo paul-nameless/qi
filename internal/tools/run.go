@@ -13,6 +13,8 @@ import (
 	"github.com/paul-nameless/qi/internal/strutil"
 )
 
+const RunName = "run"
+
 const (
 	defaultCellTimeout = 300
 	maxCellTimeout     = 1800
@@ -65,7 +67,7 @@ func Run(funcs ...*Function) *Tool {
 	}
 	return &Tool{
 		Def: llm.ToolDef{
-			Name:        "run",
+			Name:        RunName,
 			Description: runDescription(r.order),
 			Schema:      json.RawMessage(fmt.Sprintf(`{"type":"object","properties":{"code":{"type":"string","description":"JavaScript to run"},"timeout":{"type":"integer","description":"Seconds before the code is stopped (default %d, max %d)"}},"required":["code"]}`, defaultCellTimeout, maxCellTimeout)),
 		},

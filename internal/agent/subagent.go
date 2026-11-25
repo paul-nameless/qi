@@ -26,6 +26,7 @@ import (
 const (
 	subagentGrace    = 5 * time.Second
 	ParentSessionEnv = "QI_PARENT_SESSION"
+	SubagentEnv      = "QI_SUBAGENT"
 	fatalPrefix      = "qi: "
 	maxCause         = 500
 	maxFatalBytes    = 4 << 10
@@ -51,7 +52,7 @@ func (r *SubagentRunner) Env() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	env := append(os.Environ(), "QI_SUBAGENT=1", config.MCPEnv+"="+servers)
+	env := append(os.Environ(), SubagentEnv+"=1", config.MCPEnv+"="+servers)
 	if r.SessionID != nil {
 		env = append(env, ParentSessionEnv+"="+r.SessionID())
 	}

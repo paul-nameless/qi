@@ -94,7 +94,7 @@ func toolUseText(blk llm.Block, width int) string {
 	var a struct {
 		Code string `json:"code"`
 	}
-	if blk.Name != "run" || json.Unmarshal(blk.Input, &a) != nil || strings.TrimSpace(a.Code) == "" {
+	if blk.Name != tools.RunName || json.Unmarshal(blk.Input, &a) != nil || strings.TrimSpace(a.Code) == "" {
 		return "· " + blk.Name + " " + ui.Sanitize(tools.OneLine(string(blk.Input), width))
 	}
 	return "· run\n" + ui.CodeBlock(a.Code, codeLines)

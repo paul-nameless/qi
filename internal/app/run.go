@@ -55,7 +55,7 @@ func run(o options) error {
 	}
 	stdinPiped := stdinHasData()
 	headless := o.query != "" || stdinPiped || !ui.IsTerminal(os.Stdin)
-	isSub := os.Getenv("QI_SUBAGENT") != ""
+	isSub := os.Getenv(agent.SubagentEnv) != ""
 	if err := checkJSON(o, headless); err != nil {
 		return err
 	}
@@ -209,7 +209,7 @@ func resolveConfig(o options) (config.Config, error) {
 	if err != nil {
 		return cfg, err
 	}
-	if fromParent && os.Getenv("QI_SUBAGENT") != "" {
+	if fromParent && os.Getenv(agent.SubagentEnv) != "" {
 		cfg.MCP = parentMCP
 	}
 	return cfg, nil
@@ -224,7 +224,7 @@ func loadHooks(roots, configured []string, headless bool, display *ui.Printer) (
 	if err != nil {
 		display.Info(err.Error())
 	}
-	if skipped && headless && os.Getenv("QI_SUBAGENT") == "" {
+	if skipped && headless && os.Getenv(agent.SubagentEnv) == "" {
 		display.Info("skipping untrusted or changed project hooks in " + roots[0] + " (start qi interactively there to review them)")
 	}
 	h := agent.NewHooks(roots[0], files)
